@@ -1,0 +1,454 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PlanType {
+  TRIAL
+  STARTER
+  PROFESSIONAL
+  BUSINESS
+}
+
+enum PlanStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum TenantStatus {
+  ACTIVE
+  CLOSED
+  SUSPENDED
+}
+
+// A Tenant is basically the customer organization that pays you. 
+model Tenant {
+  id                   String       @id @default(uuid())
+  name                 String
+  email                String       @unique
+  plan                 PlanType     @default(TRIAL)
+  planStatus           PlanStatus   @default(TRIALING) @map("plan_status")
+  status               TenantStatus @default(ACTIVE)
+  trialEndsAt          DateTime?    @map("trial_ends_at")
+  subscriptionEndsAt   DateTime?    @map("subscription_ends_at")
+  stripeCustomerId     String?      @unique @map("stripe_customer_id")
+  stripeSubscriptionId String?      @unique @map("stripe_subscription_id")
+
+  // Example: ["CHECK_PRINTING", "CLOCK_IN", "CRM"]
+  purchasedProducts String[] @default([]) @map("purchased_products")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  deletedAt     DateTime? @map("deleted_at")
+  deletedReason String?   @map("deleted_reason")
+
+  users      User[]
+  workspaces Workspace[]
+  auditLogs  AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id              String    @id @default(uuid())
+  fullName        String    @map("full_name")
+  email           String    @unique
+  passwordHash    String    @map("password_hash")
+  isActive        Boolean   @default(true) @map("is_active")
+  lastLoginAt     DateTime? @map("last_login_at")
+  emailVerifiedAt DateTime? @map("email_verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  workspaceMembers WorkspaceMember[]
+  createdChecks    Check[]           @relation("CheckCreatedBy")
+  printedChecks    Check[]           @relation("CheckPrintedBy")
+  voidedChecks     Check[]           @relation("CheckVoidedBy")
+  clearedChecks    Check[]           @relation("CheckClearedBy")
+
+  statusChanges             CheckStatusHistory[]
+  uploadedAttachment        CheckAttachment[]
+  calibrationProfiles       CalibrationProfile[]
+  auditLogs                 AuditLog[]
+  approvalWorkflowApprovers ApprovalWorkflowApprover[]
+  approvalRecords           ApprovalRecord[]
+  sessions                  Session[]
+
+  @@index([tenantId])
+  @@map("users")
+}
+
+model Workspace {
+  id              String    @id @default(uuid())
+  businessName    String    @map("business_name")
+  addressLine1    String    @map("address_line1")
+  addressLine2    String?   @map("address_line2")
+  city            String
+  state           String    @db.VarChar(2)
+  zipCode         String    @map("zip_code") @db.VarChar(10)
+  phone           String?   @db.VarChar(20)
+  logoUrl         String?   @map("logo_url")
+  approvalEnabled Boolean   @default(false) @map("approval_enabled")
+  maxCheckAmount  Decimal   @default(999999.99) @map("max_check_amount") @db.Decimal(12, 2)
+  maxPastDays     Int       @default(30) @map("max_past_days")
+  maxFutureDays   Int       @default(90) @map("max_future_days")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  deletedAt       DateTime? @map("deleted_at")
+
+  tenantId String @map("tenant_id")
+  tenant   Tenant @relation(fields: [tenantId], references: [id])
+
+  members             WorkspaceMember[]
+  bankAccounts        BankAccount[]
+  payees              Payee[]
+  checks              Check[]
+  calibrationProfiles CalibrationProfile[]
+  auditLogs           AuditLog[]
+  approvalRules       ApprovalWorkflowRule[]
+
+  @@index([tenantId])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id String @id @default(uuid())
+
+  userId      String @map("user_id")
+  workspaceId String @map("workspace_id")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  // NEW: Generic Portal Role (Can they manage billing/invite people?)
+  portalRole String @default("MEMBER") @map("portal_role")
+
+  // This holds EVERYTHING for EVERY product
+  productRoles Json @default("{}") @map("product_roles")
+
+  // NEW: Product-specific roles (Instead of canPrint, canApprove)
+  // Using strings allows "ADMIN", "EDITOR", "VIEWER", or null (No Access)
+  // checkRole   String? @map("check_role")
+  // clockRole   String? @map("clock_role")
+  // crmRole     String? @map("crm_role")
+  // faceRecRole String? @map("face_rec_role") 
+
+  // isSuperUser Boolean @default(false) @map("is_super_user")
+  // canCreate   Boolean @default(false) @map("can_create")
+  // canPrint    Boolean @default(false) @map("can_print")
+  // canApprove  Boolean @default(false) @map("can_approve")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+}
+
+model BankAccount {
+  id                     String      @id @default(uuid())
+  workspaceId            String      @map("workspace_id")
+  bankName               String      @map("bank_name")
+  routingNumberEncrypted String      @map("routing_number_encrypted")
+  routingNumberLast4     String      @map("routing_number_last4") @db.VarChar(4)
+  accountNumberEncrypted String      @map("account_number_encrypted")
+  accountNumberLast4     String      @map("account_number_last4") @db.VarChar(4)
+  accountType            AccountType @default(CHECKING) @map("account_type")
+  nextCheckNumber        Int         @map("next_check_number")
+  checkNumberPadding     Int         @default(6) @map("check_number_padding")
+  signatureImageUrl      String?     @map("signature_image_url")
+  encryptionKeyVersion   Int         @default(1) @map("encryption_key_version")
+  isActive               Boolean     @default(true) @map("is_active")
+  createdAt              DateTime    @default(now()) @map("created_at")
+  updatedAt              DateTime    @updatedAt @map("updated_at")
+  deletedAt              DateTime?   @map("deleted_at")
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  checks Check[]
+
+  @@index([workspaceId])
+  @@map("bank_accounts")
+}
+
+model Payee {
+  id           String  @id @default(uuid())
+  name         String
+  addressLine1 String? @map("address_line1")
+  addressLine2 String? @map("address_line2")
+  city         String?
+  state        String? @db.VarChar(2)
+  zipCode      String? @map("zip_code") @db.VarChar(10)
+  defaultMemo  String? @map("default_memo")
+  isActive     Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  workspaceId String    @map("workspace_id")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+  @@map("payees")
+}
+
+enum CheckStatus {
+  NEW
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PRINTED
+  CLEARED
+  VOID
+}
+
+model Check {
+  id               String      @id @default(uuid())
+  workspaceId      String      @map("workspace_id")
+  bankAccountId    String      @map("bank_account_id")
+  checkNumber      Int         @map("check_number")
+  status           CheckStatus @default(NEW)
+  payeeName        String      @map("payee_name")
+  amount           Decimal     @db.Decimal(12, 2)
+  amountInWords    String      @map("amount_in_words")
+  checkDate        DateTime    @map("check_date") @db.Date
+  memo             String?
+  invoiceTableJson Json?       @map("invoice_table_json")
+  pdfStorageUrl    String?     @map("pdf_storage_url")
+
+  // Void fields
+  voidReason String?   @map("void_reason")
+  voidedAt   DateTime? @map("voided_at")
+  voidedById String?   @map("voided_by_id")
+
+  // Print fields
+  printedAt   DateTime? @map("printed_at")
+  printedById String?   @map("printed_by_id")
+
+  // Cleared fields
+  clearedAt     DateTime? @map("cleared_at")
+  clearedById   String?   @map("cleared_by_id")
+  clearedDate   DateTime? @map("cleared_date") @db.Date
+  clearedAmount Decimal?  @map("cleared_amount") @db.Decimal(12, 2)
+
+  // Reissue chain
+  reissuedFromCheckId String? @unique @map("reissued_from_check_id")
+
+  // Creator
+  createdById String @map("created_by_id")
+
+  // Timestamps
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Relations
+  workspace         Workspace   @relation(fields: [workspaceId], references: [id])
+  bankAccount       BankAccount @relation(fields: [bankAccountId], references: [id])
+  createdBy         User        @relation("CheckCreatedBy", fields: [createdById], references: [id])
+  printedBy         User?       @relation("CheckPrintedBy", fields: [printedById], references: [id])
+  voidedBy          User?       @relation("CheckVoidedBy", fields: [voidedById], references: [id])
+  clearedBy         User?       @relation("CheckClearedBy", fields: [clearedById], references: [id])
+  reissuedFromCheck Check?      @relation("CheckReissue", fields: [reissuedFromCheckId], references: [id])
+  reissuedToCheck   Check?      @relation("CheckReissue")
+
+  statusHistory   CheckStatusHistory[]
+  attachments     CheckAttachment[]
+  approvalRecords ApprovalRecord[]
+
+  @@unique([bankAccountId, checkNumber])
+  @@index([workspaceId, status])
+  @@index([workspaceId, checkDate])
+  @@index([bankAccountId])
+  @@index([workspaceId, payeeName])
+  @@map("checks")
+}
+
+model CheckStatusHistory {
+  id         String       @id @default(uuid())
+  checkId    String       @map("check_id")
+  fromStatus CheckStatus? @map("from_status")
+  toStatus   CheckStatus  @map("to_status")
+  changeById String       @map("changed_by_id")
+  reason     String?
+  ipAddress  String?      @map("ip_address") @db.VarChar(45)
+  userAgent  String?      @map("user_agent") //The browser/device information
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  check     Check @relation(fields: [checkId], references: [id])
+  changedBy User  @relation(fields: [changeById], references: [id])
+
+  @@index([checkId])
+  @@map("check_status_history")
+}
+
+model CheckAttachment {
+  id            String   @id @default(uuid())
+  checkId       String   @map("check_id")
+  fileName      String   @map("file_name")
+  fileType      String   @map("file_type")
+  fileSizeBytes BigInt   @map("file_size_bytes")
+  storageUrl    String   @map("storage_url")
+  uploadedById  String   @map("uploaded_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  // Relations
+  check      Check @relation(fields: [checkId], references: [id])
+  uploadedBy User  @relation(fields: [uploadedById], references: [id])
+
+  @@index([checkId])
+  @@map("check_attachments")
+}
+
+model ApprovalWorkflowRule {
+  id                String   @id @default(uuid())
+  workspaceId       String   @map("workspace_id")
+  priority          Int      @default(1)
+  minAmount         Decimal? @map("min_amount") @db.Decimal(12, 2)
+  maxAmount         Decimal? @map("max_amount") @db.Decimal(12, 2)
+  requiredApprovals Int      @default(1) @map("required_approvals")
+  allowSelfApproval Boolean  @default(false) @map("allow_self_approval")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  workspace       Workspace                  @relation(fields: [workspaceId], references: [id])
+  approvers       ApprovalWorkflowApprover[]
+  approvalRecords ApprovalRecord[]
+
+  @@index([workspaceId])
+  @@map("approval_workflow_rules")
+}
+
+model ApprovalWorkflowApprover {
+  id     String @id @default(uuid())
+  ruleId String @map("rule_id")
+  userId String @map("user_id")
+
+  // Relations
+  rule ApprovalWorkflowRule @relation(fields: [ruleId], references: [id])
+  user User                 @relation(fields: [userId], references: [id])
+
+  @@unique([ruleId, userId])
+  @@map("approval_workflow_approvers")
+}
+
+model ApprovalRecord {
+  id         String   @id @default(uuid())
+  checkId    String   @map("check_id") // Which check was this decision about?
+  ruleId     String   @map("rule_id") // Which rule triggered this approval?
+  approverId String   @map("approver_id") // Who made the decision?
+  decision   String   @db.VarChar(10) // approved or rejected
+  reason     String? // rejected reason
+  createdAt  DateTime @default(now()) @map("created_at") //When was the decision made?
+
+  //NO updatedAt. NO deletedAt. This record is IMMUTABLE.
+
+  // Relations
+  check    Check                @relation(fields: [checkId], references: [id])
+  rule     ApprovalWorkflowRule @relation(fields: [ruleId], references: [id])
+  approver User                 @relation(fields: [approverId], references: [id])
+
+  @@index([checkId])
+  @@map("approval_records")
+}
+
+model CalibrationProfile {
+  id                  String   @id @default(uuid())
+  workspaceId         String   @map("workspace_id")
+  userId              String?  @map("user_id")
+  profileName         String   @map("profile_name")
+  horizontalOffsetPts Decimal  @default(0) @map("horizontal_offset_pts") @db.Decimal(6, 2)
+  verticalOffsetPts   Decimal  @default(0) @map("vertical_offset_pts") @db.Decimal(6, 2)
+  isDefault           Boolean  @default(false) @map("is_default")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+  user      User?     @relation(fields: [userId], references: [id])
+
+  @@index([workspaceId])
+  @@map("calibration_profiles")
+}
+
+model CheckTemplate {
+  id         String   @id @default(uuid())
+  name       String
+  formatType String   @map("format_type") @db.VarChar(30)
+  layoutJson Json     @map("layout_json")
+  isDefault  Boolean  @default(false) @map("is_default")
+  isSystem   Boolean  @default(true) @map("is_system")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("check_templates")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  workspaceId String?  @map("workspace_id")
+  userId      String   @map("user_id")
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(50)
+  entityId    String   @map("entity_id")
+  detailsJson Json?    @map("details_json")
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  // Relations
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_log")
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  ipAddress String?   @map("ip_address") @db.VarChar(45)
+  userAgent String?   @map("user_agent") @db.VarChar(512)
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@smartbusiness/tailwind-config",
+  "version": "0.0.1",
+  "description": "",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./globals.css": "./globals.css"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.3.3"
+  }
+}
