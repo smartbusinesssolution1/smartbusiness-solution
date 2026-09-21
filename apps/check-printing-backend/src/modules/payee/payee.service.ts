@@ -1,19 +1,27 @@
 import { ConflictError } from "../../shared/errors/conflict-error.js";
 import { NotFoundError } from "../../shared/errors/not-found-error.js";
 import { ValidationError } from "../../shared/errors/validation-error.js";
+import { AuditService } from "../../shared/services/audit.service.js";
 import { PayeeRepository } from "./payee.repository.js";
 import { CreatePayeeInput, ListPayeesQuery, UpdatePayeeInput } from "./payee.schema.js";
 
+interface AuditContext {
+    userId: string;
+    tenantId: string;
+    ipAddress?: string;
+}
 
 export class PayeeService {
 
-    private payeeRepository: PayeeRepository
+    private payeeRepository: PayeeRepository;
+    private auditService: AuditService;
 
-    constructor(payeeRepository: PayeeRepository) {
+    constructor(payeeRepository: PayeeRepository, auditService: AuditService) {
         this.payeeRepository = payeeRepository;
+        this.auditService = auditService;
     }
 
-    async createPayee(workspaceId: string, data: CreatePayeeInput) {
+    async createPayee(workspaceId: string, data: CreatePayeeInput, ctx: AuditContext) {
 
         // check for the duplicate name within the workspace
 
@@ -32,7 +40,18 @@ export class PayeeService {
             city: data.city || null,
             state: data.state || null,
             zipCode: data.zipCode || null,
-        })
+        });
+
+        await this.auditService.log({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            workspaceId,
+            action: "PAYEE_CREATED",
+            entityType: "Payee",
+            entityId: payee.id,
+            details: { name: payee.name },
+            ipAddress: ctx.ipAddress,
+        });
 
         return this.formatPayee(payee);
 
@@ -48,14 +67,14 @@ export class PayeeService {
         return this.formatPayee(payee);
     }
 
-    async listPayess(workspaceId: string, query: ListPayeesQuery) {
+    async listPayees(workspaceId: string, query: ListPayeesQuery) {
         const { items, total } = await this.payeeRepository.list({
             workspaceId: workspaceId,
             search: query.search,
             activeOnly: query.activeOnly,
             limit: query.limit,
             offset: query.offset
-        })
+        });
 
         return {
             items: items.map((p) => this.formatPayee(p)),
@@ -65,15 +84,15 @@ export class PayeeService {
                 offset: query.offset,
                 hasMore: query.offset + query.limit < total
             }
-        }
+        };
     }
 
-    async updatePayee(payeeId: string, workspaceId: string, data: UpdatePayeeInput) {
+    async updatePayee(payeeId: string, workspaceId: string, data: UpdatePayeeInput, ctx: AuditContext) {
 
         const existing = await this.payeeRepository.findById(payeeId);
 
         if (!existing || existing.workspaceId !== workspaceId) {
-            throw new NotFoundError("Payee")
+            throw new NotFoundError("Payee");
         }
 
         // if name is changing , then check for duplicate name 
@@ -82,7 +101,7 @@ export class PayeeService {
             const duplicate = await this.payeeRepository.findByWorkspaceAndName(workspaceId, data.name);
 
             if (duplicate) {
-                throw new ConflictError(`A payee named "${data.name}" already exists in this workspace`)
+                throw new ConflictError(`A payee named "${data.name}" already exists in this workspace`);
             }
         }
 
@@ -94,12 +113,23 @@ export class PayeeService {
             ...(data.city !== undefined && { city: data.city || null }),
             ...(data.state !== undefined && { state: data.state || null }),
             ...(data.zipCode !== undefined && { zipCode: data.zipCode || null }),
-        })
+        });
 
-        return this.formatPayee(updated)
+        await this.auditService.log({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            workspaceId,
+            action: "PAYEE_UPDATED",
+            entityType: "Payee",
+            entityId: payeeId,
+            details: { fields: Object.keys(data) },
+            ipAddress: ctx.ipAddress,
+        });
+
+        return this.formatPayee(updated);
     }
 
-    async archivePayee(payeeId: string, workspaceId: string) {
+    async archivePayee(payeeId: string, workspaceId: string, ctx: AuditContext) {
         const existing = await this.payeeRepository.findById(payeeId);
 
         if (!existing || existing.workspaceId !== workspaceId) {
@@ -111,10 +141,22 @@ export class PayeeService {
         }
 
         const updated = await this.payeeRepository.update(payeeId, { isActive: false });
+
+        await this.auditService.log({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            workspaceId,
+            action: "PAYEE_ARCHIVED",
+            entityType: "Payee",
+            entityId: payeeId,
+            details: { name: existing.name },
+            ipAddress: ctx.ipAddress,
+        });
+
         return this.formatPayee(updated);
     }
 
-    async restorePayee(payeeId: string, workspaceId: string) {
+    async restorePayee(payeeId: string, workspaceId: string, ctx: AuditContext) {
         const existing = await this.payeeRepository.findById(payeeId);
 
         if (!existing || existing.workspaceId !== workspaceId) {
@@ -126,6 +168,18 @@ export class PayeeService {
         }
 
         const updated = await this.payeeRepository.update(payeeId, { isActive: true });
+
+        await this.auditService.log({
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            workspaceId,
+            action: "PAYEE_RESTORED",
+            entityType: "Payee",
+            entityId: payeeId,
+            details: { name: existing.name },
+            ipAddress: ctx.ipAddress,
+        });
+
         return this.formatPayee(updated);
     }
 

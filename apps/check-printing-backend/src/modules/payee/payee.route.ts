@@ -4,30 +4,32 @@ import { PayeeService } from "./payee.service.js";
 import { PayeeController } from "./payee.controller.js";
 import { validate } from "../../middleware/validate.js";
 import { createPayeeSchema, updatePayeeSchema } from "./payee.schema.js";
-
+import { AuditService } from "../../shared/services/audit.service.js";
+import { requireSuperUser } from "../../middleware/permission.guard.js";
 
 const router: Router = Router({ mergeParams: true });
 
 const payeeRepository = new PayeeRepository();
-const payeeService = new PayeeService(payeeRepository);
+const auditService = new AuditService();
+const payeeService = new PayeeService(payeeRepository, auditService);
 const payeeController = new PayeeController(payeeService);
 
 // List/search payees (any member — used by check creation autocomplete)
-router.get('/', payeeController.list);
+router.get("/", payeeController.list);
 
 // get a single payee 
 router.get("/:pid", payeeController.get);
 
-//create a payee
-router.post("/", validate(createPayeeSchema), payeeController.create)
+// create a payee
+router.post("/", validate(createPayeeSchema), payeeController.create);
 
-//update a payee
-router.put("/:pid", validate(updatePayeeSchema), payeeController.update)
+// update a payee
+router.put("/:pid", validate(updatePayeeSchema), payeeController.update);
 
-// archive payee
-router.patch("/:pid/archive", payeeController.archive);
+// archive payee (Super User only)
+router.patch("/:pid/archive", requireSuperUser, payeeController.archive);
 
-//restore payee
-router.patch("/:pid/restore", payeeController.restore)
+// restore payee (Super User only)
+router.patch("/:pid/restore", requireSuperUser, payeeController.restore);
 
 export { router as payeeRouter };

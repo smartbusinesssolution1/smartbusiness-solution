@@ -1,7 +1,7 @@
 import { Router } from "express";
 import authRouter from "../modules/auth/auth.routes.js";
 import workspaceRouter from "../modules/workspace/workspace.routes.js";
-import { routingValidationRouter } from "../modules/bank-acccount/bank-account-route.js";
+import { routingValidationRouter } from "../modules/bank-account/bank-account-route.js";
 
 const router: Router = Router();
 

@@ -14,7 +14,7 @@ import {
   addMemberSchema,
   updateMemberSchema,
 } from "./workspace.schema.js";
-import { bankAccountRouter } from "../bank-acccount/bank-account-route.js";
+import { bankAccountRouter } from "../bank-account/bank-account-route.js";
 import { payeeRouter } from "../payee/payee.route.js";
 
 // ─── Composition Root ──────────────────────────────────────────

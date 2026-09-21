@@ -72,4 +72,4 @@ export class EncryptionService {
 }
 
 //export a singleton instance
-export const encyptionService = new EncryptionService();
+export const encryptionService = new EncryptionService();

@@ -81,7 +81,10 @@ export class WorkspaceService {
   }
 
   async getWorkspace(workspaceId: string, tenantId: string) {
-    const workspace = await this.workspaceRepository.findById(workspaceId, tenantId);
+    const workspace = await this.workspaceRepository.findById(
+      workspaceId,
+      tenantId,
+    );
 
     if (!workspace) {
       throw new NotFoundError("Workspace");
@@ -91,7 +94,10 @@ export class WorkspaceService {
   }
 
   async listWorkspaces(userId: string, tenantId: string) {
-    const workspaces = await this.workspaceRepository.findUserWorkspaces(userId, tenantId);
+    const workspaces = await this.workspaceRepository.findUserWorkspaces(
+      userId,
+      tenantId,
+    );
     return workspaces.map((w) => this.formatWorkspace(w));
   }
 
@@ -101,7 +107,11 @@ export class WorkspaceService {
     input: UpdateWorkspaceInput,
     ctx: AuditContext,
   ) {
-    const workspace = await this.workspaceRepository.update(workspaceId, tenantId, input);
+    const workspace = await this.workspaceRepository.update(
+      workspaceId,
+      tenantId,
+      input,
+    );
 
     await this.auditService.log({
       tenantId,
@@ -117,7 +127,11 @@ export class WorkspaceService {
     return this.formatWorkspace(workspace);
   }
 
-  async deleteWorkspace(workspaceId: string, tenantId: string, ctx: AuditContext) {
+  async deleteWorkspace(
+    workspaceId: string,
+    tenantId: string,
+    ctx: AuditContext,
+  ) {
     await this.workspaceRepository.softDelete(workspaceId, tenantId);
 
     await this.auditService.log({
@@ -161,7 +175,9 @@ export class WorkspaceService {
     input: AddMemberInput,
     ctx: AuditContext,
   ) {
-    const existingUser = await this.workspaceRepository.findUserByEmail(input.email);
+    const existingUser = await this.workspaceRepository.findUserByEmail(
+      input.email,
+    );
 
     if (existingUser && existingUser.tenantId !== tenantId) {
       throw new ValidationError(
@@ -182,7 +198,9 @@ export class WorkspaceService {
       );
 
       if (existingMember) {
-        throw new ConflictError("This user is already a member of this workspace");
+        throw new ConflictError(
+          "This user is already a member of this workspace",
+        );
       }
     }
 
@@ -249,12 +267,17 @@ export class WorkspaceService {
   ) {
     const member = await this.workspaceRepository.findMemberById(memberId);
 
-    if (!member || member.workspaceId !== workspaceId || member.workspace.tenantId !== tenantId) {
+    if (
+      !member ||
+      member.workspaceId !== workspaceId ||
+      member.workspace.tenantId !== tenantId
+    ) {
       throw new NotFoundError("Member");
     }
 
     if (member.isSuperUser && input.permissions.isSuperUser === false) {
-      const superUserCount = await this.workspaceRepository.countSuperUsers(workspaceId);
+      const superUserCount =
+        await this.workspaceRepository.countSuperUsers(workspaceId);
 
       if (superUserCount <= 1) {
         throw new ValidationError(
@@ -264,7 +287,10 @@ export class WorkspaceService {
       }
     }
 
-    const updated = await this.workspaceRepository.updateMember(memberId, input.permissions);
+    const updated = await this.workspaceRepository.updateMember(
+      memberId,
+      input.permissions,
+    );
 
     await this.auditService.log({
       tenantId,
@@ -302,7 +328,11 @@ export class WorkspaceService {
   ) {
     const member = await this.workspaceRepository.findMemberById(memberId);
 
-    if (!member || member.workspaceId !== workspaceId || member.workspace.tenantId !== tenantId) {
+    if (
+      !member ||
+      member.workspaceId !== workspaceId ||
+      member.workspace.tenantId !== tenantId
+    ) {
       throw new NotFoundError("Member");
     }
 
@@ -314,7 +344,8 @@ export class WorkspaceService {
     }
 
     if (member.isSuperUser) {
-      const superUserCount = await this.workspaceRepository.countSuperUsers(workspaceId);
+      const superUserCount =
+        await this.workspaceRepository.countSuperUsers(workspaceId);
 
       if (superUserCount <= 1) {
         throw new ValidationError(
@@ -333,7 +364,15 @@ export class WorkspaceService {
       action: "MEMBER_REMOVED",
       entityType: "WorkspaceMember",
       entityId: memberId,
-      details: { removedUserEmail: member.user.email },
+      details: {
+        removedUserEmail: member.user.email,
+        permissions: {
+          isSuperUser: member.isSuperUser,
+          canCreate: member.canCreate,
+          canPrint: member.canPrint,
+          canApprove: member.canApprove,
+        },
+      },
       ipAddress: ctx.ipAddress,
     });
   }

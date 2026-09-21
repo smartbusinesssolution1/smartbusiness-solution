@@ -34,27 +34,29 @@ export class BankAccountRepository {
         })
     }
 
-    async findById(id: string) {
-        return prisma.bankAccount.findUnique({
+    async findById(id: string, workspaceId: string) {
+        return prisma.bankAccount.findFirst({
             where: {
                 id: id,
+                workspaceId: workspaceId,
                 deletedAt: null
             }
         })
     }
 
-    async update(id: string, data: BankAccountUpdateData) {
+    async update(id: string, workspaceId: string, data: BankAccountUpdateData) {
         return prisma.bankAccount.update({
             where: {
-                id: id
+                id: id,
+                workspaceId: workspaceId,
             },
             data
         })
     }
 
-    async softDelete(id: string) {
+    async softDelete(id: string, workspaceId: string) {
         return prisma.bankAccount.update({
-            where: { id },
+            where: { id, workspaceId },
             data: { deletedAt: new Date() },
         });
     }

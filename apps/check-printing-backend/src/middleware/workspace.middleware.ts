@@ -2,7 +2,11 @@ import { Request, Response, NextFunction } from "express";
 import { prisma } from "@smartbusiness/database";
 import { ForbiddenError, NotFoundError } from "../shared/errors/index.js";
 
-export async function workspaceMiddleware(req: Request, _res: Response, next: NextFunction) {
+export async function workspaceMiddleware(
+  req: Request,
+  _res: Response,
+  next: NextFunction,
+) {
   const workspaceId = req.params.wid as string;
   const userId = req.user!.userId;
   const tenantId = req.user!.tenantId;
@@ -13,7 +17,7 @@ export async function workspaceMiddleware(req: Request, _res: Response, next: Ne
     },
   });
 
-  if (!membership) {
+  if (!membership || membership.deletedAt !== null) {
     throw new NotFoundError("Workspace");
   }
 

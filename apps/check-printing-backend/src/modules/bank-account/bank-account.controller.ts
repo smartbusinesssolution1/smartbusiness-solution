@@ -1,29 +1,43 @@
 import { NextFunction, Request, Response } from "express";
-import { BanKAccountService } from "./bank-account.service.js";
+import { BankAccountService } from "./bank-account.service.js";
 import { sendCreated, sendNoContent, sendSuccess } from "../../shared/utils/response.js";
 
 
 export class BankAccountController {
 
-    private bankAccountService: BanKAccountService;
+    private bankAccountService: BankAccountService;
 
-    constructor(bankAccountService: BanKAccountService) {
-        this.bankAccountService = bankAccountService
+    constructor(bankAccountService: BankAccountService) {
+        this.bankAccountService = bankAccountService;
+    }
+
+    private auditCtx(req: Request) {
+        return {
+            userId: req.user!.userId,
+            tenantId: req.user!.tenantId,
+            ipAddress: req.ip,
+        };
     }
 
     create = async (req: Request, res: Response, next: NextFunction) => {
-        const account = await this.bankAccountService.createBankAccount(req.params.wid as string, req.body);
+        const account = await this.bankAccountService.createBankAccount(
+            req.params.wid as string,
+            req.body,
+            this.auditCtx(req)
+        );
 
         sendCreated(res, account);
-    }
+    };
 
     list = async (req: Request, res: Response, next: NextFunction) => {
         const accounts = await this.bankAccountService.listAllBankAccounts(req.params.wid as string);
-    }
+        sendSuccess(res, accounts);
+    };
 
     get = async (req: Request, res: Response): Promise<void> => {
         const account = await this.bankAccountService.getBankAccount(
-            req.params.bid as string
+            req.params.bid as string,
+            req.params.wid as string
         );
         sendSuccess(res, account);
     };
@@ -31,13 +45,19 @@ export class BankAccountController {
     update = async (req: Request, res: Response): Promise<void> => {
         const account = await this.bankAccountService.updateBankAccount(
             req.params.bid as string,
-            req.body
+            req.params.wid as string,
+            req.body,
+            this.auditCtx(req)
         );
         sendSuccess(res, account);
     };
 
     delete = async (req: Request, res: Response): Promise<void> => {
-        await this.bankAccountService.deleteBankAccount(req.params.bid as string);
+        await this.bankAccountService.deleteBankAccount(
+            req.params.bid as string,
+            req.params.wid as string,
+            this.auditCtx(req)
+        );
         sendNoContent(res);
     };
 
