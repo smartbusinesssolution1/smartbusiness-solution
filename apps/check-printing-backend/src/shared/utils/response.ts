@@ -1,11 +1,15 @@
 // Force every endpoint to return the same shape.
 import { Response } from "express";
 
-export function sendSuccess<T>(res: Response, data: T, statusCode: number = 200): void {
+export function sendSuccess<T>(res: Response, data: T, statusCode: number = 200, meta?: Record<string, unknown>): void {
 
     const response: Record<string, unknown> = {
         success: true,
         data: data
+    }
+
+    if (meta) {
+        response.meta = meta;
     }
 
     res.status(statusCode).json(response)

@@ -14,6 +14,8 @@ import {
   addMemberSchema,
   updateMemberSchema,
 } from "./workspace.schema.js";
+import { bankAccountRouter } from "../bank-acccount/bank-account-route.js";
+import { payeeRouter } from "../payee/payee.route.js";
 
 // ─── Composition Root ──────────────────────────────────────────
 
@@ -90,4 +92,9 @@ router.delete(
   workspaceController.removeMember,
 );
 
+
+router.use("/:wid/bank-accounts", workspaceMiddleware, requireSuperUser, bankAccountRouter);
+
+//The workspace middleware runs first (verifies membership and loads permissions), then the payee router handles the specific endpoint. Permission checks for archive/restore (Super User only) should be added as middleware on those specific routes.
+router.use("/:wid/payees", workspaceMiddleware, payeeRouter)
 export default router;

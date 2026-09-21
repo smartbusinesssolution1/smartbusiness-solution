@@ -35,7 +35,6 @@ if (!parsed.success) {
 // Freeze the config object so no code can accidentally mutate it.
 export const config: Readonly<Env> = Object.freeze(parsed.data)
 
-
 export const db = {
   url: config.DATABASE_URL
 } as const

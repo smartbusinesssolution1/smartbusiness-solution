@@ -46,9 +46,6 @@ model Tenant {
   stripeCustomerId     String?      @unique @map("stripe_customer_id")
   stripeSubscriptionId String?      @unique @map("stripe_subscription_id")
 
-  // Example: ["CHECK_PRINTING", "CLOCK_IN", "CRM"]
-  purchasedProducts String[] @default([]) @map("purchased_products")
-
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -137,23 +134,10 @@ model WorkspaceMember {
   workspace Workspace @relation(fields: [workspaceId], references: [id])
   user      User      @relation(fields: [userId], references: [id])
 
-  // NEW: Generic Portal Role (Can they manage billing/invite people?)
-  portalRole String @default("MEMBER") @map("portal_role")
-
-  // This holds EVERYTHING for EVERY product
-  productRoles Json @default("{}") @map("product_roles")
-
-  // NEW: Product-specific roles (Instead of canPrint, canApprove)
-  // Using strings allows "ADMIN", "EDITOR", "VIEWER", or null (No Access)
-  // checkRole   String? @map("check_role")
-  // clockRole   String? @map("clock_role")
-  // crmRole     String? @map("crm_role")
-  // faceRecRole String? @map("face_rec_role") 
-
-  // isSuperUser Boolean @default(false) @map("is_super_user")
-  // canCreate   Boolean @default(false) @map("can_create")
-  // canPrint    Boolean @default(false) @map("can_print")
-  // canApprove  Boolean @default(false) @map("can_approve")
+  isSuperUser Boolean @default(false) @map("is_super_user")
+  canCreate   Boolean @default(false) @map("can_create")
+  canPrint    Boolean @default(false) @map("can_print")
+  canApprove  Boolean @default(false) @map("can_approve")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
