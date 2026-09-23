@@ -19,7 +19,7 @@ enum PlanType {
   BUSINESS
 }
 
-enum PlanStatus {
+enum SubscriptionStatus {
   TRIALING
   ACTIVE
   PAST_DUE
@@ -33,18 +33,18 @@ enum TenantStatus {
   SUSPENDED
 }
 
-// A Tenant is basically the customer organization that pays you. 
+enum TenantRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
 model Tenant {
-  id                   String       @id @default(uuid())
-  name                 String
-  email                String       @unique
-  plan                 PlanType     @default(TRIAL)
-  planStatus           PlanStatus   @default(TRIALING) @map("plan_status")
-  status               TenantStatus @default(ACTIVE)
-  trialEndsAt          DateTime?    @map("trial_ends_at")
-  subscriptionEndsAt   DateTime?    @map("subscription_ends_at")
-  stripeCustomerId     String?      @unique @map("stripe_customer_id")
-  stripeSubscriptionId String?      @unique @map("stripe_subscription_id")
+  id               String       @id @default(uuid())
+  name             String
+  billingEmail     String       @unique @map("billing_email")
+  status           TenantStatus @default(ACTIVE)
+  stripeCustomerId String?      @unique @map("stripe_customer_id")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -52,9 +52,10 @@ model Tenant {
   deletedAt     DateTime? @map("deleted_at")
   deletedReason String?   @map("deleted_reason")
 
-  users      User[]
-  workspaces Workspace[]
-  auditLogs  AuditLog[]
+  workspaces    Workspace[]
+  auditLogs     AuditLog[]
+  tenantMembers TenantMember[]
+  subscriptions ProductSubscription[]
 
   @@map("tenants")
 }
@@ -71,15 +72,13 @@ model User {
   updatedAt       DateTime  @updatedAt @map("updated_at")
   deletedAt       DateTime? @map("deleted_at")
 
-  tenantId String @map("tenant_id")
-  tenant   Tenant @relation(fields: [tenantId], references: [id])
-
-  workspaceMembers WorkspaceMember[]
-  createdChecks    Check[]           @relation("CheckCreatedBy")
-  printedChecks    Check[]           @relation("CheckPrintedBy")
-  voidedChecks     Check[]           @relation("CheckVoidedBy")
-  clearedChecks    Check[]           @relation("CheckClearedBy")
-
+  tenantMembers             TenantMember[]
+  workspaceMembers          WorkspaceMember[]
+  workspaceMemberRoles      WorkspaceMemberRole[]
+  createdChecks             Check[]                    @relation("CheckCreatedBy")
+  printedChecks             Check[]                    @relation("CheckPrintedBy")
+  voidedChecks              Check[]                    @relation("CheckVoidedBy")
+  clearedChecks             Check[]                    @relation("CheckClearedBy")
   statusChanges             CheckStatusHistory[]
   uploadedAttachment        CheckAttachment[]
   calibrationProfiles       CalibrationProfile[]
@@ -88,41 +87,158 @@ model User {
   approvalRecords           ApprovalRecord[]
   sessions                  Session[]
 
-  @@index([tenantId])
   @@map("users")
 }
 
+model TenantMember {
+  id String @id @default(uuid())
+
+  tenantId    String  @map("tenant_id")
+  userId      String  @map("user_id")
+  invitedById String? @map("invited_by_id")
+
+  role TenantRole @default(MEMBER)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("tenant_members")
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  slug        String  @unique @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  description String?
+  iconUrl     String? @map("icon_url")
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  subscriptions ProductSubscription[]
+  roles         Role[]
+  permissions   Permission[]
+
+  @@map("products")
+}
+
+model ProductSubscription {
+  id        String @id @default(uuid())
+  tenantId  String @map("tenant_id")
+  productId String @map("product_id")
+
+  plan                   PlanType           @default(TRIAL)
+  status                 SubscriptionStatus @default(TRIALING)
+  trialEndsAt            DateTime?          @map("trial_ends_at")
+  currentPeriodEndsAt    DateTime?          @map("current_period_ends_at")
+  stripeSubscriptionId   String?            @unique @map("stripe_subscription_id")
+  canceledAt             DateTime?          @map("canceled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id])
+  product Product @relation(fields: [productId], references: [id])
+
+  @@unique([tenantId, productId])
+  @@index([tenantId])
+  @@map("product_subscriptions")
+}
+
+model Role {
+  id        String @id @default(uuid())
+  productId String @map("product_id")
+
+  slug        String  @db.VarChar(50)
+  name        String  @db.VarChar(100)
+  description String?
+  isSystem    Boolean @default(true) @map("is_system")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product              Product               @relation(fields: [productId], references: [id])
+  rolePermissions      RolePermission[]
+  workspaceMemberRoles WorkspaceMemberRole[]
+
+  @@unique([productId, slug])
+  @@map("roles")
+}
+
+model Permission {
+  id        String @id @default(uuid())
+  productId String @map("product_id")
+
+  action      String @db.VarChar(100)
+  description String?
+
+  product         Product          @relation(fields: [productId], references: [id])
+  rolePermissions RolePermission[]
+
+  @@unique([productId, action])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
 model Workspace {
-  id              String    @id @default(uuid())
-  businessName    String    @map("business_name")
-  addressLine1    String    @map("address_line1")
-  addressLine2    String?   @map("address_line2")
-  city            String
-  state           String    @db.VarChar(2)
-  zipCode         String    @map("zip_code") @db.VarChar(10)
-  phone           String?   @db.VarChar(20)
-  logoUrl         String?   @map("logo_url")
-  approvalEnabled Boolean   @default(false) @map("approval_enabled")
-  maxCheckAmount  Decimal   @default(999999.99) @map("max_check_amount") @db.Decimal(12, 2)
-  maxPastDays     Int       @default(30) @map("max_past_days")
-  maxFutureDays   Int       @default(90) @map("max_future_days")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
+  id           String    @id @default(uuid())
+  businessName String    @map("business_name")
+  addressLine1 String    @map("address_line1")
+  addressLine2 String?   @map("address_line2")
+  city         String
+  state        String    @db.VarChar(2)
+  zipCode      String    @map("zip_code") @db.VarChar(10)
+  phone        String?   @db.VarChar(20)
+  logoUrl      String?   @map("logo_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  deletedAt    DateTime? @map("deleted_at")
 
   tenantId String @map("tenant_id")
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
-  members             WorkspaceMember[]
-  bankAccounts        BankAccount[]
-  payees              Payee[]
-  checks              Check[]
-  calibrationProfiles CalibrationProfile[]
-  auditLogs           AuditLog[]
-  approvalRules       ApprovalWorkflowRule[]
+  members               WorkspaceMember[]
+  bankAccounts          BankAccount[]
+  payees                Payee[]
+  checks                Check[]
+  calibrationProfiles   CalibrationProfile[]
+  auditLogs             AuditLog[]
+  approvalRules         ApprovalWorkflowRule[]
+  checkPrintingSettings CheckPrintingSettings?
 
   @@index([tenantId])
   @@map("workspaces")
+}
+
+model CheckPrintingSettings {
+  workspaceId     String  @id @map("workspace_id")
+  approvalEnabled Boolean @default(false) @map("approval_enabled")
+  maxCheckAmount  Decimal @default(999999.99) @map("max_check_amount") @db.Decimal(12, 2)
+  maxPastDays     Int     @default(30) @map("max_past_days")
+  maxFutureDays   Int     @default(90) @map("max_future_days")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("check_printing_settings")
 }
 
 model WorkspaceMember {
@@ -134,19 +250,41 @@ model WorkspaceMember {
   workspace Workspace @relation(fields: [workspaceId], references: [id])
   user      User      @relation(fields: [userId], references: [id])
 
+  // Legacy boolean permissions — kept during RBAC migration.
+  // Read by existing check-printing middleware.
+  // Will be dropped after middleware migrates to workspace_member_roles.
   isSuperUser Boolean @default(false) @map("is_super_user")
   canCreate   Boolean @default(false) @map("can_create")
   canPrint    Boolean @default(false) @map("can_print")
   canApprove  Boolean @default(false) @map("can_approve")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
+
+  assignedRoles WorkspaceMemberRole[]
 
   @@unique([workspaceId, userId])
   @@index([userId])
   @@map("workspace_members")
+}
+
+model WorkspaceMemberRole {
+  id String @id @default(uuid())
+
+  workspaceMemberId String @map("workspace_member_id")
+  roleId            String @map("role_id")
+  assignedById      String? @map("assigned_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  workspaceMember WorkspaceMember @relation(fields: [workspaceMemberId], references: [id], onDelete: Cascade)
+  role            Role            @relation(fields: [roleId], references: [id])
+  assignedBy      User?           @relation(fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceMemberId, roleId])
+  @@index([roleId])
+  @@map("workspace_member_roles")
 }
 
 enum AccountType {
@@ -403,6 +541,7 @@ model AuditLog {
   tenantId    String   @map("tenant_id")
   workspaceId String?  @map("workspace_id")
   userId      String   @map("user_id")
+  productSlug String?  @map("product_slug") @db.VarChar(50)
   action      String   @db.VarChar(100)
   entityType  String   @map("entity_type") @db.VarChar(50)
   entityId    String   @map("entity_id")
@@ -410,7 +549,6 @@ model AuditLog {
   ipAddress   String?  @map("ip_address") @db.VarChar(45)
   createdAt   DateTime @default(now()) @map("created_at")
 
-  // Relations
   tenant    Tenant     @relation(fields: [tenantId], references: [id])
   workspace Workspace? @relation(fields: [workspaceId], references: [id])
   user      User       @relation(fields: [userId], references: [id])
@@ -419,6 +557,7 @@ model AuditLog {
   @@index([workspaceId, createdAt])
   @@index([userId])
   @@index([entityType, entityId])
+  @@index([tenantId, productSlug])
   @@map("audit_log")
 }
 
