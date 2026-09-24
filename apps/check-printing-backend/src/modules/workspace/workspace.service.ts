@@ -1,4 +1,4 @@
-import { WorkspaceRepository, type WorkspaceWithSettings } from "./workspace.repository.js";
+import { WorkspaceRepository, type WorkspaceWithSettings, type MemberWithRoles } from "./workspace.repository.js";
 import {
   ValidationError,
   NotFoundError,
@@ -6,6 +6,7 @@ import {
 } from "../../shared/errors/index.js";
 import { PasswordService } from "@smartbusiness/auth";
 import { AuditService } from "../../shared/services/audit.service.js";
+import { ROLES } from "../../shared/constants/rbac.js";
 import type {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
@@ -42,6 +43,7 @@ export class WorkspaceService {
     userId: string,
     input: CreateWorkspaceInput,
     plan: string,
+    productId: string,
     ctx: AuditContext,
   ) {
     const currentCount =
@@ -58,6 +60,7 @@ export class WorkspaceService {
     const workspace = await this.workspaceRepository.create(
       { tenantId, ...input },
       userId,
+      productId,
     );
 
     await this.auditService.log({
@@ -145,30 +148,30 @@ export class WorkspaceService {
 
   async listMembers(workspaceId: string) {
     const members = await this.workspaceRepository.findMembers(workspaceId);
-
-    return members.map((m) => ({
-      id: m.id,
-      userId: m.userId,
-      email: m.user.email,
-      fullName: m.user.fullName,
-      isActive: m.user.isActive,
-      lastLoginAt: m.user.lastLoginAt,
-      permissions: {
-        isSuperUser: m.isSuperUser,
-        canCreate: m.canCreate,
-        canPrint: m.canPrint,
-        canApprove: m.canApprove,
-      },
-      createdAt: m.createdAt,
-    }));
+    return members.map((m) => this.formatMember(m));
   }
 
   async addMember(
     workspaceId: string,
     tenantId: string,
     input: AddMemberInput,
+    productId: string,
     ctx: AuditContext,
   ) {
+    const roles = await this.workspaceRepository.findRolesByProductAndSlugs(
+      productId,
+      input.roleSlugs,
+    );
+
+    if (roles.length !== input.roleSlugs.length) {
+      const found = new Set(roles.map((r) => r.slug));
+      const invalid = input.roleSlugs.filter((s) => !found.has(s));
+      throw new ValidationError(
+        `Invalid role(s): ${invalid.join(", ")}`,
+        { roleSlugs: [`Unknown roles: ${invalid.join(", ")}`] },
+      );
+    }
+
     const existingUser =
       await this.workspaceRepository.findUserByEmail(input.email);
 
@@ -219,14 +222,9 @@ export class WorkspaceService {
 
     const member = await this.workspaceRepository.addMemberInTransaction(
       userData,
-      {
-        workspaceId,
-        userId,
-        isSuperUser: input.permissions.isSuperUser,
-        canCreate: input.permissions.canCreate,
-        canPrint: input.permissions.canPrint,
-        canApprove: input.permissions.canApprove,
-      },
+      { workspaceId, userId },
+      roles.map((r) => r.id),
+      ctx.userId,
     );
 
     await this.auditService.log({
@@ -239,23 +237,12 @@ export class WorkspaceService {
       details: {
         memberEmail: input.email,
         newUserCreated: needsUserCreation,
-        permissions: input.permissions,
+        roleSlugs: input.roleSlugs,
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return {
-      id: member.id,
-      userId: member.userId,
-      email: member.user.email,
-      fullName: member.user.fullName,
-      permissions: {
-        isSuperUser: member.isSuperUser,
-        canCreate: member.canCreate,
-        canPrint: member.canPrint,
-        canApprove: member.canApprove,
-      },
-    };
+    return this.formatMember(member);
   }
 
   async updateMember(
@@ -263,6 +250,7 @@ export class WorkspaceService {
     tenantId: string,
     memberId: string,
     input: UpdateMemberInput,
+    productId: string,
     ctx: AuditContext,
   ) {
     const member = await this.workspaceRepository.findMemberById(memberId);
@@ -275,21 +263,42 @@ export class WorkspaceService {
       throw new NotFoundError("Member");
     }
 
-    if (member.isSuperUser && input.permissions.isSuperUser === false) {
-      const superUserCount =
-        await this.workspaceRepository.countSuperUsers(workspaceId);
+    const roles = await this.workspaceRepository.findRolesByProductAndSlugs(
+      productId,
+      input.roleSlugs,
+    );
 
-      if (superUserCount <= 1) {
+    if (roles.length !== input.roleSlugs.length) {
+      const found = new Set(roles.map((r) => r.slug));
+      const invalid = input.roleSlugs.filter((s) => !found.has(s));
+      throw new ValidationError(
+        `Invalid role(s): ${invalid.join(", ")}`,
+        { roleSlugs: [`Unknown roles: ${invalid.join(", ")}`] },
+      );
+    }
+
+    const hadAdmin = await this.workspaceRepository.memberHasRole(
+      memberId,
+      ROLES.ADMIN,
+    );
+    const willHaveAdmin = input.roleSlugs.includes(ROLES.ADMIN);
+
+    if (hadAdmin && !willHaveAdmin) {
+      const adminCount =
+        await this.workspaceRepository.countAdmins(workspaceId);
+
+      if (adminCount <= 1) {
         throw new ValidationError(
-          "Cannot remove the last Super User. Promote another member first.",
-          { isSuperUser: ["At least one Super User is required"] },
+          "Cannot remove the last Admin. Promote another member first.",
+          { roleSlugs: ["At least one Admin is required"] },
         );
       }
     }
 
-    const updated = await this.workspaceRepository.updateMember(
+    const updated = await this.workspaceRepository.setMemberRoles(
       memberId,
-      input.permissions,
+      roles.map((r) => r.id),
+      ctx.userId,
     );
 
     await this.auditService.log({
@@ -301,23 +310,12 @@ export class WorkspaceService {
       entityId: memberId,
       details: {
         memberEmail: updated.user.email,
-        permissionChanges: input.permissions,
+        roleSlugs: input.roleSlugs,
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return {
-      id: updated.id,
-      userId: updated.userId,
-      email: updated.user.email,
-      fullName: updated.user.fullName,
-      permissions: {
-        isSuperUser: updated.isSuperUser,
-        canCreate: updated.canCreate,
-        canPrint: updated.canPrint,
-        canApprove: updated.canApprove,
-      },
-    };
+    return this.formatMember(updated);
   }
 
   async removeMember(
@@ -338,24 +336,31 @@ export class WorkspaceService {
 
     if (member.userId === ctx.userId) {
       throw new ValidationError(
-        "You cannot remove yourself. Ask another Super User to remove you.",
+        "You cannot remove yourself. Ask another Admin to remove you.",
         { member: ["Cannot remove yourself from the workspace"] },
       );
     }
 
-    if (member.isSuperUser) {
-      const superUserCount =
-        await this.workspaceRepository.countSuperUsers(workspaceId);
+    const isAdmin = await this.workspaceRepository.memberHasRole(
+      memberId,
+      ROLES.ADMIN,
+    );
 
-      if (superUserCount <= 1) {
+    if (isAdmin) {
+      const adminCount =
+        await this.workspaceRepository.countAdmins(workspaceId);
+
+      if (adminCount <= 1) {
         throw new ValidationError(
-          "Cannot remove the last Super User. Promote another member first.",
-          { member: ["At least one Super User is required"] },
+          "Cannot remove the last Admin. Promote another member first.",
+          { member: ["At least one Admin is required"] },
         );
       }
     }
 
     await this.workspaceRepository.removeMember(memberId);
+
+    const memberRoleSlugs = member.assignedRoles.map((ar) => ar.role.slug);
 
     await this.auditService.log({
       tenantId,
@@ -366,12 +371,7 @@ export class WorkspaceService {
       entityId: memberId,
       details: {
         removedUserEmail: member.user.email,
-        permissions: {
-          isSuperUser: member.isSuperUser,
-          canCreate: member.canCreate,
-          canPrint: member.canPrint,
-          canApprove: member.canApprove,
-        },
+        roleSlugs: memberRoleSlugs,
       },
       ipAddress: ctx.ipAddress,
     });
@@ -399,6 +399,29 @@ export class WorkspaceService {
       maxPastDays: settings?.maxPastDays ?? 30,
       maxFutureDays: settings?.maxFutureDays ?? 90,
       createdAt: workspace.createdAt,
+    };
+  }
+
+  private formatMember(member: MemberWithRoles) {
+    const roleSlugs = member.assignedRoles.map((ar) => ar.role.slug);
+
+    const permissionSet = new Set<string>();
+    for (const ar of member.assignedRoles) {
+      for (const rp of ar.role.rolePermissions) {
+        permissionSet.add(rp.permission.action);
+      }
+    }
+
+    return {
+      id: member.id,
+      userId: member.userId,
+      email: member.user.email,
+      fullName: member.user.fullName,
+      isActive: member.user.isActive,
+      lastLoginAt: member.user.lastLoginAt,
+      roles: roleSlugs,
+      permissions: [...permissionSet],
+      createdAt: member.createdAt,
     };
   }
 }

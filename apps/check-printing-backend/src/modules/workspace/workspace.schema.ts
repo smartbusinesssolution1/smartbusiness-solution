@@ -59,22 +59,16 @@ export const updateWorkspaceSchema = z.object({
 export const addMemberSchema = z.object({
   email: z.email({ error: "Invalid email format" }).trim().toLowerCase(),
   fullName: z.string().min(1, "Name is required").max(255).trim(),
-  permissions: z.object({
-    isSuperUser: z.boolean().default(false),
-    canCreate: z.boolean().default(false),
-    canPrint: z.boolean().default(false),
-    canApprove: z.boolean().default(false),
-  }),
+  roleSlugs: z
+    .array(z.string().min(1).max(50))
+    .min(1, "At least one role is required"),
 });
 
-// ─── Update Member Permissions ──────────────────────────
+// ─── Update Member Roles ────────────────────────────────
 export const updateMemberSchema = z.object({
-  permissions: z.object({
-    isSuperUser: z.boolean().optional(),
-    canCreate: z.boolean().optional(),
-    canPrint: z.boolean().optional(),
-    canApprove: z.boolean().optional(),
-  }),
+  roleSlugs: z
+    .array(z.string().min(1).max(50))
+    .min(1, "At least one role is required"),
 });
 
 // ─── TypeScript Types ───────────────────────────────────

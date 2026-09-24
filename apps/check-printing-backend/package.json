@@ -7,13 +7,14 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -b",
+    "check-types": "tsc --noEmit",
     "start": "node dist/server.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
-  "devDependencies": {
+  "devDependencies": { 
     "@smartbusiness/typescript-config": "workspace:*",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",

@@ -31,6 +31,7 @@ export class WorkspaceController {
       req.user!.userId,
       req.body as CreateWorkspaceInput,
       req.product!.plan,
+      req.product!.productId,
       this.auditCtx(req),
     );
     sendCreated(res, workspace);
@@ -85,6 +86,7 @@ export class WorkspaceController {
       req.params.wid as string,
       req.tenant!.tenantId,
       req.body as AddMemberInput,
+      req.product!.productId,
       this.auditCtx(req),
     );
     sendCreated(res, member);
@@ -96,6 +98,7 @@ export class WorkspaceController {
       req.tenant!.tenantId,
       req.params.mid as string,
       req.body as UpdateMemberInput,
+      req.product!.productId,
       this.auditCtx(req),
     );
     sendSuccess(res, member);

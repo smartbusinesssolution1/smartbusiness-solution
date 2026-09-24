@@ -3,7 +3,8 @@ import { validate } from "../../middleware/validate.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
 import { workspaceMiddleware } from "../../middleware/workspace.middleware.js";
-import { requireSuperUser } from "../../middleware/permission.guard.js";
+import { requirePermission } from "../../middleware/permission.guard.js";
+import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { WorkspaceRepository } from "./workspace.repository.js";
 import { WorkspaceService } from "./workspace.service.js";
 import { WorkspaceController } from "./workspace.controller.js";
@@ -53,7 +54,7 @@ router.get("/:wid", workspaceMiddleware, workspaceController.get);
 router.put(
   "/:wid",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.WORKSPACE_MANAGE),
   validate(updateWorkspaceSchema),
   workspaceController.update,
 );
@@ -61,22 +62,22 @@ router.put(
 router.delete(
   "/:wid",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.WORKSPACE_MANAGE),
   workspaceController.delete,
 );
 
-// Member management — all require Super User
+// Member management
 router.get(
   "/:wid/members",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.MEMBER_VIEW),
   workspaceController.listMembers,
 );
 
 router.post(
   "/:wid/members",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.MEMBER_MANAGE),
   validate(addMemberSchema),
   workspaceController.addMember,
 );
@@ -84,7 +85,7 @@ router.post(
 router.put(
   "/:wid/members/:mid",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.MEMBER_MANAGE),
   validate(updateMemberSchema),
   workspaceController.updateMember,
 );
@@ -92,14 +93,14 @@ router.put(
 router.delete(
   "/:wid/members/:mid",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.MEMBER_MANAGE),
   workspaceController.removeMember,
 );
 
 router.use(
   "/:wid/bank-accounts",
   workspaceMiddleware,
-  requireSuperUser,
+  requirePermission(P.BANK_ACCOUNT_MANAGE),
   bankAccountRouter,
 );
 

@@ -76,6 +76,25 @@ export class AuthRepository {
         },
       });
 
+      const activeProducts = await tx.product.findMany({
+        where: { isActive: true },
+      });
+
+      if (activeProducts.length > 0) {
+        const trialEndsAt = new Date();
+        trialEndsAt.setDate(trialEndsAt.getDate() + 14);
+
+        await tx.productSubscription.createMany({
+          data: activeProducts.map((product) => ({
+            tenantId: tenant.id,
+            productId: product.id,
+            plan: "TRIAL" as const,
+            status: "TRIALING" as const,
+            trialEndsAt,
+          })),
+        });
+      }
+
       return tx.user.findUniqueOrThrow({
         where: { id: user.id },
         include: {

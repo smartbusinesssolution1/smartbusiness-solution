@@ -1,6 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
 import { prisma } from "@smartbusiness/database";
-import { ForbiddenError } from "@smartbusiness/auth";
 import { NotFoundError } from "../shared/errors/index.js";
 
 export async function workspaceMiddleware(
@@ -15,6 +14,21 @@ export async function workspaceMiddleware(
   const membership = await prisma.workspaceMember.findUnique({
     where: {
       workspaceId_userId: { workspaceId, userId },
+    },
+    include: {
+      assignedRoles: {
+        include: {
+          role: {
+            include: {
+              rolePermissions: {
+                include: {
+                  permission: true,
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 
@@ -37,12 +51,13 @@ export async function workspaceMiddleware(
     businessName: workspace.businessName,
   };
 
-  req.permissions = {
-    isSuperUser: membership.isSuperUser,
-    canCreate: membership.canCreate,
-    canPrint: membership.canPrint,
-    canApprove: membership.canApprove,
-  };
+  const permissionSet = new Set<string>();
+  for (const assignedRole of membership.assignedRoles) {
+    for (const rp of assignedRole.role.rolePermissions) {
+      permissionSet.add(rp.permission.action);
+    }
+  }
+  req.permissions = [...permissionSet];
 
   next();
 }

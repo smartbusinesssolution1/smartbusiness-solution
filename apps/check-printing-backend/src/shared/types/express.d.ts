@@ -25,11 +25,6 @@ declare namespace Express {
       businessName: string;
     };
 
-    permissions?: {
-      isSuperUser: boolean;
-      canCreate: boolean;
-      canPrint: boolean;
-      canApprove: boolean;
-    };
+    permissions?: string[];
   }
 }

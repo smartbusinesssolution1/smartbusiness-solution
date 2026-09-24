@@ -250,14 +250,6 @@ model WorkspaceMember {
   workspace Workspace @relation(fields: [workspaceId], references: [id])
   user      User      @relation(fields: [userId], references: [id])
 
-  // Legacy boolean permissions — kept during RBAC migration.
-  // Read by existing check-printing middleware.
-  // Will be dropped after middleware migrates to workspace_member_roles.
-  isSuperUser Boolean @default(false) @map("is_super_user")
-  canCreate   Boolean @default(false) @map("can_create")
-  canPrint    Boolean @default(false) @map("can_print")
-  canApprove  Boolean @default(false) @map("can_approve")
-
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")

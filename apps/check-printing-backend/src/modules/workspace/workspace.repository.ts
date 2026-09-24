@@ -8,6 +8,7 @@ import {
   type User,
   type CheckPrintingSettings,
 } from "@smartbusiness/database";
+import { ROLES } from "../../shared/constants/rbac.js";
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -22,24 +23,56 @@ interface CreateWorkspaceData {
   phone?: string;
 }
 
-interface CreateMemberData {
-  workspaceId: string;
-  userId: string;
-  isSuperUser: boolean;
-  canCreate: boolean;
-  canPrint: boolean;
-  canApprove: boolean;
-}
-
 export type WorkspaceWithSettings = Workspace & {
   checkPrintingSettings: CheckPrintingSettings | null;
 };
 
-export interface MemberWithUser extends WorkspaceMember {
+export interface MemberWithRoles {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  createdAt: Date;
+  deletedAt: Date | null;
   user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt">;
+  assignedRoles: Array<{
+    role: {
+      slug: string;
+      name: string;
+      rolePermissions: Array<{
+        permission: {
+          action: string;
+        };
+      }>;
+    };
+  }>;
 }
 
 // ─── Repository ─────────────────────────────────────────
+
+const memberInclude = {
+  user: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      isActive: true,
+      lastLoginAt: true,
+    },
+  },
+  assignedRoles: {
+    include: {
+      role: {
+        include: {
+          rolePermissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
 
 export class WorkspaceRepository {
   // ─── Tenant Operations ────────────────────────────────
@@ -67,11 +100,26 @@ export class WorkspaceRepository {
     });
   }
 
+  // ─── Role Operations ──────────────────────────────────
+
+  async findRolesByProductAndSlugs(
+    productId: string,
+    slugs: string[],
+  ) {
+    return prisma.role.findMany({
+      where: {
+        productId,
+        slug: { in: slugs },
+      },
+    });
+  }
+
   // ─── Workspace CRUD ───────────────────────────────────
 
   async create(
     data: CreateWorkspaceData,
     creatorUserId: string,
+    productId: string,
   ): Promise<WorkspaceWithSettings> {
     return prisma.$transaction(async (tx) => {
       const workspace = await tx.workspace.create({
@@ -88,14 +136,28 @@ export class WorkspaceRepository {
         include: { checkPrintingSettings: true },
       });
 
-      await tx.workspaceMember.create({
+      const adminRole = await tx.role.findUnique({
+        where: {
+          productId_slug: { productId, slug: ROLES.ADMIN },
+        },
+      });
+
+      if (!adminRole) {
+        throw new Error("System role check-admin not found. Run RBAC seed first.");
+      }
+
+      const member = await tx.workspaceMember.create({
         data: {
           workspaceId: workspace.id,
           userId: creatorUserId,
-          isSuperUser: true,
-          canCreate: true,
-          canPrint: true,
-          canApprove: true,
+        },
+      });
+
+      await tx.workspaceMemberRole.create({
+        data: {
+          workspaceMemberId: member.id,
+          roleId: adminRole.id,
+          assignedById: creatorUserId,
         },
       });
 
@@ -174,62 +236,34 @@ export class WorkspaceRepository {
 
   // ─── Member Management ────────────────────────────────
 
-  async findMembers(workspaceId: string): Promise<MemberWithUser[]> {
+  async findMembers(workspaceId: string): Promise<MemberWithRoles[]> {
     return prisma.workspaceMember.findMany({
       where: { workspaceId, deletedAt: null },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            isActive: true,
-            lastLoginAt: true,
-          },
-        },
-      },
+      include: memberInclude,
       orderBy: { createdAt: "asc" },
-    }) as Promise<MemberWithUser[]>;
+    }) as unknown as Promise<MemberWithRoles[]>;
   }
 
   async findMemberByUserId(
     workspaceId: string,
     userId: string,
-  ): Promise<MemberWithUser | null> {
+  ): Promise<MemberWithRoles | null> {
     return prisma.workspaceMember.findFirst({
       where: { workspaceId, userId, deletedAt: null },
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            isActive: true,
-            lastLoginAt: true,
-          },
-        },
-      },
-    }) as Promise<MemberWithUser | null>;
+      include: memberInclude,
+    }) as unknown as Promise<MemberWithRoles | null>;
   }
 
   async findMemberById(
     memberId: string,
-  ): Promise<(MemberWithUser & { workspace: Workspace }) | null> {
+  ): Promise<(MemberWithRoles & { workspace: Workspace }) | null> {
     return prisma.workspaceMember.findFirst({
       where: { id: memberId, deletedAt: null },
       include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            isActive: true,
-            lastLoginAt: true,
-          },
-        },
+        ...memberInclude,
         workspace: true,
       },
-    }) as Promise<(MemberWithUser & { workspace: Workspace }) | null>;
+    }) as unknown as Promise<(MemberWithRoles & { workspace: Workspace }) | null>;
   }
 
   async addMemberInTransaction(
@@ -239,8 +273,10 @@ export class WorkspaceRepository {
       fullName: string;
       passwordHash: string;
     } | null,
-    memberData: CreateMemberData,
-  ): Promise<MemberWithUser> {
+    memberData: { workspaceId: string; userId: string },
+    roleIds: string[],
+    assignedById: string,
+  ): Promise<MemberWithRoles> {
     return prisma.$transaction(async (tx) => {
       let userId = memberData.userId;
 
@@ -263,7 +299,7 @@ export class WorkspaceRepository {
         });
       }
 
-      return tx.workspaceMember.upsert({
+      const member = await tx.workspaceMember.upsert({
         where: {
           workspaceId_userId: {
             workspaceId: memberData.workspaceId,
@@ -273,57 +309,50 @@ export class WorkspaceRepository {
         create: {
           workspaceId: memberData.workspaceId,
           userId,
-          isSuperUser: memberData.isSuperUser,
-          canCreate: memberData.canCreate,
-          canPrint: memberData.canPrint,
-          canApprove: memberData.canApprove,
         },
         update: {
-          isSuperUser: memberData.isSuperUser,
-          canCreate: memberData.canCreate,
-          canPrint: memberData.canPrint,
-          canApprove: memberData.canApprove,
           deletedAt: null,
         },
-        include: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              fullName: true,
-              isActive: true,
-              lastLoginAt: true,
-            },
-          },
-        },
-      }) as unknown as MemberWithUser;
+      });
+
+      await tx.workspaceMemberRole.createMany({
+        data: roleIds.map((roleId) => ({
+          workspaceMemberId: member.id,
+          roleId,
+          assignedById,
+        })),
+      });
+
+      return tx.workspaceMember.findUniqueOrThrow({
+        where: { id: member.id },
+        include: memberInclude,
+      }) as unknown as MemberWithRoles;
     });
   }
 
-  async updateMember(
+  async setMemberRoles(
     memberId: string,
-    permissions: {
-      isSuperUser?: boolean;
-      canCreate?: boolean;
-      canPrint?: boolean;
-      canApprove?: boolean;
-    },
-  ): Promise<MemberWithUser> {
-    return prisma.workspaceMember.update({
-      where: { id: memberId },
-      data: permissions,
-      include: {
-        user: {
-          select: {
-            id: true,
-            email: true,
-            fullName: true,
-            isActive: true,
-            lastLoginAt: true,
-          },
-        },
-      },
-    }) as Promise<MemberWithUser>;
+    roleIds: string[],
+    assignedById: string,
+  ): Promise<MemberWithRoles> {
+    return prisma.$transaction(async (tx) => {
+      await tx.workspaceMemberRole.deleteMany({
+        where: { workspaceMemberId: memberId },
+      });
+
+      await tx.workspaceMemberRole.createMany({
+        data: roleIds.map((roleId) => ({
+          workspaceMemberId: memberId,
+          roleId,
+          assignedById,
+        })),
+      });
+
+      return tx.workspaceMember.findUniqueOrThrow({
+        where: { id: memberId },
+        include: memberInclude,
+      }) as unknown as MemberWithRoles;
+    });
   }
 
   async removeMember(memberId: string): Promise<void> {
@@ -333,9 +362,27 @@ export class WorkspaceRepository {
     });
   }
 
-  async countSuperUsers(workspaceId: string): Promise<number> {
-    return prisma.workspaceMember.count({
-      where: { workspaceId, isSuperUser: true, deletedAt: null },
+  async countAdmins(workspaceId: string): Promise<number> {
+    return prisma.workspaceMemberRole.count({
+      where: {
+        workspaceMember: {
+          workspaceId,
+          deletedAt: null,
+        },
+        role: {
+          slug: ROLES.ADMIN,
+        },
+      },
     });
+  }
+
+  async memberHasRole(memberId: string, roleSlug: string): Promise<boolean> {
+    const count = await prisma.workspaceMemberRole.count({
+      where: {
+        workspaceMemberId: memberId,
+        role: { slug: roleSlug },
+      },
+    });
+    return count > 0;
   }
 }

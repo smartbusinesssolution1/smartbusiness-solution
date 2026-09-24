@@ -9,7 +9,8 @@ import {
   updatePayeeSchema,
 } from "./payee.schema.js";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { requireSuperUser } from "../../middleware/permission.guard.js";
+import { requirePermission } from "../../middleware/permission.guard.js";
+import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -30,10 +31,10 @@ router.post("/", validate(createPayeeSchema), payeeController.create);
 // update a payee
 router.put("/:pid", validate(updatePayeeSchema), payeeController.update);
 
-// archive payee (Super User only)
-router.patch("/:pid/archive", requireSuperUser, payeeController.archive);
+// archive payee (requires payee:manage permission)
+router.patch("/:pid/archive", requirePermission(P.PAYEE_MANAGE), payeeController.archive);
 
-// restore payee (Super User only)
-router.patch("/:pid/restore", requireSuperUser, payeeController.restore);
+// restore payee (requires payee:manage permission)
+router.patch("/:pid/restore", requirePermission(P.PAYEE_MANAGE), payeeController.restore);
 
 export { router as payeeRouter };
