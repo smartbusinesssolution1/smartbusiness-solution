@@ -15,16 +15,22 @@ import apiRouter from "./routes/index.js";
 export function createApp(): Express {
   const app = express();
 
-  app.use(corsMiddleware({
-    origin: corsConfig.origin,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  }));
+  app.set("trust proxy", 1);
 
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: "cross-origin" },
-  }));
+  app.use(
+    corsMiddleware({
+      origin: corsConfig.origin,
+      credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id"],
+    }),
+  );
+
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+    }),
+  );
 
   app.use(globalRateLimiter);
 

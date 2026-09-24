@@ -14,7 +14,6 @@
   "license": "ISC",
   "type": "module",
   "devDependencies": {
-    "@smartbusiness/database": "workspace:*",
     "@smartbusiness/typescript-config": "workspace:*",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
@@ -26,6 +25,8 @@
     "tsx": "^4.23.13"
   },
   "dependencies": {
+    "@smartbusiness/auth": "workspace:*",
+    "@smartbusiness/database": "workspace:*",
     "argon2": "^0.45.1",
     "bullmq": "^6.3.4",
     "cookie-parser": "^1.4.7",

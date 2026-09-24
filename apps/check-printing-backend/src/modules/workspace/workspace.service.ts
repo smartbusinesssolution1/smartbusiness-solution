@@ -1,13 +1,11 @@
-import { WorkspaceRepository } from "./workspace.repository.js";
+import { WorkspaceRepository, type WorkspaceWithSettings } from "./workspace.repository.js";
 import {
   ValidationError,
   NotFoundError,
   ConflictError,
-  ForbiddenError,
 } from "../../shared/errors/index.js";
+import { PasswordService } from "@smartbusiness/auth";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { PasswordService } from "../../shared/services/password.service.js";
-import type { Workspace } from "@smartbusiness/database";
 import type {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
@@ -43,20 +41,16 @@ export class WorkspaceService {
     tenantId: string,
     userId: string,
     input: CreateWorkspaceInput,
+    plan: string,
     ctx: AuditContext,
   ) {
-    const tenant = await this.workspaceRepository.findTenantById(tenantId);
-
-    if (!tenant) {
-      throw new NotFoundError("Tenant");
-    }
-
-    const currentCount = await this.workspaceRepository.countByTenant(tenantId);
-    const limit = PLAN_WORKSPACE_LIMITS[tenant.plan] ?? 1;
+    const currentCount =
+      await this.workspaceRepository.countByTenant(tenantId);
+    const limit = PLAN_WORKSPACE_LIMITS[plan] ?? 1;
 
     if (currentCount >= limit) {
       throw new ValidationError(
-        `Your ${tenant.plan} plan allows ${limit} workspace(s). Upgrade to add more.`,
+        `Your ${plan} plan allows ${limit} workspace(s). Upgrade to add more.`,
         { workspaceLimit: [`Maximum ${limit} workspace(s) allowed`] },
       );
     }
@@ -175,33 +169,39 @@ export class WorkspaceService {
     input: AddMemberInput,
     ctx: AuditContext,
   ) {
-    const existingUser = await this.workspaceRepository.findUserByEmail(
-      input.email,
-    );
-
-    if (existingUser && existingUser.tenantId !== tenantId) {
-      throw new ValidationError(
-        "Unable to add this user. Please contact support.",
-        { email: ["This email cannot be added to this workspace"] },
-      );
-    }
+    const existingUser =
+      await this.workspaceRepository.findUserByEmail(input.email);
 
     let needsUserCreation = false;
     let userId = existingUser?.id ?? "";
 
-    if (!existingUser) {
-      needsUserCreation = true;
-    } else {
-      const existingMember = await this.workspaceRepository.findMemberByUserId(
-        workspaceId,
-        existingUser.id,
-      );
+    if (existingUser) {
+      const tenantMembership =
+        await this.workspaceRepository.findTenantMembership(
+          tenantId,
+          existingUser.id,
+        );
+
+      if (!tenantMembership) {
+        throw new ValidationError(
+          "Unable to add this user. Please contact support.",
+          { email: ["This email cannot be added to this workspace"] },
+        );
+      }
+
+      const existingMember =
+        await this.workspaceRepository.findMemberByUserId(
+          workspaceId,
+          existingUser.id,
+        );
 
       if (existingMember) {
         throw new ConflictError(
           "This user is already a member of this workspace",
         );
       }
+    } else {
+      needsUserCreation = true;
     }
 
     let userData = null;
@@ -381,7 +381,9 @@ export class WorkspaceService {
   // PRIVATE HELPERS
   // ═══════════════════════════════════════════════════════
 
-  private formatWorkspace(workspace: Workspace) {
+  private formatWorkspace(workspace: WorkspaceWithSettings) {
+    const settings = workspace.checkPrintingSettings;
+
     return {
       id: workspace.id,
       businessName: workspace.businessName,
@@ -392,10 +394,10 @@ export class WorkspaceService {
       zipCode: workspace.zipCode,
       phone: workspace.phone,
       logoUrl: workspace.logoUrl,
-      approvalEnabled: workspace.approvalEnabled,
-      maxCheckAmount: workspace.maxCheckAmount?.toString(),
-      maxPastDays: workspace.maxPastDays,
-      maxFutureDays: workspace.maxFutureDays,
+      approvalEnabled: settings?.approvalEnabled ?? false,
+      maxCheckAmount: settings?.maxCheckAmount?.toString() ?? "999999.99",
+      maxPastDays: settings?.maxPastDays ?? 30,
+      maxFutureDays: settings?.maxFutureDays ?? 90,
       createdAt: workspace.createdAt,
     };
   }

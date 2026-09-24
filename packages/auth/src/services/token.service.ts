@@ -1,24 +1,27 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
 import { randomBytes, createHash } from "crypto";
-import { accessToken as accessTokenConfig } from "../../config/index.js";
 import { AuthError } from "../errors/index.js";
 
 export interface AccessTokenPayload {
   userId: string;
-  tenantId: string;
   email: string;
 }
 
 export class TokenService {
+  constructor(
+    private readonly secret: string,
+    private readonly expiresIn: string = "15m",
+  ) {}
+
   generateAccessToken(payload: AccessTokenPayload): string {
-    return jwt.sign(payload, accessTokenConfig.secret, {
-      expiresIn: accessTokenConfig.expiresIn as SignOptions["expiresIn"],
+    return jwt.sign(payload, this.secret, {
+      expiresIn: this.expiresIn as SignOptions["expiresIn"],
     });
   }
 
   verifyAccessToken(token: string): AccessTokenPayload {
     try {
-      return jwt.verify(token, accessTokenConfig.secret) as AccessTokenPayload;
+      return jwt.verify(token, this.secret) as AccessTokenPayload;
     } catch (err) {
       if (err instanceof jwt.TokenExpiredError) {
         throw new AuthError("Token expired. Please login again.");

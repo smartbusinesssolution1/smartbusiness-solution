@@ -32,9 +32,10 @@ export class PayeeRepository {
   }
 
   async findByWorkspaceAndName(workspaceId: string, name: string) {
-    return prisma.payee.findUnique({
+    return prisma.payee.findFirst({
       where: {
-        workspaceId_name: { workspaceId, name },
+        workspaceId: workspaceId,
+        name: name,
         deletedAt: null,
       },
     });
@@ -75,6 +76,8 @@ export class PayeeRepository {
     return prisma.payee.update({
       where: {
         id: id,
+        workspaceId: data.workspaceId,
+        deletedAt: null,
       },
       data,
     });

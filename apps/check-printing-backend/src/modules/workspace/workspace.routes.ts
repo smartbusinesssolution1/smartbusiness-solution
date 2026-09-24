@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { validate } from "../../middleware/validate.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
 import { workspaceMiddleware } from "../../middleware/workspace.middleware.js";
 import { requireSuperUser } from "../../middleware/permission.guard.js";
 import { WorkspaceRepository } from "./workspace.repository.js";
 import { WorkspaceService } from "./workspace.service.js";
 import { WorkspaceController } from "./workspace.controller.js";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { PasswordService } from "../../shared/services/password.service.js";
+import { PasswordService } from "@smartbusiness/auth";
 import {
   createWorkspaceSchema,
   updateWorkspaceSchema,
@@ -22,14 +23,21 @@ import { payeeRouter } from "../payee/payee.route.js";
 const workspaceRepository = new WorkspaceRepository();
 const auditService = new AuditService();
 const passwordService = new PasswordService();
-const workspaceService = new WorkspaceService(workspaceRepository, auditService, passwordService);
+const workspaceService = new WorkspaceService(
+  workspaceRepository,
+  auditService,
+  passwordService,
+);
 const workspaceController = new WorkspaceController(workspaceService);
 
 // ─── Router ────────────────────────────────────────────────────
 
 const router: Router = Router();
 
+// Pipeline: auth → tenant → product entitlement → routes
 router.use(authMiddleware);
+router.use(tenantMiddleware);
+router.use(requireProduct("check-printing"));
 
 // Workspace CRUD
 router.post(
@@ -40,11 +48,7 @@ router.post(
 
 router.get("/", workspaceController.list);
 
-router.get(
-  "/:wid",
-  workspaceMiddleware,
-  workspaceController.get,
-);
+router.get("/:wid", workspaceMiddleware, workspaceController.get);
 
 router.put(
   "/:wid",
@@ -92,9 +96,13 @@ router.delete(
   workspaceController.removeMember,
 );
 
+router.use(
+  "/:wid/bank-accounts",
+  workspaceMiddleware,
+  requireSuperUser,
+  bankAccountRouter,
+);
 
-router.use("/:wid/bank-accounts", workspaceMiddleware, requireSuperUser, bankAccountRouter);
+router.use("/:wid/payees", workspaceMiddleware, payeeRouter);
 
-//The workspace middleware runs first (verifies membership and loads permissions), then the payee router handles the specific endpoint. Permission checks for archive/restore (Super User only) should be added as middleware on those specific routes.
-router.use("/:wid/payees", workspaceMiddleware, payeeRouter)
 export default router;

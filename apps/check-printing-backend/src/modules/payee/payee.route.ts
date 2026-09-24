@@ -3,7 +3,11 @@ import { PayeeRepository } from "./payee.repository.js";
 import { PayeeService } from "./payee.service.js";
 import { PayeeController } from "./payee.controller.js";
 import { validate } from "../../middleware/validate.js";
-import { createPayeeSchema, updatePayeeSchema } from "./payee.schema.js";
+import {
+  createPayeeSchema,
+  listPayeesQuerySchema,
+  updatePayeeSchema,
+} from "./payee.schema.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { requireSuperUser } from "../../middleware/permission.guard.js";
 
@@ -15,9 +19,9 @@ const payeeService = new PayeeService(payeeRepository, auditService);
 const payeeController = new PayeeController(payeeService);
 
 // List/search payees (any member — used by check creation autocomplete)
-router.get("/", payeeController.list);
+router.get("/", validate(listPayeesQuerySchema, "query"), payeeController.list);
 
-// get a single payee 
+// get a single payee
 router.get("/:pid", payeeController.get);
 
 // create a payee

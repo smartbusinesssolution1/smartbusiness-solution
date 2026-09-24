@@ -1,10 +1,12 @@
 import {
   prisma,
   Prisma,
-  Workspace,
-  WorkspaceMember,
-  Tenant,
-  User,
+  type Workspace,
+  type WorkspaceMember,
+  type Tenant,
+  type TenantMember,
+  type User,
+  type CheckPrintingSettings,
 } from "@smartbusiness/database";
 
 // ─── Types ──────────────────────────────────────────────
@@ -29,9 +31,9 @@ interface CreateMemberData {
   canApprove: boolean;
 }
 
-export interface WorkspaceWithTenant extends Workspace {
-  tenant: Tenant;
-}
+export type WorkspaceWithSettings = Workspace & {
+  checkPrintingSettings: CheckPrintingSettings | null;
+};
 
 export interface MemberWithUser extends WorkspaceMember {
   user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt">;
@@ -48,16 +50,16 @@ export class WorkspaceRepository {
     });
   }
 
-  // ─── User Operations ──────────────────────────────────
-
-  async findUserByEmailInTenant(
-    email: string,
+  async findTenantMembership(
     tenantId: string,
-  ): Promise<User | null> {
-    return prisma.user.findFirst({
-      where: { email, tenantId, deletedAt: null },
+    userId: string,
+  ): Promise<TenantMember | null> {
+    return prisma.tenantMember.findFirst({
+      where: { tenantId, userId, deletedAt: null },
     });
   }
+
+  // ─── User Operations ──────────────────────────────────
 
   async findUserByEmail(email: string): Promise<User | null> {
     return prisma.user.findFirst({
@@ -65,21 +67,12 @@ export class WorkspaceRepository {
     });
   }
 
-  async createUserInTenant(data: {
-    tenantId: string;
-    email: string;
-    fullName: string;
-    passwordHash: string;
-  }): Promise<User> {
-    return prisma.user.create({ data });
-  }
-
   // ─── Workspace CRUD ───────────────────────────────────
 
   async create(
     data: CreateWorkspaceData,
     creatorUserId: string,
-  ): Promise<Workspace> {
+  ): Promise<WorkspaceWithSettings> {
     return prisma.$transaction(async (tx) => {
       const workspace = await tx.workspace.create({
         data: {
@@ -92,6 +85,7 @@ export class WorkspaceRepository {
           zipCode: data.zipCode,
           phone: data.phone || null,
         },
+        include: { checkPrintingSettings: true },
       });
 
       await tx.workspaceMember.create({
@@ -112,25 +106,28 @@ export class WorkspaceRepository {
   async findById(
     workspaceId: string,
     tenantId: string,
-  ): Promise<Workspace | null> {
+  ): Promise<WorkspaceWithSettings | null> {
     return prisma.workspace.findFirst({
       where: { id: workspaceId, tenantId, deletedAt: null },
-    });
+      include: { checkPrintingSettings: true },
+    }) as Promise<WorkspaceWithSettings | null>;
   }
 
   async findUserWorkspaces(
     userId: string,
     tenantId: string,
-  ): Promise<Workspace[]> {
+  ): Promise<WorkspaceWithSettings[]> {
     const memberships = await prisma.workspaceMember.findMany({
       where: { userId, deletedAt: null },
       include: {
-        workspace: true,
+        workspace: {
+          include: { checkPrintingSettings: true },
+        },
       },
     });
 
     return memberships
-      .map((m) => m.workspace)
+      .map((m) => m.workspace as WorkspaceWithSettings)
       .filter((w) => w.tenantId === tenantId && w.deletedAt === null);
   }
 
@@ -143,12 +140,8 @@ export class WorkspaceRepository {
   async update(
     workspaceId: string,
     tenantId: string,
-    data: Partial<Omit<CreateWorkspaceData, "tenantId">> & {
-      maxCheckAmount?: Prisma.Decimal | number;
-      maxPastDays?: number;
-      maxFutureDays?: number;
-    },
-  ): Promise<Workspace> {
+    data: Partial<Omit<CreateWorkspaceData, "tenantId">>,
+  ): Promise<WorkspaceWithSettings> {
     const cleanData: Record<string, unknown> = { ...data };
     if (data.addressLine2 === "") cleanData.addressLine2 = null;
     if (data.phone === "") cleanData.phone = null;
@@ -162,7 +155,10 @@ export class WorkspaceRepository {
       throw new Error("Workspace not found or already deleted");
     }
 
-    return prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+    return prisma.workspace.findUniqueOrThrow({
+      where: { id: workspaceId },
+      include: { checkPrintingSettings: true },
+    }) as Promise<WorkspaceWithSettings>;
   }
 
   async softDelete(workspaceId: string, tenantId: string): Promise<void> {
@@ -172,7 +168,7 @@ export class WorkspaceRepository {
     });
 
     if (rows.count === 0) {
-      throw new Error("Workspace");
+      throw new Error("Workspace not found or already deleted");
     }
   }
 
@@ -201,11 +197,7 @@ export class WorkspaceRepository {
     userId: string,
   ): Promise<MemberWithUser | null> {
     return prisma.workspaceMember.findFirst({
-      where: {
-        workspaceId,
-        userId,
-        deletedAt: null,
-      },
+      where: { workspaceId, userId, deletedAt: null },
       include: {
         user: {
           select: {
@@ -252,10 +244,23 @@ export class WorkspaceRepository {
     return prisma.$transaction(async (tx) => {
       let userId = memberData.userId;
 
-      //1. create user if they dont exist yet
       if (userData) {
-        const user = await tx.user.create({ data: userData });
+        const user = await tx.user.create({
+          data: {
+            email: userData.email,
+            fullName: userData.fullName,
+            passwordHash: userData.passwordHash,
+          },
+        });
         userId = user.id;
+
+        await tx.tenantMember.create({
+          data: {
+            tenantId: userData.tenantId,
+            userId: user.id,
+            role: "MEMBER",
+          },
+        });
       }
 
       return tx.workspaceMember.upsert({

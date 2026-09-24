@@ -1,33 +1,35 @@
-//We attach custom properties to the Request object
-// in our middleware (user, workspace, permissions, requestId).
-// TypeScript needs to know about these properties.
 declare namespace Express {
-    interface Request {
-        // unique request identifier for tracing
-        requestId: string
+  interface Request {
+    requestId: string;
 
-        // authenticated user ( set by auth middleware )
-        user?: {
-            userId: string;
-            tenantId: string;
-            email: string
-        }
+    user?: {
+      userId: string;
+      email: string;
+    };
 
-        //current workspace context( set by workspace middleware)
+    tenant?: {
+      tenantId: string;
+      role: string;
+    };
 
-        workspace?: {
-            id: string;
-            tenantId: string;
-            businessName: string;
-        }
+    product?: {
+      productId: string;
+      slug: string;
+      subscriptionStatus: string;
+      plan: string;
+    };
 
-        // users permission in the current workspace
+    workspace?: {
+      workspaceId: string;
+      tenantId: string;
+      businessName: string;
+    };
 
-        permissions?: {
-            isSuperUser: boolean;
-            canCreate: boolean;
-            canPrint: boolean;
-            canApprove: boolean
-        }
-    }
+    permissions?: {
+      isSuperUser: boolean;
+      canCreate: boolean;
+      canPrint: boolean;
+      canApprove: boolean;
+    };
+  }
 }

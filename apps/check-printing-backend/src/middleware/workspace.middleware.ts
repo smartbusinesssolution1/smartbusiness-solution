@@ -1,6 +1,7 @@
-import { Request, Response, NextFunction } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { prisma } from "@smartbusiness/database";
-import { ForbiddenError, NotFoundError } from "../shared/errors/index.js";
+import { ForbiddenError } from "@smartbusiness/auth";
+import { NotFoundError } from "../shared/errors/index.js";
 
 export async function workspaceMiddleware(
   req: Request,
@@ -9,7 +10,7 @@ export async function workspaceMiddleware(
 ) {
   const workspaceId = req.params.wid as string;
   const userId = req.user!.userId;
-  const tenantId = req.user!.tenantId;
+  const tenantId = req.tenant!.tenantId;
 
   const membership = await prisma.workspaceMember.findUnique({
     where: {
@@ -22,7 +23,7 @@ export async function workspaceMiddleware(
   }
 
   const workspace = await prisma.workspace.findFirst({
-    where: { id: workspaceId, deletedAt: null },
+    where: { id: workspaceId, tenantId, deletedAt: null },
     select: { id: true, tenantId: true, businessName: true },
   });
 
@@ -30,12 +31,8 @@ export async function workspaceMiddleware(
     throw new NotFoundError("Workspace");
   }
 
-  if (workspace.tenantId !== tenantId) {
-    throw new ForbiddenError("You do not have access to this workspace");
-  }
-
   req.workspace = {
-    id: workspace.id,
+    workspaceId: workspace.id,
     tenantId: workspace.tenantId,
     businessName: workspace.businessName,
   };
