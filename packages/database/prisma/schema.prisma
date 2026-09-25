@@ -39,6 +39,8 @@ enum TenantRole {
   MEMBER
 }
 
+// Common
+
 model Tenant {
   id               String       @id @default(uuid())
   name             String
@@ -226,21 +228,6 @@ model Workspace {
   @@map("workspaces")
 }
 
-model CheckPrintingSettings {
-  workspaceId     String  @id @map("workspace_id")
-  approvalEnabled Boolean @default(false) @map("approval_enabled")
-  maxCheckAmount  Decimal @default(999999.99) @map("max_check_amount") @db.Decimal(12, 2)
-  maxPastDays     Int     @default(30) @map("max_past_days")
-  maxFutureDays   Int     @default(90) @map("max_future_days")
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-
-  @@map("check_printing_settings")
-}
-
 model WorkspaceMember {
   id String @id @default(uuid())
 
@@ -277,6 +264,65 @@ model WorkspaceMemberRole {
   @@unique([workspaceMemberId, roleId])
   @@index([roleId])
   @@map("workspace_member_roles")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  tenantId    String   @map("tenant_id")
+  workspaceId String?  @map("workspace_id")
+  userId      String   @map("user_id")
+  productSlug String?  @map("product_slug") @db.VarChar(50)
+  action      String   @db.VarChar(100)
+  entityType  String   @map("entity_type") @db.VarChar(50)
+  entityId    String   @map("entity_id")
+  detailsJson Json?    @map("details_json")
+  ipAddress   String?  @map("ip_address") @db.VarChar(45)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@index([workspaceId, createdAt])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([tenantId, productSlug])
+  @@map("audit_log")
+}
+
+model Session {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  ipAddress String?   @map("ip_address") @db.VarChar(45)
+  userAgent String?   @map("user_agent") @db.VarChar(512)
+  createdAt DateTime  @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}
+
+// Check Printing
+
+model CheckPrintingSettings {
+  workspaceId     String  @id @map("workspace_id")
+  approvalEnabled Boolean @default(false) @map("approval_enabled")
+  maxCheckAmount  Decimal @default(999999.99) @map("max_check_amount") @db.Decimal(12, 2)
+  maxPastDays     Int     @default(30) @map("max_past_days")
+  maxFutureDays   Int     @default(90) @map("max_future_days")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("check_printing_settings")
 }
 
 enum AccountType {
@@ -528,44 +574,5 @@ model CheckTemplate {
   @@map("check_templates")
 }
 
-model AuditLog {
-  id          String   @id @default(uuid())
-  tenantId    String   @map("tenant_id")
-  workspaceId String?  @map("workspace_id")
-  userId      String   @map("user_id")
-  productSlug String?  @map("product_slug") @db.VarChar(50)
-  action      String   @db.VarChar(100)
-  entityType  String   @map("entity_type") @db.VarChar(50)
-  entityId    String   @map("entity_id")
-  detailsJson Json?    @map("details_json")
-  ipAddress   String?  @map("ip_address") @db.VarChar(45)
-  createdAt   DateTime @default(now()) @map("created_at")
+// Clock In Clock Out
 
-  tenant    Tenant     @relation(fields: [tenantId], references: [id])
-  workspace Workspace? @relation(fields: [workspaceId], references: [id])
-  user      User       @relation(fields: [userId], references: [id])
-
-  @@index([tenantId, createdAt])
-  @@index([workspaceId, createdAt])
-  @@index([userId])
-  @@index([entityType, entityId])
-  @@index([tenantId, productSlug])
-  @@map("audit_log")
-}
-
-model Session {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  ipAddress String?   @map("ip_address") @db.VarChar(45)
-  userAgent String?   @map("user_agent") @db.VarChar(512)
-  createdAt DateTime  @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at")
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@index([userId])
-  @@index([tokenHash])
-  @@map("sessions")
-}

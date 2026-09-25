@@ -1,0 +1,25 @@
+{
+  "name": "@smartbusiness/clockinclockout-backend",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -b",
+    "check-types": "tsc --noEmit",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@smartbusiness/database": "workspace:*",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@smartbusiness/auth": "workspace:*",
+    "@smartbusiness/database": "workspace:*",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}
