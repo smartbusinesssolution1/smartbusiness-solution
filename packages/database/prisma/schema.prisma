@@ -91,9 +91,6 @@ model User {
   approvalRecords           ApprovalRecord[]
   sessions                  Session[]
 
-  // Clock In Clock Out
-  employeeProfiles          Employee[]
-
   @@map("users")
 }
 
@@ -221,6 +218,8 @@ model Workspace {
   tenant   Tenant @relation(fields: [tenantId], references: [id])
 
   members               WorkspaceMember[]
+
+  // Check-printing
   bankAccounts          BankAccount[]
   payees                Payee[]
   checks                Check[]
@@ -231,8 +230,6 @@ model Workspace {
 
   // Clock In Clock Out
   attendanceSettings    AttendanceSettings?
-  employees             Employee[]
-  attendanceRecords     AttendanceRecord[]
 
   @@index([tenantId])
   @@map("workspaces")
@@ -252,6 +249,9 @@ model WorkspaceMember {
   deletedAt DateTime? @map("deleted_at")
 
   assignedRoles WorkspaceMemberRole[]
+
+  // Clock In Clock Out
+  employeeProfiles  AttendanceEmployeeDetails[]
 
   @@unique([workspaceId, userId])
   @@index([userId])
@@ -598,77 +598,85 @@ enum AttendanceStatus {
   AUTO_CLOSED
 }
 
-// Per-branch geofence + shift config — replaces the old global OrganizationSettings singleton
 model AttendanceSettings {
   workspaceId     String   @id @map("workspace_id")
   latitude        Decimal  @db.Decimal(9, 6)
   longitude       Decimal  @db.Decimal(9, 6)
   radiusMeters    Int      @default(100) @map("radius_meters")
-  shiftStartTime  String   @map("shift_start_time") @db.VarChar(5) // "09:00"
-  shiftEndTime    String   @map("shift_end_time") @db.VarChar(5)  // "18:00"
-  graceMinutes    Int      @default(15) @map("grace_minutes")
+  graceMinutes    Int?     @default(15) @map("grace_minutes")
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
 
   workspace Workspace @relation(fields: [workspaceId], references: [id])
 
   @@map("attendance_settings")
 }
 
-// Replaces Mongoose `User` (Checkpoint's employee record) — one row per person per branch
-model Employee {
-  id             String   @id @default(uuid())
-  workspaceId    String   @map("workspace_id")
-  userId         String   @map("user_id")
-  employeeCode   String   @map("employee_code")       // was `employeeId`, e.g. "EMP-001"
-  designation    String
-  department     String
-  joinedAt       DateTime @map("joined_at") @db.Date
-  biometricPhotoUrl String @map("biometric_photo_url") // was `avatarUrl` — mandatory face-match reference
-  isActive       Boolean  @default(true) @map("is_active")
+model AttendanceEmployeeDetails {
+  id                String   @id @default(uuid())
+  workspaceMemberId String   @unique @map("workspace_id")
 
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
+  employeeCode      String   @map("employee_code") // was `employeeId`, e.g. "EMP-001"
+  designation       String?
+  department        String?
+  biometricPhotoUrl String   @map("biometric_photo_url") // was `avatarUrl` — mandatory face-match reference
+  isActive          Boolean  @default(true) @map("is_active")
 
-  workspace         Workspace          @relation(fields: [workspaceId], references: [id])
-  user              User               @relation(fields: [userId], references: [id])
-  attendanceRecords AttendanceRecord[]
+  workspaceMember    WorkspaceMember      @relation(fields: [workspaceMemberId], references: [id])
+  attendanceRecords  AttendanceRecord[]
+  schedule           AttendanceSchedule[]
 
-  @@unique([workspaceId, userId])
-  @@unique([workspaceId, employeeCode])
-  @@index([workspaceId])
+  @@index([workspaceMemberId])
   @@map("employees")
 }
 
-// Replaces Mongoose `AttendanceRecord`
 model AttendanceRecord {
   id          String            @id @default(uuid())
-  workspaceId String            @map("workspace_id")
   employeeId  String            @map("employee_id")
-  date        DateTime          @db.Date
-  checkInAt   DateTime?         @map("check_in_at")
-  checkOutAt  DateTime?         @map("check_out_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime?         @updatedAt @map("updated_at")
   status      AttendanceStatus
-  workingHours Decimal          @default(0) @map("working_hours") @db.Decimal(5, 2)
-  notes       String?
   selfieUrl   String?           @map("selfie_url")
 
-  // Geofence + biometric audit trail (was reconstructed ad hoc in service code)
-  checkInLatitude       Decimal? @map("check_in_latitude") @db.Decimal(9, 6)
-  checkInLongitude      Decimal? @map("check_in_longitude") @db.Decimal(9, 6)
-  distanceFromOfficeM   Int?     @map("distance_from_office_m")
-  withinGeofence        Boolean? @map("within_geofence")
-  faceMatchConfidence   Decimal? @map("face_match_confidence") @db.Decimal(5, 2)
+  // Clock In
+  clockInDate                 DateTime  @db.Date
+  clockInTime                 DateTime @map("clock_in_time")
+  clockInLatitude             Decimal   @map("clock_in_latitude") @db.Decimal(9, 6)
+  clockInLongitude            Decimal   @map("clock_in_longitude") @db.Decimal(9, 6)
+  clockInFaceMatchConfidence  Decimal   @map("clock_in_face_match_confidence") @db.Decimal(5, 2)
 
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  // Clock Out
+  clockOutDate                 DateTime  @db.Date
+  clockOutTime                 DateTime  @map("clock_out_time")
+  clockOutLatitude             Decimal   @map("clock_out_latitude") @db.Decimal(9, 6)
+  clockOutLongitude            Decimal   @map("clock_out_longitude") @db.Decimal(9, 6)
+  clockOutFaceMatchConfidence  Decimal   @map("check_out_face_match_confidence") @db.Decimal(5, 2)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  employee  Employee  @relation(fields: [employeeId], references: [id])
+  employee  AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
 
-  @@unique([employeeId, date])
-  @@index([workspaceId, date])
   @@map("attendance_records")
+}
+
+enum Days {
+  SUN
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+}
+
+model AttendanceSchedule {
+  id              String    @id @default(uuid())
+  employeeId      String    @map("employee_id")
+  shiftStartDay   Days
+  shiftStartTime  DateTime
+  shiftEndDay     DateTime
+  shiftEndTime    Days
+
+  employee  AttendanceEmployeeDetails  @relation(fields: [employeeId], references: [id])
+
+  @@map("schedule")
 }

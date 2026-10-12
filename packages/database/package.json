@@ -25,7 +25,7 @@
     }
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/scripts/seed.ts"
   },
   "keywords": [],
   "author": "",
