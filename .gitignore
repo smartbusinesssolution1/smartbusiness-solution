@@ -38,3 +38,27 @@ yarn-error.log*
 *.pem
 
 project-docs/
+
+# Font files (licensed, not committed)
+fonts/*.ttf
+fonts/*.otf
+
+# Generated check PDFs
+uploads/
+
+# Prisma
+prisma/migrations/migration_lock.toml 
+
+# Generated check PDFs
+uploads/
+
+# Local test output
+/*.pdf
+/*.zip 
+cookiejar.txt
+apps/check-printing-backend/micr-test.pdf
+apps/check-printing-backend/check-photo/
+
+# MICR fonts are licensed per installation; never commit them
+apps/check-printing-backend/fonts/
+apps/check-printing-backend/micr/ 

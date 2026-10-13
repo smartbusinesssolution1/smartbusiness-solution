@@ -18,6 +18,9 @@ import {
 } from "./workspace.schema.js";
 import { bankAccountRouter } from "../bank-account/bank-account-route.js";
 import { payeeRouter } from "../payee/payee.route.js";
+import { checkRouter } from "../check/check.routes.js";
+import { approvalRuleRouter } from "../approval-rule/approval-rule.routes.js";
+import { calibrationRouter } from "../calibration/calibration.routes.js";
 
 // ─── Composition Root ──────────────────────────────────────────
 
@@ -105,5 +108,11 @@ router.use(
 );
 
 router.use("/:wid/payees", workspaceMiddleware, payeeRouter);
+
+router.use("/:wid/checks", workspaceMiddleware, checkRouter);
+
+router.use("/:wid/approval-rules", workspaceMiddleware, approvalRuleRouter);
+
+router.use("/:wid/calibration", workspaceMiddleware, calibrationRouter);
 
 export default router;

@@ -1,7 +1,27 @@
-import dotenv from "dotenv";
-dotenv.config();
-
+import "dotenv/config";
+import { createCipheriv, randomBytes } from "crypto";
 import { prisma } from "../src/index.js";
+
+// ============================================================================
+// ENCRYPTION HELPER — mirrors EncryptionService from check-printing-backend
+// so that seeded bank accounts can be decrypted at runtime.
+// ============================================================================
+function seedEncrypt(plainText: string): string {
+  const key = process.env.ENCRYPTION_KEY;
+  if (!key || key.length < 64) {
+    throw new Error(
+      "ENCRYPTION_KEY env var missing or too short (need 64 hex chars). " +
+      "Add it to packages/database/.env or run with ENCRYPTION_KEY=... npx ts-node ..."
+    );
+  }
+  const encryptionKey = Buffer.from(key, "hex");
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey, iv);
+  let encrypted = cipher.update(plainText, "utf-8", "hex");
+  encrypted += cipher.final("hex");
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString("hex")}:${encrypted}:${authTag.toString("hex")}`;
+}
 
 // ============================================================================
 // DETERMINISTIC IDs — Makes API testing and debugging easy
@@ -78,9 +98,9 @@ const IDS = {
 } as const;
 
 // Argon2id hash of "Password1!" — all seed users share this for dev login testing.
-// Generated via: await new PasswordService().hash("Password1!")
+// Generated via: argon2.hash("Password1!", { type: argon2id, memoryCost: 65536, timeCost: 3, parallelism: 4 })
 const SEED_PASSWORD_HASH =
-  "$argon2id$v=19$m=65536,t=3,p=4$hT0eKLeyUbVg6jGlwbQfMA$K5FycyMH8bWEy3UBhzcJYqHE+3B2kAlJBKiVCdkH/dc";
+  "$argon2id$v=19$m=65536,p=4,t=3$p3c2JyNpec+zdlYFqOkEfQ$V/1y7kKAxZkXcmu3K60lR7ut4/8hbM/y1IXdNjnidGw";
 
 // ============================================================================
 // HELPER: date builder
@@ -419,14 +439,14 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       id: IDS.BANK_CHASE,
       workspaceId: workspace.id,
       bankName: "JPMorgan Chase",
-      routingNumberEncrypted: "enc_v1_111000025",
+      routingNumberEncrypted: seedEncrypt("111000025"),
       routingNumberLast4: "0025",
-      accountNumberEncrypted: "enc_v1_987654321012",
+      accountNumberEncrypted: seedEncrypt("987654321012"),
       accountNumberLast4: "1012",
       accountType: "CHECKING",
       nextCheckNumber: 5009,
       checkNumberPadding: 6,
-      signatureImageUrl: "https://storage.smartbusiness.dev/signatures/ga_chase_signature.png",
+      signatureImageUrl: null,
       encryptionKeyVersion: 1,
       isActive: true,
     },
@@ -437,9 +457,9 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       id: IDS.BANK_BOFA,
       workspaceId: workspace.id,
       bankName: "Bank of America",
-      routingNumberEncrypted: "enc_v1_026009593",
+      routingNumberEncrypted: seedEncrypt("026009593"),
       routingNumberLast4: "9593",
-      accountNumberEncrypted: "enc_v1_123456785678",
+      accountNumberEncrypted: seedEncrypt("123456785678"),
       accountNumberLast4: "5678",
       accountType: "CHECKING",
       nextCheckNumber: 1002,
@@ -449,7 +469,7 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       isActive: true,
     },
   });
-  console.log("  ✅ 2 Bank Accounts: Chase, BofA");
+  console.log("  ✅ 2 Bank Accounts: Chase, BofA (encrypted with ENCRYPTION_KEY)");
 
   // ─── Payees ───
   await prisma.payee.createMany({
@@ -573,6 +593,7 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       requiredApprovals: 1,
       allowSelfApproval: false,
       isActive: true,
+      createdById: maria.id,
     },
   });
 
@@ -587,11 +608,39 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
   // ─── Calibration Profiles ───
   await prisma.calibrationProfile.createMany({
     data: [
-      { id: IDS.CAL_MARIA_HP, workspaceId: workspace.id, userId: maria.id, profileName: "HP LaserJet Pro - Main Office", horizontalOffsetPts: -1.44, verticalOffsetPts: -2.88, isDefault: true },
-      { id: IDS.CAL_JENNIFER_BROTHER, workspaceId: workspace.id, userId: jennifer.id, profileName: "Brother HL-L2350DW - Home Office", horizontalOffsetPts: 0.72, verticalOffsetPts: 1.44, isDefault: false },
+      {
+        id: IDS.CAL_MARIA_HP, workspaceId: workspace.id, calibratedById: maria.id,
+        profileName: "HP LaserJet Pro - Main Office", paperSize: "LETTER", tray: "Tray 2",
+        horizontalOffsetPts: -1.44, verticalOffsetPts: -2.88, scaleX: 1.0, scaleY: 1.0,
+        measurementsJson: {
+          unit: "in",
+          sheets: [
+            { x1: 1.02, x2: 7.52, y1: 1.04, y2: 10.04 },
+            { x1: 1.02, x2: 7.52, y1: 1.04, y2: 10.04 },
+            { x1: 1.02, x2: 7.52, y1: 1.04, y2: 10.04 },
+          ],
+          repeatability: { sheets: 3, spreadXPts: 0, spreadYPts: 0 },
+        },
+        refVersion: 2, isDefault: true,
+      },
+      {
+        id: IDS.CAL_JENNIFER_BROTHER, workspaceId: workspace.id, calibratedById: jennifer.id,
+        profileName: "Brother HL-L2350DW - Home Office", paperSize: "A4", tray: "Manual feed",
+        horizontalOffsetPts: 0.72, verticalOffsetPts: 1.44, scaleX: 1.0, scaleY: 1.0,
+        measurementsJson: {
+          unit: "mm",
+          sheets: [
+            { x1: 25.146, x2: 183.896, y1: 24.892, y2: 266.192 },
+            { x1: 25.146, x2: 183.896, y1: 24.892, y2: 266.192 },
+            { x1: 25.146, x2: 183.896, y1: 24.892, y2: 266.192 },
+          ],
+          repeatability: { sheets: 3, spreadXPts: 0, spreadYPts: 0 },
+        },
+        refVersion: 2, isDefault: false,
+      },
     ],
   });
-  console.log("  ✅ 2 Calibration Profiles");
+  console.log("  ✅ 2 Printer (calibration) profiles");
 
   console.log("\n🌿 Green Acres Landscaping — DONE\n");
 }
@@ -684,19 +733,19 @@ async function seedSunshinePool(productId: string, roleMap: Map<string, string>)
       id: IDS.BANK_WELLS,
       workspaceId: workspace.id,
       bankName: "Wells Fargo",
-      routingNumberEncrypted: "enc_v1_121000248",
+      routingNumberEncrypted: seedEncrypt("121000248"),
       routingNumberLast4: "0248",
-      accountNumberEncrypted: "enc_v1_555666777999",
+      accountNumberEncrypted: seedEncrypt("555666777999"),
       accountNumberLast4: "9999",
       accountType: "CHECKING",
       nextCheckNumber: 2003,
       checkNumberPadding: 6,
-      signatureImageUrl: "https://storage.smartbusiness.dev/signatures/sp_wells_signature.png",
+      signatureImageUrl: null,
       encryptionKeyVersion: 1,
       isActive: true,
     },
   });
-  console.log("  ✅ 1 Bank Account: Wells Fargo");
+  console.log("  ✅ 1 Bank Account: Wells Fargo (encrypted)");
 
   await prisma.payee.createMany({
     data: [

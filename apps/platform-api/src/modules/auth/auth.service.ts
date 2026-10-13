@@ -91,10 +91,7 @@ export class AuthService {
     };
   }
 
-  async login(
-    data: LoginInputType,
-    ctx: SessionContext,
-  ): Promise<AuthResult> {
+  async login(data: LoginInputType, ctx: SessionContext): Promise<AuthResult> {
     const user = await this.authRepository.findUserByEmail(data.email);
 
     if (!user) {
@@ -282,8 +279,7 @@ export class AuthService {
     email: string,
     ctx: SessionContext,
   ): Promise<AuthTokens> {
-    const activeCount =
-      await this.authRepository.countActiveSessions(userId);
+    const activeCount = await this.authRepository.countActiveSessions(userId);
     if (activeCount >= refreshTokenConfig.maxSessionsPerUser) {
       await this.authRepository.revokeOldestSession(userId);
     }

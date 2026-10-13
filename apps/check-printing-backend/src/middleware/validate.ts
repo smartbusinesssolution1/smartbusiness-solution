@@ -23,7 +23,17 @@ export function validate(schema: z.ZodType, target: ValidationTarget = "body") {
             throw new ValidationError("Validation Failed", formattedErrors);
         }
         // Replace the original data with the validated + transformed data.
-        req[target] = result.data;
+        // Express 5 exposes req.query as a getter-only property, so it must be redefined, not assigned.
+        if (target === "query") {
+            Object.defineProperty(req, "query", {
+                value: result.data,
+                writable: true,
+                configurable: true,
+                enumerable: true,
+            });
+        } else {
+            req[target] = result.data;
+        }
         next();
     }
 }

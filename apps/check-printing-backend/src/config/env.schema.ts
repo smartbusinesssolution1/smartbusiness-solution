@@ -46,7 +46,21 @@ export const envSchema = z.object({
 
     CORS_ORIGIN: z.string().default("http://localhost:5173"),
 
-    ENCRYPTION_KEY: z.string().min(64, { error: "encryption key must be a 64 character string." })
+    ENCRYPTION_KEY: z.string().min(64, { error: "encryption key must be a 64 character string." }),
+
+    E13B_FONT_PATH: z
+        .string()
+        .default("./micr/MICR.ttf"),
+
+    // When true (the default), printing is refused if the MICR font fails the E-13B glyph check.
+    E13B_FONT_STRICT: z
+        .enum(["true", "false"])
+        .default("true")
+        .transform((val) => val === "true"),
+
+    PDF_STORAGE_PATH: z
+        .string()
+        .default("./uploads"),
 
 })
 

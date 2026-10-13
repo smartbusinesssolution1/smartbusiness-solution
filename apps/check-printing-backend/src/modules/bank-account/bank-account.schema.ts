@@ -1,10 +1,16 @@
 import { z } from "zod";
+import { isValidAbaRoutingNumber } from "../../shared/utils/micr-validation.js";
+
+const routingNumberSchema = z
+    .string()
+    .length(9, { error: "Routing number must be exactly 9 digits" })
+    .regex(/^\d{9}$/, "Routing number must contain only digits")
+    .refine(isValidAbaRoutingNumber, {
+        error: "This is not a valid ABA routing number (check digit does not match). Check for a typo.",
+    });
 
 export const createBankAccountSchema = z.object({
-    routingNumber: z
-        .string()
-        .length(9, { error: "Routing number must be exactly 9 digits" })
-        .regex(/^\d{9}$/, "Routing number must contain only digits"),
+    routingNumber: routingNumberSchema,
 
     accountNumber: z
         .string()
@@ -30,10 +36,7 @@ export const updateBankAccountSchema = z.object({
 });
 
 export const validateRoutingNumberSchema = z.object({
-    routingNumber: z
-        .string()
-        .length(9, "Routing number must be exactly 9 digits")
-        .regex(/^\d{9}$/, "Routing number must contain only digits"),
+    routingNumber: routingNumberSchema,
 });
 
 export type CreateBankAccountInput = z.infer<typeof createBankAccountSchema>;
