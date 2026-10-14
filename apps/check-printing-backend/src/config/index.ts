@@ -55,7 +55,8 @@ export const server = {
   nodeEnv: config.NODE_ENV,
   isDev: config.NODE_ENV === "development",
   isProd: config.NODE_ENV === "production",
-  isStaging: config.NODE_ENV === "staging"
+  isStaging: config.NODE_ENV === "staging",
+  isTest: config.NODE_ENV === "test",
 } as const
 
 export const rateLimit = {

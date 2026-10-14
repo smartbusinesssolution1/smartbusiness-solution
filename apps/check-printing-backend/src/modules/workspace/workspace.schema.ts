@@ -50,7 +50,8 @@ export const updateWorkspaceSchema = z.object({
   state: z.string().regex(US_STATE_REGEX).transform((s) => s.toUpperCase()).optional(),
   zipCode: z.string().regex(ZIP_CODE_REGEX).optional(),
   phone: z.string().regex(PHONE_REGEX).optional().or(z.literal("")),
-  maxCheckAmount: z.number().positive().max(9999999999.99).optional(),
+  // No check can exceed $999,999.99 (the amount the check can spell out), so neither can the limit.
+  maxCheckAmount: z.number().positive().max(999999.99).optional(),
   maxPastDays: z.number().int().min(0).max(365).optional(),
   maxFutureDays: z.number().int().min(0).max(365).optional(),
 });

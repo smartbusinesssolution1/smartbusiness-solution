@@ -109,9 +109,10 @@ export class CheckController {
   };
 
   downloadPdf = async (req: Request, res: Response) => {
-    const { buffer, checkNumber } = await this.checkService.getCheckPdfBuffer(
+    const { buffer, checkNumber } = await this.checkService.downloadCheckPdf(
       req.params.checkId as string,
       req.params.wid as string,
+      this.auditCtx(req),
     );
 
     res.setHeader("Content-Type", "application/pdf");

@@ -1,6 +1,31 @@
 import { prisma, Prisma } from "@smartbusiness/database";
-import { ConflictError } from "../../shared/errors/index.js";
+import type { CheckStatus } from "@smartbusiness/database";
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+} from "../../shared/errors/index.js";
 import type { CreateCheckInput } from "./check.schemas.js";
+
+// Prisma's defaults (2 s to get a connection, 5 s to finish) are too short when a
+// concurrent request must open a new connection to a remote database; the loser
+// of a race would then fail with an opaque P2028 instead of a clear 409.
+const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 } as const;
+
+// True when `err` violates the unique index `indexName`. With the pg driver adapter the
+// index name sits in err.meta.driverAdapterError.cause.constraint; other engines put it
+// elsewhere, so search the whole meta object for the exact name.
+function isUniqueViolationOn(err: unknown, indexName: string): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === "P2002" &&
+    JSON.stringify(err.meta ?? {}).includes(`"${indexName}"`)
+  );
+}
+
+function isRecordNotFound(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025";
+}
 
 // ═══════════════════════════════════════════════════════════════
 // PRISMA INCLUDE CONSTANTS
@@ -43,10 +68,13 @@ const CHECK_INCLUDE = {
       changedBy: { select: USER_SELECT },
     },
   },
+  reissuedFromCheck: { select: { id: true, checkNumber: true } },
+  reissuedToCheck: { select: { id: true, checkNumber: true } },
   approvalRecords: {
     orderBy: { createdAt: "asc" as const },
     select: {
       id: true,
+      round: true,
       decision: true,
       reason: true,
       createdAt: true,
@@ -142,49 +170,76 @@ export class CheckRepository {
 
   async createWithAtomicNumber(
     data: CreateCheckData,
-    initialStatus: string,
+    initialStatus: CheckStatus,
     userId: string,
     ipAddress?: string,
   ) {
-    return prisma.$transaction(async (tx) => {
-      const bankAccount = await tx.bankAccount.update({
-        where: { id: data.bankAccountId },
+    return prisma.$transaction(
+      (tx) => this.insertCheck(tx, data, initialStatus, { userId, ipAddress }),
+      TX_OPTIONS,
+    );
+  }
+
+  // Shared by create and reissue. The bank account filter is part of the
+  // UPDATE, so an account deactivated a moment ago cannot receive a check.
+  private async insertCheck(
+    tx: Prisma.TransactionClient,
+    data: CreateCheckData,
+    initialStatus: CheckStatus,
+    history: { userId: string; ipAddress?: string; reason?: string },
+    reissuedFromCheckId?: string,
+  ) {
+    let nextCheckNumber: number;
+    try {
+      ({ nextCheckNumber } = await tx.bankAccount.update({
+        where: {
+          id: data.bankAccountId,
+          workspaceId: data.workspaceId,
+          isActive: true,
+          deletedAt: null,
+        },
         data: { nextCheckNumber: { increment: 1 } },
         select: { nextCheckNumber: true },
-      });
+      }));
+    } catch (err) {
+      if (isRecordNotFound(err)) {
+        throw new ValidationError("This bank account is inactive or no longer exists", {
+          bankAccountId: ["Choose an active bank account"],
+        });
+      }
+      throw err;
+    }
 
-      const checkNumber = bankAccount.nextCheckNumber - 1;
-
-      const check = await tx.check.create({
-        data: {
-          workspaceId: data.workspaceId,
-          bankAccountId: data.bankAccountId,
-          checkNumber,
-          status: initialStatus as any,
-          payeeName: data.payeeName,
-          amount: data.amount,
-          amountInWords: data.amountInWords,
-          checkDate: data.checkDate,
-          memo: data.memo ?? null,
-          invoiceTableJson: data.invoiceTableJson as Prisma.InputJsonValue ?? Prisma.JsonNull,
-          createdById: data.createdById,
-        },
-        include: CHECK_INCLUDE,
-      });
-
-      await tx.checkStatusHistory.create({
-        data: {
-          checkId: check.id,
-          fromStatus: null,
-          toStatus: initialStatus as any,
-          changeById: userId,
-          reason: null,
-          ipAddress: ipAddress ?? null,
-        },
-      });
-
-      return check;
+    const check = await tx.check.create({
+      data: {
+        workspaceId: data.workspaceId,
+        bankAccountId: data.bankAccountId,
+        checkNumber: nextCheckNumber - 1,
+        status: initialStatus,
+        payeeName: data.payeeName,
+        amount: data.amount,
+        amountInWords: data.amountInWords,
+        checkDate: data.checkDate,
+        memo: data.memo ?? null,
+        invoiceTableJson: (data.invoiceTableJson as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        createdById: data.createdById,
+        reissuedFromCheckId: reissuedFromCheckId ?? null,
+      },
+      include: CHECK_INCLUDE,
     });
+
+    await tx.checkStatusHistory.create({
+      data: {
+        checkId: check.id,
+        fromStatus: null,
+        toStatus: initialStatus,
+        changeById: history.userId,
+        reason: history.reason ?? null,
+        ipAddress: history.ipAddress ?? null,
+      },
+    });
+
+    return check;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -285,7 +340,7 @@ export class CheckRepository {
         checkId: { in: checkIds },
         approverId: userId,
       },
-      select: { checkId: true },
+      select: { checkId: true, round: true },
     });
   }
 
@@ -354,59 +409,188 @@ export class CheckRepository {
       });
 
       return check;
-    }, {
-      // Prisma's defaults (2 s to get a connection, 5 s to finish) are too short when a
-      // concurrent request must open a new connection to a remote database; the loser
-      // of a race would then fail with an opaque P2028 instead of the 409 above.
-      maxWait: 10_000,
-      timeout: 15_000,
-    });
+    }, TX_OPTIONS);
   }
 
   // ═════════════════════════════════════════════════════════════
-  // APPROVAL RECORD CREATION
+  // RECORD AN APPROVAL DECISION (vote and status change, atomic)
   //
-  // AUDIT POINT ADDRESSED: Old docs created ApprovalRecord
-  // without a ruleId. The actual schema requires ruleId as a FK
-  // to ApprovalWorkflowRule. The decision field is a VarChar(10)
-  // string ("approved" or "rejected"), not an enum.
+  // The check row is locked with SELECT ... FOR UPDATE for the
+  // whole transaction, so votes on one check run one at a time.
+  // Each vote sees every vote committed before it, and exactly one
+  // vote makes the transition. Without the lock, two approvers
+  // voting together on a 2-approval rule could both count 2 and
+  // both try to approve; with check-then-insert, one approver
+  // double-clicking could even count twice.
+  //
+  // The unique (check_id, round, approver_id) index is the final
+  // guarantee against a double vote.
+  //
+  // Votes belong to the check's current approval round. A resubmit
+  // starts a new round, so votes cast before an edit never count
+  // toward the edited check.
   // ═════════════════════════════════════════════════════════════
 
-  async createApprovalRecord(data: {
+  async recordDecision(input: {
     checkId: string;
-    ruleId: string;
-    approverId: string;
+    workspaceId: string;
+    // The status the caller validated the decision against (PENDING_APPROVAL, or
+    // NEW when the approval workflow is off and a second person approves directly).
+    fromStatus: CheckStatus;
+    round: number;
+    rule: { id: string; requiredApprovals: number } | null;
     decision: "approved" | "rejected";
     reason?: string | null;
+    userId: string;
+    ipAddress?: string | null;
   }) {
-    return prisma.approvalRecord.create({ data });
+    return prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<{ status: string; approval_round: number }[]>`
+        SELECT status::text AS status, approval_round
+        FROM checks
+        WHERE id = ${input.checkId}
+          AND workspace_id = ${input.workspaceId}
+          AND deleted_at IS NULL
+        FOR UPDATE`;
+
+      const current = locked[0];
+      if (!current) {
+        throw new NotFoundError("Check");
+      }
+      if (current.status !== input.fromStatus || current.approval_round !== input.round) {
+        throw new ConflictError(
+          "This check was changed by another request (it is no longer awaiting this decision). Refresh and try again.",
+        );
+      }
+
+      let approvedCount: number | null = null;
+
+      if (input.rule) {
+        try {
+          await tx.approvalRecord.create({
+            data: {
+              checkId: input.checkId,
+              ruleId: input.rule.id,
+              approverId: input.userId,
+              round: input.round,
+              decision: input.decision,
+              reason: input.reason ?? null,
+            },
+          });
+        } catch (err) {
+          if (isUniqueViolationOn(err, "approval_records_check_id_round_approver_id_key")) {
+            throw new ConflictError("You have already submitted a decision on this check");
+          }
+          throw err;
+        }
+
+        if (input.decision === "approved") {
+          approvedCount = await tx.approvalRecord.count({
+            where: {
+              checkId: input.checkId,
+              round: input.round,
+              ruleId: input.rule.id,
+              decision: "approved",
+            },
+          });
+
+          if (approvedCount < input.rule.requiredApprovals) {
+            const check = await tx.check.findFirstOrThrow({
+              where: { id: input.checkId, workspaceId: input.workspaceId },
+              include: CHECK_INCLUDE,
+            });
+            return { check, transitioned: false, approvedCount };
+          }
+        }
+      }
+
+      const toStatus: CheckStatus = input.decision === "approved" ? "APPROVED" : "REJECTED";
+
+      await tx.check.update({
+        where: { id: input.checkId },
+        data: { status: toStatus },
+      });
+
+      await tx.checkStatusHistory.create({
+        data: {
+          checkId: input.checkId,
+          fromStatus: input.fromStatus,
+          toStatus,
+          changeById: input.userId,
+          reason: input.reason ?? null,
+          ipAddress: input.ipAddress ?? null,
+        },
+      });
+
+      const check = await tx.check.findFirstOrThrow({
+        where: { id: input.checkId, workspaceId: input.workspaceId },
+        include: CHECK_INCLUDE,
+      });
+      return { check, transitioned: true, approvedCount };
+    }, TX_OPTIONS);
   }
 
   // ═════════════════════════════════════════════════════════════
   // UPDATE CHECK DATA (for editing drafts)
   // ═════════════════════════════════════════════════════════════
 
-  async updateData(
+  // The editable statuses and the creator are part of the WHERE
+  // clause, so an edit racing a submit or approval cannot land on a
+  // check that has already moved on: the UPDATE matches no row.
+  async updateDraft(
     checkId: string,
     workspaceId: string,
-    data: Record<string, unknown>,
+    createdById: string,
+    editableStatuses: CheckStatus[],
+    data: Prisma.CheckUncheckedUpdateManyInput,
   ) {
-    return prisma.check.update({
-      where: { id: checkId, workspaceId },
-      data: data as any,
-      include: CHECK_INCLUDE,
-    });
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.check.updateMany({
+        where: {
+          id: checkId,
+          workspaceId,
+          createdById,
+          deletedAt: null,
+          status: { in: editableStatuses },
+        },
+        data,
+      });
+
+      if (count !== 1) {
+        throw new ConflictError(
+          "This check can no longer be edited: another request submitted, approved or deleted it. Refresh and try again.",
+        );
+      }
+
+      return tx.check.findFirstOrThrow({
+        where: { id: checkId, workspaceId },
+        include: CHECK_INCLUDE,
+      });
+    }, TX_OPTIONS);
   }
 
   // ═════════════════════════════════════════════════════════════
   // SOFT DELETE
   // ═════════════════════════════════════════════════════════════
 
-  async softDelete(checkId: string, workspaceId: string) {
-    return prisma.check.update({
-      where: { id: checkId, workspaceId },
+  // Only the creator's drafts; conditional for the same reason as updateDraft.
+  async softDeleteDraft(checkId: string, workspaceId: string, createdById: string) {
+    const { count } = await prisma.check.updateMany({
+      where: {
+        id: checkId,
+        workspaceId,
+        createdById,
+        deletedAt: null,
+        status: "NEW",
+      },
       data: { deletedAt: new Date() },
     });
+
+    if (count !== 1) {
+      throw new ConflictError(
+        "This check can no longer be deleted: another request changed it. Refresh and try again.",
+      );
+    }
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -445,15 +629,10 @@ export class CheckRepository {
     });
   }
 
-  async countApprovedRecords(checkId: string, ruleId: string) {
-    return prisma.approvalRecord.count({
-      where: { checkId, ruleId, decision: "approved" },
-    });
-  }
-
-  async hasUserDecided(checkId: string, userId: string) {
+  async hasUserDecided(checkId: string, round: number, userId: string) {
     return prisma.approvalRecord.findFirst({
-      where: { checkId, approverId: userId },
+      where: { checkId, round, approverId: userId },
+      select: { id: true },
     });
   }
 
@@ -489,50 +668,29 @@ export class CheckRepository {
 
   async createReissue(
     data: CreateCheckData,
-    initialStatus: string,
-    originalCheckId: string,
+    initialStatus: CheckStatus,
+    original: { id: string; checkNumber: number },
     userId: string,
     ipAddress?: string,
   ) {
-    return prisma.$transaction(async (tx) => {
-      const bankAccount = await tx.bankAccount.update({
-        where: { id: data.bankAccountId },
-        data: { nextCheckNumber: { increment: 1 } },
-        select: { nextCheckNumber: true },
-      });
-
-      const checkNumber = bankAccount.nextCheckNumber - 1;
-
-      const check = await tx.check.create({
-        data: {
-          workspaceId: data.workspaceId,
-          bankAccountId: data.bankAccountId,
-          checkNumber,
-          status: initialStatus as any,
-          payeeName: data.payeeName,
-          amount: data.amount,
-          amountInWords: data.amountInWords,
-          checkDate: data.checkDate,
-          memo: data.memo ?? null,
-          invoiceTableJson: data.invoiceTableJson as Prisma.InputJsonValue ?? Prisma.JsonNull,
-          createdById: data.createdById,
-          reissuedFromCheckId: originalCheckId,
-        },
-        include: CHECK_INCLUDE,
-      });
-
-      await tx.checkStatusHistory.create({
-        data: {
-          checkId: check.id,
-          fromStatus: null,
-          toStatus: initialStatus as any,
-          changeById: userId,
-          reason: `Reissued from check #${data.bankAccountId}`,
-          ipAddress: ipAddress ?? null,
-        },
-      });
-
-      return check;
-    });
+    try {
+      return await prisma.$transaction(
+        (tx) =>
+          this.insertCheck(
+            tx,
+            data,
+            initialStatus,
+            { userId, ipAddress, reason: `Reissue of voided check #${original.checkNumber}` },
+            original.id,
+          ),
+        TX_OPTIONS,
+      );
+    } catch (err) {
+      // reissued_from_check_id is unique: a concurrent reissue of the same check lost the race.
+      if (isUniqueViolationOn(err, "checks_reissued_from_check_id_key")) {
+        throw new ConflictError("This check has already been reissued");
+      }
+      throw err;
+    }
   }
 }

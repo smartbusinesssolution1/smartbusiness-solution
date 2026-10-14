@@ -17,7 +17,7 @@ export interface CheckResponse {
   checkDate: string;
   memo: string | null;
   invoiceItems: InvoiceItem[] | null;
-  pdfStorageUrl: string | null;
+  hasPdf: boolean;
   voidReason: string | null;
   voidedAt: string | null;
   printedAt: string | null;

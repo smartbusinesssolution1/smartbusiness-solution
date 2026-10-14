@@ -101,16 +101,32 @@ function convertGroup(n: number): string {
   return (ONES[Math.floor(n / 100)] ?? "") + " Hundred" + (remainder ? ` ${convertGroup(remainder)}` : "");
 }
 
+/** The largest amount a check can carry: Decimal(12,2) and the words converter both stop here. */
+export const MAX_CHECK_AMOUNT = 999999.99;
+
+/** True when `amount` is a whole number of cents (allowing for binary floating point). */
+export function hasAtMostTwoDecimals(amount: number): boolean {
+  const cents = amount * 100;
+  return Number.isFinite(cents) && Math.abs(cents - Math.round(cents)) < 1e-6;
+}
+
 export function amountToWords(amount: number): string {
-  if (amount < 0 || amount > 999999.99) {
+  if (!Number.isFinite(amount) || amount < 0 || amount > MAX_CHECK_AMOUNT) {
     throw new ValidationError("Amount must be between 0 and 999,999.99", {
       amount: ["Amount out of range for check printing"],
     });
   }
+  if (!hasAtMostTwoDecimals(amount)) {
+    throw new ValidationError("Amount must be in whole cents", {
+      amount: ["Amount must have at most 2 decimal places"],
+    });
+  }
 
-  const cents = Math.round((amount % 1) * 100);
-  const dollars = Math.floor(amount);
-  const centsStr = cents.toString().padStart(2, "0");
+  // Work in integer cents: splitting the float itself (amount % 1) is exposed to
+  // binary rounding, and the words are the legally binding amount (UCC 3-114).
+  const totalCents = Math.round(amount * 100);
+  const dollars = Math.floor(totalCents / 100);
+  const centsStr = String(totalCents % 100).padStart(2, "0");
 
   if (dollars === 0) {
     return `Zero and ${centsStr}/100`;
@@ -147,19 +163,23 @@ export function amountToWords(amount: number): string {
 //   complexity and fraud risk
 // ═══════════════════════════════════════════════════════════════
 
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// Calendar day number in UTC. Check dates arrive as "YYYY-MM-DD" (UTC midnight) and are
+// stored as @db.Date, so comparing in UTC gives the same answer on any server timezone.
+function utcDayNumber(date: Date): number {
+  return Math.floor(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) / MS_PER_DAY,
+  );
+}
+
 export function validateCheckDateRange(
   checkDate: Date,
   maxPastDays: number,
   maxFutureDays: number,
+  now: Date = new Date(),
 ): { valid: boolean; error?: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const check = new Date(checkDate);
-  check.setHours(0, 0, 0, 0);
-
-  const diffMs = check.getTime() - today.getTime();
-  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = utcDayNumber(new Date(checkDate)) - utcDayNumber(now);
 
   if (diffDays < -maxPastDays) {
     return {

@@ -1,8 +1,32 @@
 import * as fs from "fs/promises";
 import * as path from "path";
+import { createHash, randomUUID, timingSafeEqual } from "crypto";
+import { AppError } from "../../shared/errors/index.js";
 import { PdfRenderer } from "./pdf.renderer.js";
 import type { CheckPdfData, PaperSize } from "./pdf.types.js";
 import { CALIBRATION_REF, PAPER, PTS_PER_INCH } from "./pdf.types.js";
+
+export interface StoredPdf {
+  /** Path relative to the storage root, using forward slashes. */
+  key: string;
+  sha256: string;
+}
+
+export function sha256Hex(data: Buffer): string {
+  return createHash("sha256").update(data).digest("hex");
+}
+
+/**
+ * Throws unless `target` is strictly inside `root`. Unlike a startsWith check, this
+ * rejects sibling directories that share a prefix ("/uploads-old" vs "/uploads").
+ */
+export function assertInside(root: string, target: string): void {
+  const rel = path.relative(root, target);
+  if (rel === "" || rel.split(path.sep)[0] === ".." || path.isAbsolute(rel)) {
+    // Keys only come from our own database, so this is a server fault: logged, never detailed.
+    throw new AppError(`Storage path escapes the storage root: ${target}`, 500, "INVALID_STORAGE_PATH", false);
+  }
+}
 
 const MM_PER_INCH = 25.4;
 // ISO/IEC 7810 ID-1: every bank card is exactly 85.60 mm wide.
@@ -23,40 +47,79 @@ export class PdfService {
     return this.renderer.render(data);
   }
 
+  /**
+   * Renders and stores a check PDF. Returns a storage key relative to the storage
+   * root, plus the PDF's SHA-256 so every later download can be verified.
+   *
+   * Every print attempt gets its own file: if two prints of one check race, the
+   * loser's file can never overwrite the PDF that the winning print recorded.
+   */
   async generateCheckPdf(
     data: CheckPdfData,
     workspaceId: string,
     checkId: string,
-  ): Promise<string> {
+  ): Promise<StoredPdf> {
     const pdfBuffer = await this.renderer.render(data);
 
-    const workspaceDir = path.join(this.storagePath, "checks", workspaceId);
-    await fs.mkdir(workspaceDir, { recursive: true });
-
     // Keyed by check id: check numbers repeat across bank accounts in one workspace.
-    const fileName = `check-${checkId}.pdf`;
-    const filePath = path.join(workspaceDir, fileName);
+    const key = path.posix.join("checks", workspaceId, `check-${checkId}-${randomUUID()}.pdf`);
+    const filePath = this.resolveKey(key);
 
-    await fs.writeFile(filePath, pdfBuffer);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.writeFile(filePath, pdfBuffer, { flag: "wx", mode: 0o600 });
 
-    return filePath;
+    return { key, sha256: sha256Hex(pdfBuffer) };
   }
 
-  async getPdfBuffer(filePath: string): Promise<Buffer> {
-    const normalizedPath = path.resolve(filePath);
-    const normalizedRoot = path.resolve(this.storagePath);
+  /** Removes a stored PDF that was never recorded on a check (a lost print race). */
+  async deleteStoredPdf(key: string): Promise<void> {
+    await fs.rm(this.resolveKey(key), { force: true });
+  }
 
-    if (!normalizedPath.startsWith(normalizedRoot)) {
-      throw new Error("Invalid PDF path: outside storage directory");
-    }
+  /**
+   * Reads a stored check PDF and verifies it against the SHA-256 recorded at print
+   * time. A modified or truncated file is never served.
+   */
+  async readVerifiedPdf(key: string, expectedSha256: string): Promise<Buffer> {
+    const filePath = this.resolveKey(key);
 
+    let buffer: Buffer;
     try {
-      await fs.access(normalizedPath);
-    } catch {
-      throw new Error("PDF file not found. The check may not have been printed yet.");
+      // realpath defeats a symlink planted inside the storage directory.
+      const [realRoot, realFile] = await Promise.all([
+        fs.realpath(path.resolve(this.storagePath)),
+        fs.realpath(filePath),
+      ]);
+      assertInside(realRoot, realFile);
+      buffer = await fs.readFile(realFile);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError(
+        "The stored PDF for this check is missing. Void the check and reissue it.",
+        410,
+        "CHECK_PDF_MISSING",
+      );
     }
 
-    return fs.readFile(normalizedPath);
+    const actual = Buffer.from(sha256Hex(buffer), "hex");
+    const expected = Buffer.from(expectedSha256, "hex");
+    if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) {
+      throw new AppError(
+        "The stored PDF for this check failed its integrity check and was not served. Void the check and reissue it.",
+        409,
+        "CHECK_PDF_INTEGRITY_FAILED",
+      );
+    }
+
+    return buffer;
+  }
+
+  /** Maps a storage key to a path, refusing anything that escapes the storage root. */
+  private resolveKey(key: string): string {
+    const root = path.resolve(this.storagePath);
+    const filePath = path.resolve(root, key);
+    assertInside(root, filePath);
+    return filePath;
   }
 
   /**

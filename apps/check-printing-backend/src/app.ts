@@ -34,9 +34,11 @@ export function createApp(): Express {
 
   app.use(globalRateLimiter);
 
-  app.use(express.json({ limit: "10mb" }));
+  // The largest legitimate JSON body (a check with 50 invoice lines) is well under
+  // 100 KB. File uploads, when added, get their own multipart limit per route.
+  app.use(express.json({ limit: "100kb" }));
   app.use(cookieParser());
-  app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+  app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
   // Structured request logging (pino-http) — generates reqId + auto-logs completion
   app.use(requestLoggerMiddleware);

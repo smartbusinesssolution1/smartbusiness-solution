@@ -469,7 +469,8 @@ export class PdfRenderer {
         align: "right",
       });
 
-    // Signature image
+    // Signature image. A bank account with a signature must never produce an
+    // unsigned check by accident, so a missing or unreadable image stops the print.
     if (data.signatureImagePath) {
       try {
         doc.image(
@@ -479,7 +480,11 @@ export class PdfRenderer {
           { fit: [el.signature.width, el.signature.height] },
         );
       } catch {
-        // Signature image missing or corrupt — continue without it
+        throw new AppError(
+          "The signature image for this bank account is missing or unreadable, so the check was not printed. Upload the signature again.",
+          422,
+          "SIGNATURE_IMAGE_UNAVAILABLE",
+        );
       }
     }
   }

@@ -1,0 +1,23 @@
+# Disposable Postgres for the integration tests. Data lives in memory (tmpfs),
+# so every `up` starts empty and nothing touches the development database.
+#   pnpm test:db:up     start it (waits until healthy)
+#   pnpm test:db:down   stop and discard it
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: check-printing-test-db
+    environment:
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+      POSTGRES_DB: check_printing_test
+    ports:
+      - "127.0.0.1:54329:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    # Durability is irrelevant for a throwaway database; this makes tests much faster.
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test -d check_printing_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

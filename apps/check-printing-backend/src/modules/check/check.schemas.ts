@@ -1,5 +1,16 @@
 import { z } from "zod";
 import { payeeFitsOnCheck } from "../pdf/text-fit.js";
+import { hasAtMostTwoDecimals, MAX_CHECK_AMOUNT } from "./check.helpers.js";
+
+// A dollar amount as printed on a check: positive, whole cents, within the
+// largest amount the check can spell out. A third decimal would be rounded by
+// the database while the words were computed from the unrounded value.
+const moneySchema = (label: string) =>
+  z
+    .number()
+    .positive(`${label} must be greater than zero`)
+    .max(MAX_CHECK_AMOUNT, `${label} cannot exceed $999,999.99`)
+    .refine(hasAtMostTwoDecimals, { message: `${label} must be in whole cents (at most 2 decimal places)` });
 
 // The payee is a legal name on a negotiable instrument, so it is never truncated on the
 // check. A name that does not fit even at the minimum font size is rejected here, early,
@@ -23,7 +34,7 @@ const payeeNameSchema = z
 
 const invoiceItemSchema = z.object({
   description: z.string().trim().min(1).max(200),
-  amount: z.number().positive().max(999999.99),
+  amount: moneySchema("Invoice line amount"),
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -48,10 +59,7 @@ const invoiceItemSchema = z.object({
 export const createCheckSchema = z.object({
   bankAccountId: z.string().uuid(),
   payeeName: payeeNameSchema,
-  amount: z
-    .number()
-    .positive("Amount must be greater than zero")
-    .max(999999.99, "Amount cannot exceed $999,999.99"),
+  amount: moneySchema("Amount"),
   checkDate: z.coerce.date(),
   memo: z.string().trim().max(500).optional(),
   invoiceItems: z.array(invoiceItemSchema).max(50).optional(),
@@ -71,7 +79,7 @@ export type CreateCheckInput = z.infer<typeof createCheckSchema>;
 
 export const updateCheckSchema = z.object({
   payeeName: payeeNameSchema.optional(),
-  amount: z.number().positive().max(999999.99).optional(),
+  amount: moneySchema("Amount").optional(),
   checkDate: z.coerce.date().optional(),
   memo: z.string().trim().max(500).nullable().optional(),
   invoiceItems: z.array(invoiceItemSchema).max(50).nullable().optional(),
@@ -113,7 +121,7 @@ export type PrintCheckInput = z.infer<typeof printCheckSchema>;
 
 export const clearCheckSchema = z.object({
   clearedDate: z.coerce.date().optional(),
-  clearedAmount: z.number().positive().max(999999.99).optional(),
+  clearedAmount: moneySchema("Cleared amount").optional(),
 });
 
 export type ClearCheckInput = z.infer<typeof clearCheckSchema>;

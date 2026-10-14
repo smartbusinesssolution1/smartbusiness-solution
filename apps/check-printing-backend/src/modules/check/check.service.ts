@@ -1,10 +1,12 @@
 import { CheckRepository } from "./check.repository.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import {
+  AppError,
   ValidationError,
   NotFoundError,
   ConflictError,
 } from "../../shared/errors/index.js";
+import { logger } from "../../shared/services/logger.js";
 import {
   assertTransition,
   amountToWords,
@@ -24,6 +26,11 @@ import type { EncryptionService } from "../../shared/services/encryption.service
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData } from "../pdf/pdf.types.js";
+import { Prisma } from "@smartbusiness/database";
+import type { CheckStatus } from "@smartbusiness/database";
+
+// A check can be edited only before it enters approval, or after a rejection.
+const EDITABLE_STATUSES: CheckStatus[] = ["NEW", "REJECTED"];
 
 export class CheckService {
   constructor(
@@ -75,30 +82,9 @@ export class CheckService {
       throw new NotFoundError("Bank account");
     }
 
-    const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
-    if (!settings) {
-      throw new ValidationError("Workspace check printing settings not configured", {
-        workspace: ["Please configure check printing settings first"],
-      });
-    }
-
-    if (input.amount > Number(settings.maxCheckAmount)) {
-      throw new ValidationError(
-        `Amount exceeds maximum of $${Number(settings.maxCheckAmount).toLocaleString()}`,
-        { amount: [`Maximum check amount is $${Number(settings.maxCheckAmount).toLocaleString()}`] },
-      );
-    }
-
-    const dateCheck = validateCheckDateRange(
-      input.checkDate,
-      settings.maxPastDays,
-      settings.maxFutureDays,
-    );
-    if (!dateCheck.valid) {
-      throw new ValidationError(dateCheck.error!, {
-        checkDate: [dateCheck.error!],
-      });
-    }
+    const settings = await this.requireSettings(workspaceId);
+    this.assertAmountWithinLimit(input.amount, settings);
+    this.assertDateWithinRange(input.checkDate, settings);
 
     const words = amountToWords(input.amount);
 
@@ -221,10 +207,10 @@ export class CheckService {
       checkIds,
       userId,
     );
-    const alreadyVotedOn = new Set(userDecisions.map((d) => d.checkId));
+    const alreadyVotedOn = new Set(userDecisions.map((d) => `${d.checkId}:${d.round}`));
 
     const filtered = allPending.filter((check: any) => {
-      if (alreadyVotedOn.has(check.id)) return false;
+      if (alreadyVotedOn.has(`${check.id}:${check.approvalRound}`)) return false;
 
       const matchedRule = rules.find((rule) => {
         const min = rule.minAmount ? Number(rule.minAmount) : 0;
@@ -271,7 +257,7 @@ export class CheckService {
       throw new NotFoundError("Check");
     }
 
-    if (check.status !== "NEW" && check.status !== "REJECTED") {
+    if (!EDITABLE_STATUSES.includes(check.status)) {
       throw new ValidationError(
         "Only draft or rejected checks can be edited",
         { status: [`Check is in ${check.status} status`] },
@@ -285,37 +271,25 @@ export class CheckService {
       );
     }
 
-    const updateData: Record<string, unknown> = {};
+    const updateData: Prisma.CheckUncheckedUpdateManyInput = {};
 
     if (input.payeeName !== undefined) {
       updateData.payeeName = input.payeeName;
     }
 
-    if (input.amount !== undefined) {
-      const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
-      if (settings && input.amount > Number(settings.maxCheckAmount)) {
-        throw new ValidationError(
-          `Amount exceeds maximum of $${Number(settings.maxCheckAmount).toLocaleString()}`,
-          { amount: [`Maximum check amount is $${Number(settings.maxCheckAmount).toLocaleString()}`] },
-        );
-      }
-      updateData.amount = input.amount;
-      updateData.amountInWords = amountToWords(input.amount);
-    }
+    if (input.amount !== undefined || input.checkDate !== undefined) {
+      const settings = await this.requireSettings(workspaceId);
 
-    if (input.checkDate !== undefined) {
-      const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
-      if (settings) {
-        const dateCheck = validateCheckDateRange(
-          input.checkDate,
-          settings.maxPastDays,
-          settings.maxFutureDays,
-        );
-        if (!dateCheck.valid) {
-          throw new ValidationError(dateCheck.error!, { checkDate: [dateCheck.error!] });
-        }
+      if (input.amount !== undefined) {
+        this.assertAmountWithinLimit(input.amount, settings);
+        updateData.amount = input.amount;
+        updateData.amountInWords = amountToWords(input.amount);
       }
-      updateData.checkDate = input.checkDate;
+
+      if (input.checkDate !== undefined) {
+        this.assertDateWithinRange(input.checkDate, settings);
+        updateData.checkDate = input.checkDate;
+      }
     }
 
     if (input.memo !== undefined) {
@@ -323,12 +297,14 @@ export class CheckService {
     }
 
     if (input.invoiceItems !== undefined) {
-      updateData.invoiceTableJson = input.invoiceItems;
+      updateData.invoiceTableJson = input.invoiceItems ?? Prisma.JsonNull;
     }
 
-    const updated = await this.checkRepository.updateData(
+    const updated = await this.checkRepository.updateDraft(
       checkId,
       workspaceId,
+      ctx.userId,
+      EDITABLE_STATUSES,
       updateData,
     );
 
@@ -445,60 +421,39 @@ export class CheckService {
 
     this.enforceApproverAccess(matchedRule, check.createdById, ctx.userId);
 
-    const existingDecision = await this.checkRepository.hasUserDecided(checkId, ctx.userId);
-    if (existingDecision) {
-      throw new ConflictError(
-        "You have already submitted a decision on this check",
-      );
-    }
+    await this.assertNotYetDecided(check, ctx.userId);
 
-    if (matchedRule) {
-      await this.checkRepository.createApprovalRecord({
-        checkId,
-        ruleId: matchedRule.id,
-        approverId: ctx.userId,
-        decision: "approved",
-      });
-
-      const approvedCount = await this.checkRepository.countApprovedRecords(
-        checkId,
-        matchedRule.id,
-      );
-
-      if (approvedCount < matchedRule.requiredApprovals) {
-        await this.auditService.log({
-          tenantId: ctx.tenantId,
-          userId: ctx.userId,
-          workspaceId,
-          action: "CHECK_APPROVAL_RECORDED",
-          entityType: "Check",
-          entityId: checkId,
-          details: {
-            checkNumber: check.checkNumber,
-            ruleId: matchedRule.id,
-            approvedCount,
-            requiredApprovals: matchedRule.requiredApprovals,
-          },
-          ipAddress: ctx.ipAddress,
-        });
-
-        const current = await this.checkRepository.findById(checkId, workspaceId);
-        return this.formatCheck(current!);
-      }
-    }
-
-    const updated = await this.checkRepository.updateStatus(
+    const result = await this.checkRepository.recordDecision({
       checkId,
       workspaceId,
-      "APPROVED",
-      {
-        checkId,
-        fromStatus: check.status,
-        toStatus: "APPROVED",
-        changedById: ctx.userId,
+      fromStatus: check.status,
+      round: check.approvalRound,
+      rule: matchedRule,
+      decision: "approved",
+      userId: ctx.userId,
+      ipAddress: ctx.ipAddress,
+    });
+
+    if (!result.transitioned) {
+      await this.auditService.log({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        workspaceId,
+        action: "CHECK_APPROVAL_RECORDED",
+        entityType: "Check",
+        entityId: checkId,
+        details: {
+          checkNumber: check.checkNumber,
+          ruleId: matchedRule?.id ?? null,
+          round: check.approvalRound,
+          approvedCount: result.approvedCount,
+          requiredApprovals: matchedRule?.requiredApprovals ?? null,
+        },
         ipAddress: ctx.ipAddress,
-      },
-    );
+      });
+
+      return this.formatCheck(result.check);
+    }
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -511,11 +466,13 @@ export class CheckService {
         checkNumber: check.checkNumber,
         amount: Number(check.amount),
         ruleId: matchedRule?.id ?? null,
+        round: check.approvalRound,
+        approvedCount: result.approvedCount,
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatCheck(updated);
+    return this.formatCheck(result.check);
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -548,36 +505,19 @@ export class CheckService {
 
     this.enforceApproverAccess(matchedRule, check.createdById, ctx.userId);
 
-    const existingDecision = await this.checkRepository.hasUserDecided(checkId, ctx.userId);
-    if (existingDecision) {
-      throw new ConflictError(
-        "You have already submitted a decision on this check",
-      );
-    }
+    await this.assertNotYetDecided(check, ctx.userId);
 
-    if (matchedRule) {
-      await this.checkRepository.createApprovalRecord({
-        checkId,
-        ruleId: matchedRule.id,
-        approverId: ctx.userId,
-        decision: "rejected",
-        reason,
-      });
-    }
-
-    const updated = await this.checkRepository.updateStatus(
+    const { check: updated } = await this.checkRepository.recordDecision({
       checkId,
       workspaceId,
-      "REJECTED",
-      {
-        checkId,
-        fromStatus: check.status,
-        toStatus: "REJECTED",
-        changedById: ctx.userId,
-        reason,
-        ipAddress: ctx.ipAddress,
-      },
-    );
+      fromStatus: check.status,
+      round: check.approvalRound,
+      rule: matchedRule,
+      decision: "rejected",
+      reason,
+      userId: ctx.userId,
+      ipAddress: ctx.ipAddress,
+    });
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -590,6 +530,7 @@ export class CheckService {
         checkNumber: check.checkNumber,
         reason,
         ruleId: matchedRule?.id ?? null,
+        round: check.approvalRound,
       },
       ipAddress: ctx.ipAddress,
     });
@@ -625,6 +566,8 @@ export class CheckService {
       );
     }
 
+    // A new round: votes from before the edit no longer count, and the
+    // approver who rejected may vote again.
     const updated = await this.checkRepository.updateStatus(
       checkId,
       workspaceId,
@@ -636,6 +579,7 @@ export class CheckService {
         changedById: ctx.userId,
         ipAddress: ctx.ipAddress,
       },
+      { approvalRound: { increment: 1 } },
     );
 
     await this.auditService.log({
@@ -645,7 +589,7 @@ export class CheckService {
       action: "CHECK_RESUBMITTED",
       entityType: "Check",
       entityId: checkId,
-      details: { checkNumber: check.checkNumber },
+      details: { checkNumber: check.checkNumber, round: updated.approvalRound },
       ipAddress: ctx.ipAddress,
     });
 
@@ -754,33 +698,44 @@ export class CheckService {
         Array<{ description: string; amount: string }> | null,
     };
 
-    const pdfStorageUrl = await this.pdfService.generateCheckPdf(
+    const stored = await this.pdfService.generateCheckPdf(
       pdfData,
       workspaceId,
       checkId,
     );
 
-    const updated = await this.checkRepository.updateStatus(
-      checkId,
-      workspaceId,
-      "PRINTED",
-      {
+    let updated;
+    try {
+      updated = await this.checkRepository.updateStatus(
         checkId,
-        fromStatus: check.status,
-        toStatus: "PRINTED",
-        changedById: ctx.userId,
-        ipAddress: ctx.ipAddress,
-      },
-      {
-        printedAt: new Date(),
-        printedById: ctx.userId,
-        pdfStorageUrl,
-        calibrationProfileId: printer.profileId,
-        printOffsetXPts: printer.horizontalOffsetPts,
-        printOffsetYPts: printer.verticalOffsetPts,
-        printPaperSize: printer.paperSize,
-      },
-    );
+        workspaceId,
+        "PRINTED",
+        {
+          checkId,
+          fromStatus: check.status,
+          toStatus: "PRINTED",
+          changedById: ctx.userId,
+          ipAddress: ctx.ipAddress,
+        },
+        {
+          printedAt: new Date(),
+          printedById: ctx.userId,
+          pdfStorageUrl: stored.key,
+          pdfSha256: stored.sha256,
+          calibrationProfileId: printer.profileId,
+          printOffsetXPts: printer.horizontalOffsetPts,
+          printOffsetYPts: printer.verticalOffsetPts,
+          printPaperSize: printer.paperSize,
+        },
+      );
+    } catch (err) {
+      // Another request printed this check first (or the update failed): this
+      // attempt's PDF was never recorded, so it must not linger on disk.
+      await this.pdfService.deleteStoredPdf(stored.key).catch((cleanupErr: unknown) => {
+        logger.error({ err: cleanupErr, checkId }, "Failed to remove PDF of an unrecorded print attempt");
+      });
+      throw err;
+    }
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -791,7 +746,8 @@ export class CheckService {
       entityId: checkId,
       details: {
         checkNumber: check.checkNumber,
-        pdfStorageUrl,
+        pdfStorageKey: stored.key,
+        pdfSha256: stored.sha256,
         printer: {
           profileId: printer.profileId,
           profileName: printer.profileName,
@@ -810,20 +766,50 @@ export class CheckService {
   // GET PDF BUFFER (for download endpoint)
   // ═════════════════════════════════════════════════════════════
 
-  async getCheckPdfBuffer(
+  async downloadCheckPdf(
     checkId: string,
     workspaceId: string,
+    ctx: AuditContext,
   ): Promise<{ buffer: Buffer; checkNumber: number }> {
     const check = await this.checkRepository.findById(checkId, workspaceId);
     if (!check) {
       throw new NotFoundError("Check");
     }
 
-    if (!check.pdfStorageUrl) {
-      throw new NotFoundError("PDF not found. The check may not have been printed yet");
+    // The PDF is a negotiable instrument. Once a check is void or has cleared,
+    // handing it out again could only produce a duplicate paper check.
+    if (check.status !== "PRINTED") {
+      const reason =
+        check.status === "VOID"
+          ? `Check #${check.checkNumber} is void, so its PDF can no longer be downloaded.`
+          : check.status === "CLEARED"
+            ? `Check #${check.checkNumber} has cleared the bank, so its PDF can no longer be downloaded.`
+            : `Check #${check.checkNumber} has not been printed yet.`;
+      throw new AppError(reason, 409, "CHECK_PDF_UNAVAILABLE");
     }
 
-    const buffer = await this.pdfService.getPdfBuffer(check.pdfStorageUrl);
+    if (!check.pdfStorageUrl || !check.pdfSha256) {
+      throw new AppError(
+        `No verifiable PDF is stored for check #${check.checkNumber}. Void the check and reissue it.`,
+        410,
+        "CHECK_PDF_MISSING",
+      );
+    }
+
+    const buffer = await this.pdfService.readVerifiedPdf(check.pdfStorageUrl, check.pdfSha256);
+
+    // Written before the bytes leave the server: no audit row, no download.
+    await this.auditService.logOrRefuse({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "CHECK_PDF_DOWNLOADED",
+      entityType: "Check",
+      entityId: checkId,
+      details: { checkNumber: check.checkNumber, pdfSha256: check.pdfSha256 },
+      ipAddress: ctx.ipAddress,
+    });
+
     return { buffer, checkNumber: check.checkNumber };
   }
 
@@ -986,8 +972,10 @@ export class CheckService {
       );
     }
 
-    if ((check as any).reissuedToCheck) {
-      throw new ConflictError("This check has already been reissued");
+    if (check.reissuedToCheck) {
+      throw new ConflictError(
+        `This check has already been reissued as check #${check.reissuedToCheck.checkNumber}`,
+      );
     }
 
     const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
@@ -1010,7 +998,7 @@ export class CheckService {
         createdById: ctx.userId,
       },
       initialStatus,
-      checkId,
+      { id: check.id, checkNumber: check.checkNumber },
       ctx.userId,
       ctx.ipAddress,
     );
@@ -1067,7 +1055,7 @@ export class CheckService {
       );
     }
 
-    await this.checkRepository.softDelete(checkId, workspaceId);
+    await this.checkRepository.softDeleteDraft(checkId, workspaceId, ctx.userId);
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -1092,6 +1080,50 @@ export class CheckService {
   // the same rule-matching logic, and duplicating it would
   // mean bugs could diverge between the two paths.
   // ═════════════════════════════════════════════════════════════
+
+  private async requireSettings(workspaceId: string) {
+    const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
+    if (!settings) {
+      throw new ValidationError("Workspace check printing settings not configured", {
+        workspace: ["Please configure check printing settings first"],
+      });
+    }
+    return settings;
+  }
+
+  private assertAmountWithinLimit(amount: number, settings: { maxCheckAmount: unknown }) {
+    const max = Number(settings.maxCheckAmount);
+    if (amount > max) {
+      const formatted = max.toLocaleString("en-US", { minimumFractionDigits: 2 });
+      throw new ValidationError(`Amount exceeds maximum of $${formatted}`, {
+        amount: [`Maximum check amount is $${formatted}`],
+      });
+    }
+  }
+
+  private assertDateWithinRange(
+    checkDate: Date,
+    settings: { maxPastDays: number; maxFutureDays: number },
+  ) {
+    const dateCheck = validateCheckDateRange(
+      checkDate,
+      settings.maxPastDays,
+      settings.maxFutureDays,
+    );
+    if (!dateCheck.valid) {
+      throw new ValidationError(dateCheck.error!, { checkDate: [dateCheck.error!] });
+    }
+  }
+
+  // Fast, friendly rejection. recordDecision's unique index is the real guarantee.
+  private async assertNotYetDecided(
+    check: { id: string; approvalRound: number },
+    userId: string,
+  ) {
+    if (await this.checkRepository.hasUserDecided(check.id, check.approvalRound, userId)) {
+      throw new ConflictError("You have already submitted a decision on this check");
+    }
+  }
 
   private async findMatchingRule(workspaceId: string, amount: number) {
     const rules = await this.checkRepository.findApprovalRules(workspaceId);
@@ -1174,7 +1206,7 @@ export class CheckService {
     workspaceId: string,
     amount: number,
     approvalEnabled: boolean,
-  ): Promise<string> {
+  ): Promise<CheckStatus> {
     if (!approvalEnabled) {
       return "NEW";
     }
@@ -1215,7 +1247,8 @@ export class CheckService {
       checkDate: check.checkDate,
       memo: check.memo,
       invoiceItems: check.invoiceTableJson,
-      pdfStorageUrl: check.pdfStorageUrl,
+      // Never expose the storage location; clients download through /pdf.
+      hasPdf: Boolean(check.pdfStorageUrl),
       voidReason: check.voidReason,
       voidedAt: check.voidedAt,
       printedAt: check.printedAt,
@@ -1255,6 +1288,12 @@ export class CheckService {
       },
 
       reissuedFromCheckId: check.reissuedFromCheckId,
+      reissuedFrom: check.reissuedFromCheck
+        ? { id: check.reissuedFromCheck.id, checkNumber: check.reissuedFromCheck.checkNumber }
+        : null,
+      reissuedTo: check.reissuedToCheck
+        ? { id: check.reissuedToCheck.id, checkNumber: check.reissuedToCheck.checkNumber }
+        : null,
 
       statusHistory: check.statusHistory?.map((h: any) => ({
         id: h.id,
@@ -1277,18 +1316,20 @@ export class CheckService {
 
     if (records.length === 0) return null;
 
-    const approvedCount = records.filter(
-      (r: any) => r.decision === "approved",
-    ).length;
-
-    const requiredApprovals = records[0]?.rule?.requiredApprovals ?? 1;
+    // Progress counts only the current round; earlier rounds stay visible as history.
+    const round: number = check.approvalRound ?? 1;
+    const currentRound = records.filter((r: any) => r.round === round);
+    const approvedCount = currentRound.filter((r: any) => r.decision === "approved").length;
+    const requiredApprovals: number | null = currentRound[0]?.rule?.requiredApprovals ?? null;
 
     return {
+      round,
       requiredApprovals,
       approvedCount,
-      isFullyApproved: approvedCount >= requiredApprovals,
+      isFullyApproved: requiredApprovals !== null && approvedCount >= requiredApprovals,
       decisions: records.map((r: any) => ({
         id: r.id,
+        round: r.round,
         decision: r.decision,
         reason: r.reason,
         approver: {
