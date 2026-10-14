@@ -604,6 +604,8 @@ model AttendanceSettings {
   longitude       Decimal  @db.Decimal(9, 6)
   radiusMeters    Int      @default(100) @map("radius_meters")
   graceMinutes    Int?     @default(15) @map("grace_minutes")
+  defaultShiftStartTime String   @default("09:00") @map("default_shift_start_time")
+  defaultShiftEndTime   String   @default("18:00") @map("default_shift_end_time")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @updatedAt @map("updated_at")

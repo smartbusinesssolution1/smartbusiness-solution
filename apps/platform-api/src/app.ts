@@ -21,8 +21,9 @@ export function createApp(): Express {
       origin: corsConfig.origin,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id"],
     }),
+
   );
 
   app.use(
@@ -69,6 +70,7 @@ export function createApp(): Express {
   });
 
   app.use("/api/v1", apiRouter);
+  app.use("/api", apiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

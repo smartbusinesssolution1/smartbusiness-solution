@@ -30,7 +30,7 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendCreated(res, { user: result.user, tenants: result.tenants });
+    sendCreated(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
@@ -40,7 +40,7 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
@@ -53,8 +53,9 @@ export class AuthController {
     const result = await this.authService.refresh(rawRefreshToken);
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
+
 
   logout = async (req: Request, res: Response): Promise<void> => {
     const rawRefreshToken = req.cookies?.refresh_token;
