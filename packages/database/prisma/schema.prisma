@@ -359,6 +359,12 @@ model Check {
   memo             String?
   invoiceTableJson Json?       @map("invoice_table_json")
   pdfStorageUrl    String?     @map("pdf_storage_url")
+  // SHA-256 of the stored PDF, checked on every download so a modified file is never served
+  pdfSha256        String?     @map("pdf_sha256") @db.Char(64)
+
+  // Starts at 1 and increases on every resubmit. Approval votes belong to one round,
+  // so votes cast before an edit never count toward the edited check.
+  approvalRound    Int         @default(1) @map("approval_round")
 
   // Void fields
   voidReason String?   @map("void_reason")
@@ -492,6 +498,7 @@ model ApprovalRecord {
   checkId    String   @map("check_id") // Which check was this decision about?
   ruleId     String   @map("rule_id") // Which rule triggered this approval?
   approverId String   @map("approver_id") // Who made the decision?
+  round      Int      // Check.approvalRound when the decision was made
   decision   String   @db.VarChar(10) // approved or rejected
   reason     String? // rejected reason
   createdAt  DateTime @default(now()) @map("created_at") //When was the decision made?
@@ -503,6 +510,8 @@ model ApprovalRecord {
   rule     ApprovalWorkflowRule @relation(fields: [ruleId], references: [id])
   approver User                 @relation(fields: [approverId], references: [id])
 
+  // One vote per approver per round, enforced by the database so concurrent clicks cannot count twice
+  @@unique([checkId, round, approverId])
   @@index([checkId])
   @@map("approval_records")
 }

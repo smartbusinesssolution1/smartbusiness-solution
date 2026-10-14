@@ -62,3 +62,5 @@ apps/check-printing-backend/check-photo/
 # MICR fonts are licensed per installation; never commit them
 apps/check-printing-backend/fonts/
 apps/check-printing-backend/micr/ 
+# TypeScript incremental build state
+*.tsbuildinfo
