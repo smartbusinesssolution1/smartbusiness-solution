@@ -8,6 +8,7 @@
   "scripts": {
     "generate": "prisma generate",
     "build": "pnpm run generate && tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
     "clean": "rm -rf dist generated/prisma",
     "check-types": "tsc --noEmit",
     "db:migrate:dev": "prisma migrate dev",
@@ -16,8 +17,11 @@
     "db:migrate:reset": "prisma migrate reset",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "seed:attendance": "tsx scripts/seed-attendance.ts",
+    "seed:workspaces": "tsx scripts/add-test-workspaces.ts",
     "db:studio": "prisma studio"
   },
+
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",

@@ -123,7 +123,7 @@ async function seedEmployees() {
       id: IDS.EMPLOYEES.MARIA,
       workspaceId: IDS.WORKSPACES.GREEN_ACRES,
       userId: IDS.USERS.MARIA,
-      employeeCode: "EMP-001",
+      employeeCode: "EMP-GA001",
       designation: "Operations Manager",
       department: "Operations",
       biometricPhotoUrl:
@@ -133,7 +133,7 @@ async function seedEmployees() {
       id: IDS.EMPLOYEES.JENNIFER,
       workspaceId: IDS.WORKSPACES.GREEN_ACRES,
       userId: IDS.USERS.JENNIFER,
-      employeeCode: "EMP-002",
+      employeeCode: "EMP-GA002",
       designation: "Office Administrator",
       department: "Administration",
       biometricPhotoUrl:
@@ -143,7 +143,7 @@ async function seedEmployees() {
       id: IDS.EMPLOYEES.DAVID,
       workspaceId: IDS.WORKSPACES.GREEN_ACRES,
       userId: IDS.USERS.DAVID,
-      employeeCode: "EMP-003",
+      employeeCode: "EMP-GA003",
       designation: "Field Supervisor",
       department: "Field Operations",
       biometricPhotoUrl:
@@ -153,7 +153,7 @@ async function seedEmployees() {
       id: IDS.EMPLOYEES.SARAH,
       workspaceId: IDS.WORKSPACES.SUNSHINE,
       userId: IDS.USERS.SARAH,
-      employeeCode: "EMP-101",
+      employeeCode: "SP-001",
       designation: "Service Manager",
       department: "Pool Maintenance",
       biometricPhotoUrl:
@@ -345,7 +345,7 @@ async function seedAttendanceSchedules() {
       employeeId: IDS.EMPLOYEES.MARIA,
       shiftStartDay: "MON" as const,
       shiftStartTime: shiftTime(9, 0),
-      shiftEndDay: "MON" as const,
+      shiftEndDay: shiftTime(17, 0),
       shiftEndTime: "FRI" as const,
     },
     {
@@ -353,7 +353,7 @@ async function seedAttendanceSchedules() {
       employeeId: IDS.EMPLOYEES.JENNIFER,
       shiftStartDay: "MON" as const,
       shiftStartTime: shiftTime(9, 0),
-      shiftEndDay: "MON" as const,
+      shiftEndDay: shiftTime(17, 0),
       shiftEndTime: "FRI" as const,
     },
     {
@@ -361,7 +361,7 @@ async function seedAttendanceSchedules() {
       employeeId: IDS.EMPLOYEES.DAVID,
       shiftStartDay: "MON" as const,
       shiftStartTime: shiftTime(8, 0),
-      shiftEndDay: "MON" as const,
+      shiftEndDay: shiftTime(16, 30),
       shiftEndTime: "FRI" as const,
     },
     {
@@ -369,7 +369,7 @@ async function seedAttendanceSchedules() {
       employeeId: IDS.EMPLOYEES.SARAH,
       shiftStartDay: "MON" as const,
       shiftStartTime: shiftTime(8, 30),
-      shiftEndDay: "MON" as const,
+      shiftEndDay: shiftTime(17, 0),
       shiftEndTime: "FRI" as const,
     },
   ];
