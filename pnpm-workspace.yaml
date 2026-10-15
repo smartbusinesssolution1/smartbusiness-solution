@@ -2,8 +2,10 @@ packages:
   - "apps/*"
   - "packages/*"
 allowBuilds:
+  '@google/genai': true
   '@prisma/engines': true
   argon2: false
   esbuild: true
   msgpackr-extract: true
   prisma: true
+  protobufjs: true

@@ -46,6 +46,7 @@ export const LoginPage: React.FC = () => {
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -345,6 +346,71 @@ export const LoginPage: React.FC = () => {
                 {error}
               </Alert>
             )}
+
+            {/* Demo Admin Auto-fill Quick Pill */}
+            <Box
+              onClick={() => {
+                setValue('email', 'maria@greenacres.com', { shouldValidate: true });
+                setValue('password', 'Password1!', { shouldValidate: true });
+                setError(null);
+              }}
+              sx={{
+                mb: 2.5,
+                p: 1.5,
+                borderRadius: '12px',
+                bgcolor: '#F0FDF4',
+                border: '1px solid #BBF7D0',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                transition: 'all 0.2s ease',
+                '&:hover': {
+                  bgcolor: '#DCFCE7',
+                  borderColor: '#86EFAC',
+                  transform: 'translateY(-1px)',
+                },
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Typography sx={{ fontSize: '0.85rem' }}>🔑</Typography>
+                <Box>
+                  <Typography
+                    sx={{
+                      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      color: '#15803D',
+                    }}
+                  >
+                    Quick Fill Demo Admin
+                  </Typography>
+                  <Typography
+                    sx={{
+                      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                      fontSize: '0.72rem',
+                      color: '#166534',
+                    }}
+                  >
+                    maria@greenacres.com • Password1!
+                  </Typography>
+                </Box>
+              </Box>
+              <Typography
+                sx={{
+                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  color: '#15803D',
+                  bgcolor: '#BBF7D0',
+                  px: 1,
+                  py: 0.3,
+                  borderRadius: '6px',
+                }}
+              >
+                Auto-fill
+              </Typography>
+            </Box>
 
             {/* Form */}
             <form onSubmit={handleSubmit(onSubmit)}>

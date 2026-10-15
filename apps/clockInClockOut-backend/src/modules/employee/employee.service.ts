@@ -50,5 +50,22 @@ export class EmployeeService {
       workspaceName: emp.workspaceMember.workspace.businessName,
     }));
   }
+
+  /**
+   * Update employee profile (biometricPhotoUrl)
+   */
+  async updateEmployeeProfile(userId: string, tenantId: string, data: { biometricPhotoUrl?: string }) {
+    const employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
+
+    if (!employee) {
+      throw new AppError("Employee attendance profile not found for this workspace.", 404);
+    }
+
+    const updated = await this.employeeRepo.updateEmployeeProfile(employee.id, data);
+    return {
+      id: updated.id,
+      biometricPhotoUrl: updated.biometricPhotoUrl,
+    };
+  }
 }
 

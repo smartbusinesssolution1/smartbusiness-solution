@@ -264,6 +264,15 @@ export class AuthService {
     };
   }
 
+  async updateProfile(userId: string, data: { fullName?: string }): Promise<AuthUser> {
+    const updatedUser = await this.authRepository.updateUserProfile(userId, data);
+    return {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      fullName: updatedUser.fullName,
+    };
+  }
+
   // ─── Private Helpers ─────────────────────────────────────────
 
   private extractTenants(user: UserWithTenants): TenantInfo[] {

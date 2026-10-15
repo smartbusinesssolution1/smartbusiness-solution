@@ -80,6 +80,11 @@ export class AuthController {
     sendSuccess(res, result);
   };
 
+  updateProfile = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.authService.updateProfile(req.user!.userId, req.body);
+    sendSuccess(res, { user: result, message: "Profile updated successfully." });
+  };
+
   // ─── Cookie Helpers ──────────────────────────────────────────
 
   private setAuthCookies(

@@ -76,5 +76,17 @@ export class EmployeeRepository {
       },
     });
   }
+
+  /**
+   * Update employee profile (biometricPhotoUrl) by employee detail ID
+   */
+  async updateEmployeeProfile(id: string, data: { biometricPhotoUrl?: string }) {
+    return prisma.attendanceEmployeeDetails.update({
+      where: { id },
+      data: {
+        ...(data.biometricPhotoUrl ? { biometricPhotoUrl: data.biometricPhotoUrl } : {}),
+      },
+    });
+  }
 }
 

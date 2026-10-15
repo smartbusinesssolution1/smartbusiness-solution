@@ -72,9 +72,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addWorkspace = async (name: string, details?: Partial<Workspace>): Promise<Workspace> => {
     try {
-      const newWs = authService.addWorkspace(name, details);
+      const newWs = await authService.addWorkspace(name, details);
       setCurrentWorkspace(newWs);
-      setWorkspaces(authService.getWorkspaces());
+      await refreshWorkspaces();
       return newWs;
     } catch (err) {
       console.error('Failed to add workspace:', err);

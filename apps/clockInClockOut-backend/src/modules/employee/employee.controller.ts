@@ -35,5 +35,21 @@ export class EmployeeController {
       data: employees,
     });
   };
+
+  /**
+   * PATCH /api/v1/employees/me
+   * Update authenticated employee's biometric photo / avatar
+   */
+  updateMe = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.userId;
+    const tenantId = req.tenant!.tenantId;
+    const result = await this.employeeService.updateEmployeeProfile(userId, tenantId, req.body);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: "Employee profile updated successfully.",
+    });
+  };
 }
 

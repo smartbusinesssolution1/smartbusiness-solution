@@ -9,29 +9,37 @@ export const envSchema = z.object({
         .int()
         .positive(),
 
+
     ORIGIN: z
         .string()
         .min(1)
         .transform((value) =>
             value
-            .split(",")
-            .map((origin) => origin.trim())
-            .filter(Boolean)
+                .split(",")
+                .map((origin) => origin.trim())
+                .filter(Boolean)
         )
-        .pipe( z
-            .array( z
-                .url()
-                .refine(
-                    (value) => {
-                        const url = new URL(value);
-                        return url.protocol === "http:" || url.protocol === "https:";
-                    },
-                    {
-                        message: "ORIGIN must use http or https",
-                    }
+        .pipe(
+            z
+                .array(
+                    z.union([
+                        z.literal("*"),
+                        z.url().refine(
+                            (value) => {
+                                const url = new URL(value);
+                                return (
+                                    url.protocol === "http:" ||
+                                    url.protocol === "https:"
+                                );
+                            },
+                            {
+                                message: "ORIGIN must use http or https",
+                            }
+                        ),
+                    ])
                 )
-            )
-            .min(1)),
+                .min(1)
+        ),
 
     DATABASE_URL: z
         .string()

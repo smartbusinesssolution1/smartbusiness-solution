@@ -16,7 +16,7 @@ export function createApp(): Express {
     app.set("trust proxy", 1);
 
     app.use(corsMiddleware({
-        origin: env.server.origin,
+        origin: env.server.origin.includes("*") ? true : env.server.origin,
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
         allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id"],

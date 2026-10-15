@@ -40,4 +40,24 @@ export class WorkspaceController {
       next(err);
     }
   };
+
+  /**
+   * POST /api/v1/workspaces
+   * Create a new workspace under the current tenant
+   */
+  create = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const tenantId = req.tenant!.tenantId;
+      const userId = req.user!.userId;
+      const workspace = await this.workspaceService.createWorkspace(tenantId, userId, req.body);
+
+      res.status(201).json({
+        success: true,
+        data: workspace,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
 }
+

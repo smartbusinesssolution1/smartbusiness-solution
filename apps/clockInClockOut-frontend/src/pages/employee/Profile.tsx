@@ -13,7 +13,6 @@ import {
   Button,
   Avatar,
   Divider,
-  Paper,
   Snackbar,
   Alert,
   Chip,
@@ -23,18 +22,18 @@ import {
 import {
   Person as PersonIcon,
   Badge as BadgeIcon,
-  Email as EmailIcon,
   Phone as PhoneIcon,
   Work as WorkIcon,
   CalendarToday as DateIcon,
   Save as SaveIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
-import { getSessionUser, setSessionUser, getUsers, saveUsers } from '../../services/mockDb';
+import { setSessionUser, getUsers, saveUsers } from '../../services/mockDb';
+import { clockInApi, platformAuthApi } from '../../services/apiClient';
 
 const profileSchema = z.object({
+  name: z.string().trim().min(2, 'Full name must be at least 2 characters'),
   phone: z.string().trim().min(5, 'Phone number must be at least 5 digits'),
-  avatarUrl: z.string().trim().url('Please enter a valid image URL').or(z.string().length(0)),
 });
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
@@ -45,51 +44,81 @@ export const EmployeeProfile: React.FC = () => {
 
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMsg, setSnackbarMsg] = useState('');
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success');
   const [isUpdating, setIsUpdating] = useState(false);
 
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
+      name: user?.name || '',
       phone: user?.phone || '',
-      avatarUrl: user?.avatarUrl || '',
     },
   });
+
+  // Keep form in sync when user loads or updates
+  React.useEffect(() => {
+    if (user) {
+      reset({
+        name: user.name || '',
+        phone: user.phone || '',
+      });
+    }
+  }, [user, reset]);
 
   const onSubmit = async (data: ProfileFormValues) => {
     if (!user) return;
     setIsUpdating(true);
     
-    // Simulate API delay
-    setTimeout(() => {
+    try {
+      // 1. Persist Name to central platform-api (PostgreSQL users table)
       try {
-        const dbUsers = getUsers();
-        const index = dbUsers.findIndex((u) => u.id === user.id);
-        
-        if (index !== -1) {
-          const updated = {
-            ...dbUsers[index],
-            phone: data.phone,
-            avatarUrl: data.avatarUrl || dbUsers[index].avatarUrl,
-          };
-          dbUsers[index] = updated;
-          saveUsers(dbUsers);
-          setSessionUser(updated);
-          updateCurrentUserState(updated);
-          setSnackbarMsg('Personal profile details updated successfully!');
-          setSnackbarOpen(true);
-        }
-      } catch (err) {
-        console.error(err);
-        setSnackbarMsg('Failed to update profile.');
-        setSnackbarOpen(true);
-      } finally {
-        setIsUpdating(false);
+        await clockInApi.patch('/api/v1/auth/profile', {
+          fullName: data.name,
+        });
+      } catch (authErr) {
+        await platformAuthApi.patch('/api/v1/auth/profile', {
+          fullName: data.name,
+        }).catch(() => {});
       }
-    }, 600);
+
+      // 2. Update local session & mockDb
+      const dbUsers = getUsers();
+      const index = dbUsers.findIndex((u) => u.id === user.id || u.email.toLowerCase() === user.email.toLowerCase());
+      
+      const updated: User = {
+        ...(index !== -1 ? dbUsers[index] : user),
+        ...user,
+        name: data.name,
+        phone: data.phone,
+        // Employees cannot update their profile picture
+        avatarUrl: index !== -1 ? dbUsers[index].avatarUrl : user.avatarUrl,
+      };
+
+      if (index !== -1) {
+        dbUsers[index] = updated;
+      } else {
+        dbUsers.push(updated);
+      }
+
+      saveUsers(dbUsers);
+      setSessionUser(updated);
+      updateCurrentUserState(updated);
+      setSnackbarSeverity('success');
+      setSnackbarMsg('Personal profile details updated and saved successfully!');
+      setSnackbarOpen(true);
+    } catch (err: any) {
+      console.error('Failed to update employee profile:', err);
+      setSnackbarSeverity('error');
+      setSnackbarMsg(err?.response?.data?.error?.message || err?.message || 'Failed to update profile.');
+      setSnackbarOpen(true);
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   return (
@@ -187,25 +216,12 @@ export const EmployeeProfile: React.FC = () => {
                     <TextField
                       fullWidth
                       label="Full Name"
-                      value={user?.name || ''}
-                      disabled
+                      error={!!errors.name}
+                      helperText={errors.name?.message}
+                      {...register('name')}
                       slotProps={{
                         input: {
                           startAdornment: <PersonIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                        },
-                      }}
-                    />
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <TextField
-                      fullWidth
-                      label="Official Email Address"
-                      value={user?.email || ''}
-                      disabled
-                      slotProps={{
-                        input: {
-                          startAdornment: <EmailIcon sx={{ color: 'text.secondary', mr: 1 }} />,
                         },
                       }}
                     />
@@ -223,17 +239,6 @@ export const EmployeeProfile: React.FC = () => {
                           startAdornment: <PhoneIcon sx={{ color: 'text.secondary', mr: 1 }} />,
                         },
                       }}
-                    />
-                  </Grid>
-
-                  <Grid size={{ xs: 12, sm: 6 }}>
-                    <TextField
-                      fullWidth
-                      label="Avatar Image URL"
-                      placeholder="https://images.unsplash.com/photo-..."
-                      error={!!errors.avatarUrl}
-                      helperText={errors.avatarUrl?.message}
-                      {...register('avatarUrl')}
                     />
                   </Grid>
 
@@ -267,7 +272,7 @@ export const EmployeeProfile: React.FC = () => {
         onClose={() => setSnackbarOpen(false)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
-        <Alert onClose={() => setSnackbarOpen(false)} severity="success" sx={{ width: '100%', borderRadius: 2 }}>
+        <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%', borderRadius: 2 }}>
           {snackbarMsg}
         </Alert>
       </Snackbar>

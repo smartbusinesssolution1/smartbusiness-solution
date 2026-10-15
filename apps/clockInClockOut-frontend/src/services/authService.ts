@@ -191,29 +191,51 @@ export const authService = {
   },
 
   /**
-   * Add a new workspace / branch under the current tenant
+   * Add a new workspace / branch under the current tenant via backend API
    */
-  addWorkspace(name: string, details?: Partial<Workspace>): Workspace {
+  async addWorkspace(name: string, details?: Partial<Workspace>): Promise<Workspace> {
     const currentTenant = this.getCurrentTenant();
-    const newWs: Workspace = {
-      id: 'ws_' + Date.now(),
-      tenantId: currentTenant.id,
-      name,
-      address: details?.address || '100 Business Pkwy',
+    const payload = {
+      businessName: name,
+      addressLine1: details?.address || '100 Business Pkwy',
+      addressLine2: '',
       city: details?.city || 'Austin',
-      state: details?.state || 'TX',
+      state: (details?.state || 'TX').toUpperCase(),
       zipCode: details?.zipCode || '78701',
-      phone: details?.phone || '(512) 555-0199',
-      isDefault: false,
-      employeeCount: 1,
-      createdAt: new Date().toISOString(),
-      ...details,
+      phone: details?.phone || '',
     };
-    const list = [newWs, ...this.getWorkspaces()];
-    this.setWorkspaces(list);
-    this.switchWorkspace(newWs.id);
-    return newWs;
+
+    try {
+      const res = await clockInApi.post('/api/v1/workspaces', payload);
+      if (res.data?.success && res.data.data) {
+        const item = res.data.data;
+        const newWs: Workspace = {
+          id: item.id,
+          tenantId: item.tenantId || currentTenant.id,
+          name: item.name || item.businessName,
+          address: item.address || item.addressLine1 || payload.addressLine1,
+          city: item.city || payload.city,
+          state: item.state || payload.state,
+          zipCode: item.zipCode || payload.zipCode,
+          phone: item.phone || payload.phone,
+          isDefault: false,
+          employeeCount: item.employeeCount ?? 1,
+          createdAt: item.createdAt || new Date().toISOString(),
+        };
+
+        const list = [newWs, ...this.getWorkspaces().filter((w) => w.id !== newWs.id)];
+        this.setWorkspaces(list);
+        this.switchWorkspace(newWs.id);
+        return newWs;
+      }
+    } catch (err) {
+      console.error('Failed to create workspace on backend:', err);
+      throw err;
+    }
+
+    throw new Error('Failed to create workspace.');
   },
+
 
   /**
    * Log in via Centralized platform-api (Port 3001)
@@ -336,8 +358,9 @@ export const authService = {
         };
       }
 
+      const errorObj = error.response?.data?.error;
       const errorMsg =
-        error.response?.data?.error ||
+        (typeof errorObj === 'object' ? errorObj?.message : errorObj) ||
         error.response?.data?.message ||
         error.message ||
         'Invalid credentials. Please verify your email and password.';
@@ -540,18 +563,19 @@ export const authService = {
           console.warn('Could not fetch employee profile on session restore:', empErr);
         }
 
+        const existingUser = getSessionUser();
         const user: User = {
           id: authUser.id,
-          employeeId: employeeProfile?.employeeCode || 'EMP-GA001',
-          name: authUser.fullName,
+          employeeId: employeeProfile?.employeeCode || existingUser?.employeeId || 'EMP-GA001',
+          name: authUser.fullName || existingUser?.name || 'Admin',
           email: authUser.email,
-          phone: '+1 (555) 019-2834',
+          phone: (existingUser && existingUser.id === authUser.id && existingUser.phone) ? existingUser.phone : '+1 (555) 019-2834',
           role: 'admin',
           status: 'active',
-          designation: employeeProfile?.designation || 'Operations Manager',
-          department: employeeProfile?.department || 'Operations',
-          joinedDate: '2024-01-15',
-          avatarUrl: employeeProfile?.biometricPhotoUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+          designation: employeeProfile?.designation || existingUser?.designation || 'Operations Manager',
+          department: employeeProfile?.department || existingUser?.department || 'Operations',
+          joinedDate: existingUser?.joinedDate || '2024-01-15',
+          avatarUrl: employeeProfile?.biometricPhotoUrl || existingUser?.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
         };
 
         setSessionUser(user);

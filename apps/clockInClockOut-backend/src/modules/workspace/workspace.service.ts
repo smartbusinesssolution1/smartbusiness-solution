@@ -1,5 +1,6 @@
 import { WorkspaceRepository } from "./workspace.repository.js";
 import { NotFoundError } from "../../shared/errors/index.js";
+import { CreateWorkspaceInput } from "./workspace.schema.js";
 
 export interface WorkspaceResponseDTO {
   id: string;
@@ -74,4 +75,30 @@ export class WorkspaceService {
     }
     return this.formatWorkspace(record, 0);
   }
+
+  /**
+   * Create a new workspace and register the creator as member.
+   */
+  async createWorkspace(
+    tenantId: string,
+    userId: string,
+    input: CreateWorkspaceInput,
+  ): Promise<WorkspaceResponseDTO> {
+    const record = await this.workspaceRepository.createWorkspace(
+      {
+        tenantId,
+        businessName: input.businessName,
+        addressLine1: input.addressLine1,
+        addressLine2: input.addressLine2,
+        city: input.city,
+        state: input.state,
+        zipCode: input.zipCode,
+        phone: input.phone,
+      },
+      userId,
+    );
+
+    return this.formatWorkspace(record, 1);
+  }
 }
+

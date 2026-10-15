@@ -114,6 +114,15 @@ export class AuthRepository {
     });
   }
 
+  async updateUserProfile(userId: string, data: { fullName?: string }): Promise<User> {
+    return prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(data.fullName ? { fullName: data.fullName } : {}),
+      },
+    });
+  }
+
   async findUserById(userId: string): Promise<UserWithTenants | null> {
     return prisma.user.findFirst({
       where: { id: userId, deletedAt: null },

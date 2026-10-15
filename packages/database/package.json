@@ -21,7 +21,6 @@
     "seed:workspaces": "tsx scripts/add-test-workspaces.ts",
     "db:studio": "prisma studio"
   },
-
   "exports": {
     ".": {
       "types": "./dist/src/index.d.ts",

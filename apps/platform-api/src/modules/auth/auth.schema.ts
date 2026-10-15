@@ -23,5 +23,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const updateProfileSchema = z.object({
+  fullName: z.string().min(1, "Full Name is required").max(255).trim().optional(),
+});
+
 export type RegisterInputType = z.infer<typeof registerSchema>;
 export type LoginInputType = z.infer<typeof loginSchema>;
+export type UpdateProfileInputType = z.infer<typeof updateProfileSchema>;

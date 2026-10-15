@@ -15,6 +15,7 @@ import {
   useTheme,
   alpha,
   Grid,
+  CircularProgress,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
@@ -41,25 +42,26 @@ export const WorkspaceSelectPage: React.FC = () => {
 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
   const companyName = currentTenant?.name || 'Green Acres Landscaping LLC';
-
 
   const handleSelectWorkspace = async (ws: Workspace) => {
     try {
       await switchWorkspace(ws.id);
-      setToastMessage(`Active workspace: ${ws.name}`);
+      setToast({ message: `Active workspace: ${ws.name}`, severity: 'success' });
       setTimeout(() => {
         navigate('/admin/dashboard');
       }, 350);
     } catch {
-      setToastMessage('Failed to switch workspace');
+      setToast({ message: 'Failed to switch workspace', severity: 'error' });
     }
   };
 
@@ -69,27 +71,64 @@ export const WorkspaceSelectPage: React.FC = () => {
     setCity('');
     setState('');
     setZipCode('');
+    setFormErrors({});
     setIsAddModalOpen(true);
+  };
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    if (!name.trim()) {
+      errors.name = 'Workspace name is required';
+    }
+    if (!addressLine1.trim()) {
+      errors.addressLine1 = 'Street address is required';
+    }
+    if (!city.trim()) {
+      errors.city = 'City is required';
+    }
+    const cleanState = state.trim().toUpperCase();
+    if (!cleanState || !/^[A-Za-z]{2}$/.test(cleanState)) {
+      errors.state = 'State must be a 2-letter code (e.g. TX)';
+    }
+    const cleanZip = zipCode.trim();
+    if (!cleanZip || !/^\d{5}(-\d{4})?$/.test(cleanZip)) {
+      errors.zipCode = 'ZIP code must be 5 digits (e.g. 78701)';
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (isSubmitting) return;
 
+    if (!validateForm()) {
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
       const created = await addWorkspace(name.trim(), {
-        address: addressLine1.trim() || '100 Business Parkway',
-        city: city.trim() || 'Austin',
-        state: (state.trim() || 'TX').toUpperCase(),
-        zipCode: zipCode.trim() || '78701',
+        address: addressLine1.trim(),
+        city: city.trim(),
+        state: state.trim().toUpperCase(),
+        zipCode: zipCode.trim(),
       });
       setIsAddModalOpen(false);
-      setToastMessage(`Created workspace "${created.name}"!`);
+      setToast({ message: `Created workspace "${created.name}"!`, severity: 'success' });
       setTimeout(() => {
         navigate('/admin/dashboard');
       }, 400);
-    } catch {
-      setToastMessage('Failed to create workspace');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.message ||
+        err?.message ||
+        'Failed to create workspace';
+      setToast({ message: msg, severity: 'error' });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -469,7 +508,12 @@ export const WorkspaceSelectPage: React.FC = () => {
                   fullWidth
                   size="small"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (formErrors.name) setFormErrors((prev) => ({ ...prev, name: '' }));
+                  }}
+                  error={Boolean(formErrors.name)}
+                  helperText={formErrors.name}
                   slotProps={{
                     input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
                   }}
@@ -478,14 +522,20 @@ export const WorkspaceSelectPage: React.FC = () => {
 
               <Box>
                 <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                  Street Address
+                  Street Address *
                 </Typography>
                 <TextField
+                  required
                   placeholder="e.g. 500 Enterprise Way"
                   fullWidth
                   size="small"
                   value={addressLine1}
-                  onChange={(e) => setAddressLine1(e.target.value)}
+                  onChange={(e) => {
+                    setAddressLine1(e.target.value);
+                    if (formErrors.addressLine1) setFormErrors((prev) => ({ ...prev, addressLine1: '' }));
+                  }}
+                  error={Boolean(formErrors.addressLine1)}
+                  helperText={formErrors.addressLine1}
                   slotProps={{
                     input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
                   }}
@@ -495,14 +545,20 @@ export const WorkspaceSelectPage: React.FC = () => {
               <Grid container spacing={1.5}>
                 <Grid size={{ xs: 5 }}>
                   <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    City
+                    City *
                   </Typography>
                   <TextField
+                    required
                     placeholder="Austin"
                     fullWidth
                     size="small"
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                    onChange={(e) => {
+                      setCity(e.target.value);
+                      if (formErrors.city) setFormErrors((prev) => ({ ...prev, city: '' }));
+                    }}
+                    error={Boolean(formErrors.city)}
+                    helperText={formErrors.city}
                     slotProps={{
                       input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
                     }}
@@ -510,14 +566,20 @@ export const WorkspaceSelectPage: React.FC = () => {
                 </Grid>
                 <Grid size={{ xs: 3 }}>
                   <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    State
+                    State *
                   </Typography>
                   <TextField
+                    required
                     placeholder="TX"
                     fullWidth
                     size="small"
                     value={state}
-                    onChange={(e) => setState(e.target.value.toUpperCase())}
+                    onChange={(e) => {
+                      setState(e.target.value.toUpperCase());
+                      if (formErrors.state) setFormErrors((prev) => ({ ...prev, state: '' }));
+                    }}
+                    error={Boolean(formErrors.state)}
+                    helperText={formErrors.state}
                     slotProps={{
                       input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
                       htmlInput: { maxLength: 2 },
@@ -526,14 +588,20 @@ export const WorkspaceSelectPage: React.FC = () => {
                 </Grid>
                 <Grid size={{ xs: 4 }}>
                   <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    Zip Code
+                    Zip Code *
                   </Typography>
                   <TextField
+                    required
                     placeholder="78701"
                     fullWidth
                     size="small"
                     value={zipCode}
-                    onChange={(e) => setZipCode(e.target.value)}
+                    onChange={(e) => {
+                      setZipCode(e.target.value);
+                      if (formErrors.zipCode) setFormErrors((prev) => ({ ...prev, zipCode: '' }));
+                    }}
+                    error={Boolean(formErrors.zipCode)}
+                    helperText={formErrors.zipCode}
                     slotProps={{
                       input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
                     }}
@@ -546,6 +614,7 @@ export const WorkspaceSelectPage: React.FC = () => {
           <Box sx={{ px: 3, pb: 3, pt: 1.5, display: 'flex', gap: 1.5 }}>
             <Button
               type="button"
+              disabled={isSubmitting}
               onClick={() => setIsAddModalOpen(false)}
               sx={{
                 flex: 1,
@@ -569,7 +638,8 @@ export const WorkspaceSelectPage: React.FC = () => {
             <Button
               type="submit"
               variant="contained"
-              disabled={!name.trim()}
+              disabled={!name.trim() || isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
               sx={{
                 flex: 1,
                 py: 1.2,
@@ -593,7 +663,7 @@ export const WorkspaceSelectPage: React.FC = () => {
                 },
               }}
             >
-              Create Workspace
+              {isSubmitting ? 'Creating...' : 'Create Workspace'}
             </Button>
           </Box>
         </form>
@@ -601,25 +671,25 @@ export const WorkspaceSelectPage: React.FC = () => {
 
       {/* Toast Feedback */}
       <Snackbar
-        open={Boolean(toastMessage)}
+        open={Boolean(toast)}
         autoHideDuration={3000}
-        onClose={() => setToastMessage(null)}
+        onClose={() => setToast(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert
-          onClose={() => setToastMessage(null)}
-          severity="success"
+          onClose={() => setToast(null)}
+          severity={toast?.severity || 'info'}
           variant="filled"
           sx={{
             borderRadius: 2,
             fontWeight: 600,
             fontSize: '0.82rem',
-            bgcolor: '#0F172A',
+            bgcolor: toast?.severity === 'error' ? '#EF4444' : '#0F172A',
             color: '#FFFFFF',
             boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
           }}
         >
-          {toastMessage}
+          {toast?.message}
         </Alert>
       </Snackbar>
     </Box>

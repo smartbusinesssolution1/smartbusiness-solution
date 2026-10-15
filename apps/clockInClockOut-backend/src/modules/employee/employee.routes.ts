@@ -12,6 +12,7 @@ const router: Router = Router();
 
 // Routes
 router.get("/me", employeeController.getMe);
+router.patch("/me", employeeController.updateMe);
 router.get("/", employeeController.list);
 
 export default router;
