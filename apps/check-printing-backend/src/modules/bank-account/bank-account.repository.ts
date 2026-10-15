@@ -61,6 +61,23 @@ export class BankAccountRepository {
         });
     }
 
+    // Points the account at a new signature (or none) and records who and when.
+    // Returns the previous key, which the caller keeps on record (old files are not deleted).
+    async setSignature(id: string, workspaceId: string, storageKey: string | null, userId: string) {
+        return prisma.$transaction(async (tx) => {
+            const current = await tx.bankAccount.findFirst({
+                where: { id, workspaceId, deletedAt: null },
+                select: { signatureStorageKey: true },
+            });
+            if (!current) return null;
+            const updated = await tx.bankAccount.update({
+                where: { id },
+                data: { signatureStorageKey: storageKey, signatureUpdatedAt: new Date(), signatureUpdatedById: userId },
+            });
+            return { previousKey: current.signatureStorageKey, account: updated };
+        });
+    }
+
     async countByWorkspace(workspaceId: string): Promise<number> {
         return prisma.bankAccount.count({
             where: { workspaceId, deletedAt: null },

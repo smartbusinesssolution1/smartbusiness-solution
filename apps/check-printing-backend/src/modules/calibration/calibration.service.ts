@@ -196,7 +196,7 @@ export class CalibrationService {
       companyCityStateZip: workspace ? `${workspace.city}, ${workspace.state} ${workspace.zipCode}` : "",
       horizontalOffsetPts: Number(profile.horizontalOffsetPts),
       verticalOffsetPts: Number(profile.verticalOffsetPts),
-      signatureImagePath: null,
+      signatureImage: null,
       template,
       invoiceItems: null,
       verification: {

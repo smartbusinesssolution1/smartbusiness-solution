@@ -8,6 +8,8 @@ import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { requireAnyPermission, requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { AuditService } from "../../shared/services/audit.service.js";
+import { fileStorage } from "../../shared/storage/instance.js";
+import { signatureUpload } from "./signature-upload.js";
 
 const router: Router = Router({ mergeParams: true });
 
@@ -16,7 +18,7 @@ const router: Router = Router({ mergeParams: true });
 
 const bankAccountRepository = new BankAccountRepository();
 const auditService = new AuditService();
-const bankAccountService = new BankAccountService(bankAccountRepository, auditService);
+const bankAccountService = new BankAccountService(bankAccountRepository, auditService, fileStorage);
 const bankAccountController = new BankAccountController(bankAccountService);
 
 // Least privilege: anyone who writes checks must be able to SEE the accounts
@@ -38,6 +40,12 @@ router.put("/:bid", canManage, validate(updateBankAccountSchema), bankAccountCon
 
 // /api/v1/workspaces/:wid/bank-accounts/:bid
 router.delete("/:bid", canManage, bankAccountController.delete);
+
+// Signature: admins only, including viewing (the image alone is enough to forge checks).
+// Permission is checked BEFORE the upload is read, so nobody else can even send a file.
+router.put("/:bid/signature", canManage, signatureUpload, bankAccountController.uploadSignature);
+router.get("/:bid/signature", canManage, bankAccountController.getSignature);
+router.delete("/:bid/signature", canManage, bankAccountController.removeSignature);
 
 export { router as bankAccountRouter };
 

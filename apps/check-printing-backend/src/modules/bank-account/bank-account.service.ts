@@ -12,6 +12,9 @@ import {
   UpdateBankAccountInput,
 } from "./bank-account.schema.js";
 import { prisma } from "@smartbusiness/database";
+import { randomUUID } from "crypto";
+import { StorageNotFoundError, type ObjectStorage } from "../../shared/storage/index.js";
+import { cleanSignatureImage, SignatureImageError } from "./signature-image.js";
 // create bank account ---> createBankAccount()
 // update bank account ( only accountType ) ---> updateBankAccount()
 // soft delete bank account --> deleteBankAccount()
@@ -29,12 +32,120 @@ export class BankAccountService {
   private bankAccountRepository: BankAccountRepository;
   private auditService: AuditService;
 
+  private fileStorage: ObjectStorage;
+
   constructor(
     bankAccountRepository: BankAccountRepository,
     auditService: AuditService,
+    fileStorage: ObjectStorage,
   ) {
     this.bankAccountRepository = bankAccountRepository;
     this.auditService = auditService;
+    this.fileStorage = fileStorage;
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // SIGNATURE
+  //
+  // The image printed on the signature line of every check from this account. It is
+  // enough to forge checks, so: admins only (route), cleaned and re-encoded (no
+  // metadata), stored encrypted, every change and every view audited, and the old
+  // file kept so "which signature was valid in March?" stays answerable.
+  // ═════════════════════════════════════════════════════════════
+
+  async uploadSignature(
+    bankAccountId: string,
+    workspaceId: string,
+    upload: Buffer | undefined,
+    authorized: boolean,
+    ctx: AuditContext,
+  ) {
+    if (!authorized) {
+      throw new ValidationError("Confirm that you are authorized to provide this signature", {
+        authorized: ["You must confirm you are authorized to provide this signature for this account"],
+      });
+    }
+    if (!upload) {
+      throw new SignatureImageError("Attach the signature image in the \"signature\" field.", 400, "MISSING_FILE");
+    }
+
+    // Before any processing: is this account in this workspace?
+    const account = await this.bankAccountRepository.findById(bankAccountId, workspaceId);
+    if (!account) throw new NotFoundError("Bank account");
+
+    const clean = await cleanSignatureImage(upload);
+
+    // A new file per upload: replacing a signature never overwrites the old one.
+    const key = `signatures/${workspaceId}/${bankAccountId}-${randomUUID()}.png`;
+    await this.fileStorage.put(key, clean.png, "image/png");
+
+    const result = await this.bankAccountRepository.setSignature(bankAccountId, workspaceId, key, ctx.userId);
+    if (!result) {
+      await this.fileStorage.delete(key);
+      throw new NotFoundError("Bank account");
+    }
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: result.previousKey ? "SIGNATURE_REPLACED" : "SIGNATURE_UPLOADED",
+      entityType: "BankAccount",
+      entityId: bankAccountId,
+      details: {
+        authorizedAttestation: true,
+        storageKey: key,
+        previousStorageKey: result.previousKey,
+        width: clean.width,
+        height: clean.height,
+      },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return this.formattedAccountDetails(result.account);
+  }
+
+  async getSignature(bankAccountId: string, workspaceId: string, ctx: AuditContext): Promise<Buffer> {
+    const account = await this.bankAccountRepository.findById(bankAccountId, workspaceId);
+    if (!account) throw new NotFoundError("Bank account");
+    if (!account.signatureStorageKey) throw new NotFoundError("Signature");
+
+    let image: Buffer;
+    try {
+      image = await this.fileStorage.get(account.signatureStorageKey);
+    } catch (err) {
+      if (err instanceof StorageNotFoundError) throw new NotFoundError("Signature");
+      throw err;
+    }
+
+    // Seeing the image is enough to forge it: every view is recorded.
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "SIGNATURE_VIEWED",
+      entityType: "BankAccount",
+      entityId: bankAccountId,
+      ipAddress: ctx.ipAddress,
+    });
+    return image;
+  }
+
+  async removeSignature(bankAccountId: string, workspaceId: string, ctx: AuditContext) {
+    const result = await this.bankAccountRepository.setSignature(bankAccountId, workspaceId, null, ctx.userId);
+    if (!result) throw new NotFoundError("Bank account");
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "SIGNATURE_REMOVED",
+      entityType: "BankAccount",
+      entityId: bankAccountId,
+      details: { previousStorageKey: result.previousKey },
+      ipAddress: ctx.ipAddress,
+    });
+    return this.formattedAccountDetails(result.account);
   }
 
   async createBankAccount(
@@ -205,7 +316,8 @@ export class BankAccountService {
       nextCheckNumber: data.nextCheckNumber,
       checkNumberPadding: data.checkNumberPadding,
       // Never the storage path itself: more roles can view accounts than manage them.
-      hasSignature: Boolean(data.signatureImageUrl),
+      hasSignature: Boolean(data.signatureStorageKey),
+      signatureUpdatedAt: data.signatureUpdatedAt ?? null,
       isActive: data.isActive,
       createdAt: data.createdAt,
     };

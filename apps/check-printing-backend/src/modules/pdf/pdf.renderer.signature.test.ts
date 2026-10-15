@@ -1,13 +1,12 @@
 import * as fs from "fs";
-import * as os from "os";
 import * as path from "path";
 import { describe, expect, it } from "vitest";
 import { PdfRenderer } from "./pdf.renderer.js";
 import { templateForPrinter } from "./pdf.templates.js";
 import type { CheckPdfData } from "./pdf.types.js";
 
-// Phase 0.6: a bank account with a signature never produces an unsigned check by
-// accident. If the image cannot be drawn, the print fails.
+// A bank account with a signature never produces an unsigned check by accident: if
+// the image cannot be drawn, the print fails.
 
 const fontPath = path.resolve(process.env.E13B_FONT_PATH ?? "");
 const hasFont = fs.existsSync(fontPath);
@@ -18,7 +17,7 @@ const TINY_PNG = Buffer.from(
   "base64",
 );
 
-function checkData(signatureImagePath: string | null): CheckPdfData {
+function checkData(signatureImage: Buffer | null): CheckPdfData {
   return {
     checkNumber: "001001",
     payeeName: "Hill Country Supply Co.",
@@ -35,7 +34,7 @@ function checkData(signatureImagePath: string | null): CheckPdfData {
     companyCityStateZip: "Austin, TX 78701",
     horizontalOffsetPts: 0,
     verticalOffsetPts: 0,
-    signatureImagePath,
+    signatureImage,
     template: templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER" }),
     invoiceItems: null,
   };
@@ -44,39 +43,22 @@ function checkData(signatureImagePath: string | null): CheckPdfData {
 describe.skipIf(!hasFont)("check signature", () => {
   const renderer = new PdfRenderer(fontPath, { strictFont: false });
 
-  it("refuses to print when the signature file is missing", async () => {
-    const missing = path.join(os.tmpdir(), "no-such-signature.png");
-    await expect(renderer.render(checkData(missing))).rejects.toMatchObject({
+  it("refuses to print when the signature bytes are not an image", async () => {
+    await expect(renderer.render(checkData(Buffer.from("this is not a PNG")))).rejects.toMatchObject({
       statusCode: 422,
       code: "SIGNATURE_IMAGE_UNAVAILABLE",
     });
   });
 
-  it("refuses to print when the signature file is not an image", async () => {
-    const notImage = path.join(os.tmpdir(), `not-an-image-${process.pid}.png`);
-    fs.writeFileSync(notImage, "this is not a PNG");
-    try {
-      await expect(renderer.render(checkData(notImage))).rejects.toMatchObject({
-        code: "SIGNATURE_IMAGE_UNAVAILABLE",
-      });
-    } finally {
-      fs.rmSync(notImage, { force: true });
-    }
+  it("embeds a valid signature image in the PDF", async () => {
+    const pdf = await renderer.render(checkData(TINY_PNG));
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.toString("latin1")).toContain("/Subtype /Image");
   });
 
-  it("prints with a valid signature image", async () => {
-    const png = path.join(os.tmpdir(), `signature-${process.pid}.png`);
-    fs.writeFileSync(png, TINY_PNG);
-    try {
-      const pdf = await renderer.render(checkData(png));
-      expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
-    } finally {
-      fs.rmSync(png, { force: true });
-    }
-  });
-
-  it("prints without a signature when the account has none", async () => {
+  it("prints a blank signature line when the account has no signature", async () => {
     const pdf = await renderer.render(checkData(null));
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdf.toString("latin1")).not.toContain("/Subtype /Image");
   });
 });

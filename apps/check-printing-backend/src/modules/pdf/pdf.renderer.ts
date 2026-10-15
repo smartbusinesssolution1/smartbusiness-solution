@@ -471,10 +471,10 @@ export class PdfRenderer {
 
     // Signature image. A bank account with a signature must never produce an
     // unsigned check by accident, so a missing or unreadable image stops the print.
-    if (data.signatureImagePath) {
+    if (data.signatureImage) {
       try {
         doc.image(
-          data.signatureImagePath,
+          data.signatureImage,
           el.signature.x,
           el.signature.y,
           { fit: [el.signature.width, el.signature.height] },

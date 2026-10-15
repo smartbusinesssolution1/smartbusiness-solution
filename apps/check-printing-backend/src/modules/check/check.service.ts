@@ -28,6 +28,7 @@ import type { EncryptionService } from "../../shared/services/encryption.service
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData } from "../pdf/pdf.types.js";
+import type { ObjectStorage } from "../../shared/storage/index.js";
 import { Prisma } from "@smartbusiness/database";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
 
@@ -51,6 +52,7 @@ export class CheckService {
     private pdfService: PdfService,
     private calibrationService: CalibrationService,
     private encryptionService: EncryptionService,
+    private fileStorage: ObjectStorage,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -696,7 +698,7 @@ export class CheckService {
       companyCityStateZip,
       horizontalOffsetPts: printer.horizontalOffsetPts,
       verticalOffsetPts: printer.verticalOffsetPts,
-      signatureImagePath: bankAccount.signatureImageUrl ?? null,
+      signatureImage: await this.loadSignature(bankAccount.signatureStorageKey),
       template: templateForPrinter(printer),
       invoiceItems: check.invoiceTableJson as
         Array<{ description: string; amount: string }> | null,
@@ -1202,6 +1204,23 @@ export class CheckService {
   // R-11: checks can only be written and printed from an active bank account.
   // "Inactive" (400) and "does not exist" (404) are different answers: an admin
   // can fix the first by reactivating the account.
+  // The account's signature, decrypted from storage. A check from an account that has
+  // a signature must never print unsigned by accident: if it cannot be loaded, the
+  // print is refused.
+  private async loadSignature(storageKey: string | null): Promise<Buffer | null> {
+    if (!storageKey) return null;
+    try {
+      return await this.fileStorage.get(storageKey);
+    } catch (err) {
+      logger.error({ err, storageKey }, "Signature image could not be loaded for printing");
+      throw new AppError(
+        "The signature image for this bank account is missing or unreadable, so the check was not printed. Upload the signature again.",
+        422,
+        "SIGNATURE_IMAGE_UNAVAILABLE",
+      );
+    }
+  }
+
   private async requireActiveBankAccount(bankAccountId: string, workspaceId: string, purpose: string) {
     const bankAccount = await this.checkRepository.findBankAccount(bankAccountId, workspaceId);
     if (!bankAccount) {

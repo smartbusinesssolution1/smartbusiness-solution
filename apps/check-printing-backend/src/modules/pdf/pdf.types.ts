@@ -135,7 +135,8 @@ export interface CheckPdfData {
   companyCityStateZip: string;
   horizontalOffsetPts: number;
   verticalOffsetPts: number;
-  signatureImagePath: string | null;
+  // The cleaned signature PNG (already decrypted), or null for a blank signature line
+  signatureImage: Buffer | null;
   template: CheckTemplate;
   invoiceItems: Array<{ description: string; amount: string }> | null;
   // Set only for a calibration sample: watermarks the check and replaces the lower stub.

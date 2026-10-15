@@ -1,14 +1,12 @@
-import { config, storage } from "../../config/index.js";
-import { createStorage } from "../../shared/storage/index.js";
+import { config } from "../../config/index.js";
+import { fileStorage } from "../../shared/storage/instance.js";
 import { PdfRenderer } from "./pdf.renderer.js";
 import { PdfService } from "./pdf.service.js";
 
 export const pdfRenderer = new PdfRenderer(config.E13B_FONT_PATH, {
   strictFont: config.E13B_FONT_STRICT,
 });
-// Encrypted file storage (local folder in development, S3 in production), shared by
-// check PDFs and, later, signatures and attachments.
-export const fileStorage = createStorage(storage);
+export { fileStorage };
 export const pdfService = new PdfService(pdfRenderer, fileStorage);
 
 export { PdfRenderer } from "./pdf.renderer.js";

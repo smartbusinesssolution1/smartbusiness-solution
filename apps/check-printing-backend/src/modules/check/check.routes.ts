@@ -10,6 +10,7 @@ import { idempotency } from "../../middleware/idempotency.js";
 import { pdfService } from "../pdf/index.js";
 import { calibrationService } from "../calibration/calibration.routes.js";
 import { encryptionService } from "../../shared/services/encryption.service.js";
+import { fileStorage } from "../../shared/storage/instance.js";
 import {
   createCheckSchema,
   updateCheckSchema,
@@ -33,6 +34,7 @@ const checkService = new CheckService(
   pdfService,
   calibrationService,
   encryptionService,
+  fileStorage,
 );
 const checkController = new CheckController(checkService);
 

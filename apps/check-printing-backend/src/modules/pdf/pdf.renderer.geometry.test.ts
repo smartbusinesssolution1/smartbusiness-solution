@@ -47,7 +47,7 @@ function data(paperSize: PaperSize, overrides: Partial<CheckPdfData> = {}): Chec
     companyCityStateZip: "Austin, TX 78701",
     horizontalOffsetPts: 0,
     verticalOffsetPts: 0,
-    signatureImagePath: null,
+    signatureImage: null,
     template: templateForPrinter({ paperSize, stockType: "PLAIN_PAPER" }),
     invoiceItems: null,
     ...overrides,

@@ -120,7 +120,7 @@ describe("bank account access", () => {
   it("never returns full bank numbers or storage paths", async () => {
     await prisma.bankAccount.update({
       where: { id: world.bankAccountId },
-      data: { signatureImageUrl: "signatures/ws/secret-path.png" },
+      data: { signatureStorageKey: "signatures/ws/secret-path.png" },
     });
 
     const res = await bankApi(world, world.editor).list();
@@ -129,7 +129,7 @@ describe("bank account access", () => {
     expect(body).not.toContain("987654321012");
     expect(body).not.toContain("111000025");
     expect(body).not.toContain("secret-path");
-    expect(res.body.data[0]).not.toHaveProperty("signatureImageUrl");
+    expect(res.body.data[0]).not.toHaveProperty("signatureStorageKey");
     expect(res.body.data[0].hasSignature).toBe(true);
   });
 
