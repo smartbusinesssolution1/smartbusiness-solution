@@ -114,6 +114,11 @@ export const authService = {
    * Fetch live workspaces from backend for the active tenant (deduplicated)
    */
   async fetchWorkspaces(): Promise<Workspace[]> {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return this.getWorkspaces();
+    }
+
     if (inFlightWorkspacesPromise) {
       return inFlightWorkspacesPromise;
     }
@@ -324,40 +329,6 @@ export const authService = {
         currentWorkspace,
       };
     } catch (error: any) {
-      console.warn('API login failed or unavailable, checking mock fallback:', error?.message);
-
-      if (error?.message?.includes('Access Restricted')) {
-        throw error;
-      }
-
-      const mockUsers = getUsers();
-      const matchedMock = mockUsers.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase()
-      );
-
-      if (matchedMock) {
-        if (matchedMock.role !== 'admin') {
-          throw new Error(
-            'Access Restricted: The Clock-In/Clock-Out Web Console is exclusively for Administrators and Managers. Employees must use the SmartBusiness Mobile App to clock in and out.'
-          );
-        }
-        const tenant = this.getCurrentTenant();
-        const workspaces = this.getWorkspaces();
-        const currentWorkspace = this.getActiveWorkspace();
-
-        localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
-        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
-        setSessionUser(matchedMock);
-
-        return {
-          user: matchedMock,
-          token: 'mock-session-active',
-          tenant,
-          workspaces,
-          currentWorkspace,
-        };
-      }
-
       const errorObj = error.response?.data?.error;
       const errorMsg =
         (typeof errorObj === 'object' ? errorObj?.message : errorObj) ||

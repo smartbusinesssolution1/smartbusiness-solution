@@ -120,6 +120,7 @@ export const EmployeeList: React.FC = () => {
         role: roleFilter !== 'all' ? roleFilter : undefined,
         workspaceId: activeWorkspaceId || undefined,
       }),
+    enabled: Boolean(user),
   });
 
   // Filter out self user as an extra guarantee (also excluded on the backend)

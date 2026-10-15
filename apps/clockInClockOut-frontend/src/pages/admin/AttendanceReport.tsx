@@ -35,7 +35,7 @@ import {
   Cancel as AbsentIcon,
   Autorenew as AutoClosedIcon,
   Search as SearchIcon,
-  FileDownload as PrintIcon,
+  FileDownload as DownloadIcon,
   EventNote as ReportIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
@@ -45,7 +45,7 @@ import { getAvatarUrl } from '../../utils/imageUrl';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
-  const { currentWorkspace, workspaces } = useAuth();
+  const { user, currentWorkspace, workspaces } = useAuth();
 
   const cleanId = (id?: string | null): string => {
     if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
@@ -63,7 +63,7 @@ export const AttendanceReport: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState(() => dayjs().format('YYYY-MM-DD'));
 
-  // Export Modal State
+  // Export Modal State (only opens when clicking Export button)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Pagination State (0-indexed for MUI TablePagination)
@@ -87,6 +87,7 @@ export const AttendanceReport: React.FC = () => {
         date: dateFilter || undefined,
         workspaceId: activeWorkspaceId || undefined,
       }),
+    enabled: Boolean(user),
   });
 
   const records = reportData?.items || [];
@@ -125,10 +126,6 @@ export const AttendanceReport: React.FC = () => {
     }
   };
 
-  const handleOpenExport = () => {
-    setIsExportModalOpen(true);
-  };
-
   return (
     <Box>
       {/* Header */}
@@ -149,7 +146,7 @@ export const AttendanceReport: React.FC = () => {
             )}
           </Box>
           <Typography variant="body2" color="text.secondary">
-            Perform enterprise logs auditing, run compliance filters, and print reports.
+            Perform enterprise logs auditing, inspect real-time punch records, and view attendance status.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -158,11 +155,11 @@ export const AttendanceReport: React.FC = () => {
           </Button>
           <Button
             variant="contained"
-            startIcon={<PrintIcon />}
-            onClick={handleOpenExport}
+            startIcon={<DownloadIcon />}
+            onClick={() => setIsExportModalOpen(true)}
             sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
           >
-            Print / Export Audit Report
+            Export Report
           </Button>
         </Box>
       </Box>
@@ -579,7 +576,7 @@ export const AttendanceReport: React.FC = () => {
         )}
       </Card>
 
-      {/* Export / Print Audit Report Modal */}
+      {/* Export Audit Report Modal - Only triggers file generation when user explicitly clicks Download */}
       <ExportAuditReportModal
         open={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}

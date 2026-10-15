@@ -57,9 +57,8 @@ export class EmailService {
       return this.transporter;
     }
 
-    // Fallback for Local Dev / Testing: Ethereal test inbox
+    // Fallback for Local Dev / Testing: Ethereal test inbox or console transport
     try {
-      logger.info("No SMTP credentials detected in .env. Initializing free Ethereal test email account...");
       const testAccount = await nodemailer.createTestAccount();
       this.transporter = nodemailer.createTransport({
         host: "smtp.ethereal.email",
@@ -73,8 +72,10 @@ export class EmailService {
       this.isTestTransporter = true;
       logger.info({ user: testAccount.user }, "Ethereal dev email transport ready");
       return this.transporter;
-    } catch (testErr) {
-      logger.warn({ err: testErr }, "Failed to create Ethereal account, falling back to mock transport");
+    } catch {
+      logger.info(
+        "No SMTP configured in .env. Using local console email transport (credentials will be printed in terminal on employee creation)."
+      );
       // JSON transport fallback (won't crash)
       this.transporter = nodemailer.createTransport({
         jsonTransport: true,

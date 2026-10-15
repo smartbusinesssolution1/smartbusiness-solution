@@ -69,7 +69,7 @@ type SettingsFormValues = z.infer<typeof schema>;
 export const OrganizationSettingsPage: React.FC = () => {
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const { currentTenant, workspaces, currentWorkspace } = useAuth();
+  const { user, currentTenant, workspaces, currentWorkspace } = useAuth();
 
   // Helper to sanitize workspace ID
   const cleanId = (id?: string | null): string => {
@@ -106,7 +106,7 @@ export const OrganizationSettingsPage: React.FC = () => {
   const { data: settingsData, isLoading } = useQuery({
     queryKey: ['adminGeofence', activeWorkspaceId],
     queryFn: () => settingsService.getGeofence(activeWorkspaceId),
-    enabled: isValidWorkspaceId,
+    enabled: Boolean(user && isValidWorkspaceId),
   });
 
   const {

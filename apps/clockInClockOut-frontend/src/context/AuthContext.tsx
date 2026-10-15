@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { User, Tenant, Workspace } from '../types';
 import { authService } from '../services/authService';
 
@@ -22,6 +23,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -127,10 +129,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     setIsLoading(true);
     try {
+      // 1. Abort all in-flight queries and wipe query cache
+      queryClient.cancelQueries();
+      queryClient.clear();
+
+      // 2. Clear backend session & persistent storage
       await authService.logout();
+
+      // 3. Clear auth state
       setUser(null);
       setToken(null);
-      refreshWorkspaces();
+      setCurrentTenant(null);
+      setCurrentWorkspace(null);
     } catch (err) {
       console.error('Failed to log out:', err);
     } finally {

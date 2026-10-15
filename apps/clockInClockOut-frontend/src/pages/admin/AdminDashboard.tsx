@@ -74,7 +74,7 @@ export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const { workspaces, currentWorkspace } = useAuth();
+  const { user, workspaces, currentWorkspace } = useAuth();
 
   // Active chart view tab
   const [chartTab, setChartTab] = useState<'weekly' | 'dept'>('weekly');
@@ -127,6 +127,7 @@ export const AdminDashboard: React.FC = () => {
   } = useQuery({
     queryKey: ['adminDashboardMetrics', activeWorkspaceId],
     queryFn: () => attendanceService.getAdminDashboardMetrics(activeWorkspaceId || undefined),
+    enabled: Boolean(user && user.role === 'admin'),
   });
 
   // Fetch recent attendance logs for real-time pulse stream
@@ -137,6 +138,7 @@ export const AdminDashboard: React.FC = () => {
   } = useQuery({
     queryKey: ['adminAttendanceStream', activeWorkspaceId],
     queryFn: () => attendanceService.getAllAttendance({ workspaceId: activeWorkspaceId || undefined }),
+    enabled: Boolean(user && user.role === 'admin'),
   });
 
   // Fetch employees directory to support dynamic department analytics
@@ -147,6 +149,7 @@ export const AdminDashboard: React.FC = () => {
   } = useQuery({
     queryKey: ['adminEmployeesList', activeWorkspaceId],
     queryFn: () => employeeService.getEmployees({ workspaceId: activeWorkspaceId || undefined }),
+    enabled: Boolean(user && user.role === 'admin'),
   });
 
   const employees: User[] = useMemo(() => {
@@ -240,8 +243,15 @@ export const AdminDashboard: React.FC = () => {
       onClick: () => navigate('/admin/employees/new'),
     },
     {
-      title: 'Audit Reports',
-      desc: 'Daily & weekly ledgers',
+      title: 'Employee Directory',
+      desc: 'View & manage roster',
+      icon: <PeopleIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
+      bgColor: colors.primary.bg,
+      onClick: () => navigate('/admin/employees'),
+    },
+    {
+      title: 'Audit Ledger',
+      desc: 'Live punches & shifts',
       icon: <ReportIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
       bgColor: colors.primary.bg,
       onClick: () => navigate('/admin/reports'),
@@ -252,13 +262,6 @@ export const AdminDashboard: React.FC = () => {
       icon: <SettingsIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
       bgColor: colors.primary.bg,
       onClick: () => navigate('/admin/settings'),
-    },
-    {
-      title: 'Export Audit',
-      desc: 'Download PDF / CSV',
-      icon: <ExportIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      onClick: () => navigate('/admin/reports'),
     },
   ], [colors, navigate]);
 

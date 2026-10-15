@@ -20,8 +20,7 @@ router.get("/", controller.list);
 // GET /api/v1/admin/attendance/summary - Organization attendance KPIs
 router.get("/summary", controller.summary);
 
-// POST or GET /api/v1/admin/attendance/export - Generate and download audit reports (XLSX, CSV, PDF)
+// POST /api/v1/admin/attendance/export - Generate and download audit reports (XLSX, CSV, PDF) on explicit user request
 router.post("/export", controller.exportReport);
-router.get("/export", controller.exportReport);
 
 export default router;
