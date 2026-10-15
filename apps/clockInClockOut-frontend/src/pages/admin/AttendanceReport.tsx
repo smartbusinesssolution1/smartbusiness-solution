@@ -42,6 +42,7 @@ import {
 import dayjs from 'dayjs';
 import { useAuth } from '../../context/AuthContext';
 import { getAvatarUrl } from '../../utils/imageUrl';
+import { useDebounce } from '../../hooks/useDebounce';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
@@ -60,6 +61,7 @@ export const AttendanceReport: React.FC = () => {
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 350);
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState(() => dayjs().format('YYYY-MM-DD'));
 
@@ -77,17 +79,17 @@ export const AttendanceReport: React.FC = () => {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['adminAttendanceReports', activeWorkspaceId, page, rowsPerPage, searchTerm, statusFilter, dateFilter],
+    queryKey: ['adminAttendanceReports', activeWorkspaceId, page, rowsPerPage, debouncedSearch.trim(), statusFilter, dateFilter],
     queryFn: () =>
       attendanceService.getAdminAttendanceReport({
         page: page + 1,
         limit: rowsPerPage,
-        search: searchTerm.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         status: statusFilter,
         date: dateFilter || undefined,
         workspaceId: activeWorkspaceId || undefined,
       }),
-    enabled: Boolean(user),
+    enabled: Boolean(user && activeWorkspaceId),
   });
 
   const records = reportData?.items || [];

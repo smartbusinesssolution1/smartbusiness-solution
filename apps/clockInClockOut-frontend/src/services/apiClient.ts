@@ -170,8 +170,8 @@ platformAuthApi.interceptors.response.use(
     const originalRequest = error.config as any;
     const url = originalRequest?.url || '';
 
-    // Skip toast on background refresh checks
-    if (url.includes('/auth/refresh')) {
+    // Skip toast on background refresh checks or initial session check
+    if (url.includes('/auth/refresh') || url.includes('/auth/me')) {
       return Promise.reject(error);
     }
 

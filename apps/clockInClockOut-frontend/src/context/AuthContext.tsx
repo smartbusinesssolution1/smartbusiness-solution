@@ -31,24 +31,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [workspaces, setWorkspaces] = useState<Workspace[]>(() => authService.getWorkspaces());
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(() => authService.getActiveWorkspace());
 
+  const hasRestoredRef = React.useRef(false);
+
   const refreshWorkspaces = useCallback(async () => {
-    const tenant = authService.getCurrentTenant();
-    setCurrentTenant(tenant);
     const list = await authService.fetchWorkspaces();
     const active = authService.getActiveWorkspace();
+    const tenant = authService.getCurrentTenant();
+    setCurrentTenant(tenant);
     setWorkspaces(list);
     setCurrentWorkspace(active);
   }, []);
 
   useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
     async function restoreSession() {
       try {
-        const currentUser = await authService.getCurrentUser();
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          setIsLoading(false);
+          return;
+        }
+
+        const [currentUser, liveWorkspaces] = await Promise.all([
+          authService.getCurrentUser(),
+          authService.fetchWorkspaces(),
+        ]);
+
         if (currentUser) {
           setUser(currentUser);
-          setToken(`mock-jwt-token-for-${currentUser.id}`);
+          setToken(token);
+          const tenant = authService.getCurrentTenant();
+          const active = authService.getActiveWorkspace();
+          setCurrentTenant(tenant);
+          setWorkspaces(liveWorkspaces);
+          setCurrentWorkspace(active);
+        } else {
+          setUser(null);
+          setToken(null);
         }
-        await refreshWorkspaces();
       } catch (err) {
         console.error('Failed to restore authentication session:', err);
       } finally {
@@ -56,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
     restoreSession();
-  }, [refreshWorkspaces]);
+  }, []);
 
 
   const switchWorkspace = async (workspaceId: string): Promise<Workspace> => {
