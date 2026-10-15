@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
@@ -46,7 +45,6 @@ import { getAvatarUrl } from '../../utils/imageUrl';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
-  const navigate = useNavigate();
   const { currentWorkspace, workspaces } = useAuth();
 
   const cleanId = (id?: string | null): string => {
@@ -140,10 +138,10 @@ export const AttendanceReport: React.FC = () => {
             <Typography variant="h4" sx={{ fontWeight: 800 }}>
               Attendance Report
             </Typography>
-            {reportData && (
+            {reportData?.isLive && (
               <Chip
-                label={reportData.isLive ? '🟢 Live Database' : '🟡 Demo Mode'}
-                color={reportData.isLive ? 'success' : 'default'}
+                label="🟢 Live Database"
+                color="success"
                 size="small"
                 variant="outlined"
                 sx={{ fontWeight: 700, fontSize: '0.72rem' }}
@@ -169,25 +167,10 @@ export const AttendanceReport: React.FC = () => {
         </Box>
       </Box>
 
-      {/* Fallback / Demo Mode Notice */}
-      {!isLoading && reportData && !reportData.isLive && (
-        <Alert
-          severity="info"
-          sx={{ mb: 3, borderRadius: 2 }}
-          action={
-            <Button
-              color="primary"
-              size="small"
-              variant="contained"
-              onClick={() => navigate('/login')}
-              sx={{ textTransform: 'none', fontWeight: 600 }}
-            >
-              Log In as Maria (Admin)
-            </Button>
-          }
-        >
-          Currently displaying local fallback records ({reportData.errorMessage || 'Admin session required'}).
-          Sign in with <strong>maria@greenacres.com</strong> to query real-time attendance directly from PostgreSQL.
+      {/* Backend Error Notice */}
+      {!isLoading && reportData && !reportData.isLive && reportData.errorMessage && (
+        <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
+          {reportData.errorMessage}
         </Alert>
       )}
 

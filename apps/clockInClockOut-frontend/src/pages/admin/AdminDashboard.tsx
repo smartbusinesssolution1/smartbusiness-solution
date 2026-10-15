@@ -164,38 +164,46 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // 1. Row 1: 5-Pillar High-Impact KPI Strip
+  // 1. Row 1: 5-Pillar High-Impact KPI Strip
+  const totalEmployeesCount = metrics?.totalEmployees ?? employees.length;
+  const presentTodayCount = metrics?.presentToday ?? (rawAttendance || []).filter((r) => r.status === 'present' || r.status === 'late').length;
+  const lateTodayCount = metrics?.lateToday ?? (rawAttendance || []).filter((r) => r.status === 'late').length;
+  const absentTodayCount = metrics?.absentCount ?? Math.max(0, totalEmployeesCount - presentTodayCount);
+  const attendanceRateVal = metrics?.attendanceRate ?? (totalEmployeesCount > 0 ? Math.round((presentTodayCount / totalEmployeesCount) * 100) : 0);
+  const verifiedPunchesCount = (rawAttendance || []).filter((r) => r.status !== 'absent').length;
+
   const kpiPillars = useMemo(() => [
     {
       title: 'Total Employees',
-      value: metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5),
+      value: totalEmployeesCount,
       icon: <PeopleIcon sx={{ fontSize: 24, color: colors.primary.main }} />,
       bgColor: colors.primary.bg,
-      badgeText: `${Math.max(0, (metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5)) - 2)} Active`,
+      badgeText: `${totalEmployeesCount} Total`,
       badgeBg: colors.present.bg,
       badgeColor: colors.present.main,
-      subText: `${metrics?.absentCount ?? 2} on leave / absent`,
+      subText: `${absentTodayCount} on leave / absent`,
       path: '/admin/employees',
     },
     {
       title: 'Present Today',
-      value: metrics?.presentToday ?? 3,
+      value: presentTodayCount,
       icon: <PresentIcon sx={{ fontSize: 24, color: colors.present.main }} />,
       bgColor: colors.present.bg,
-      badgeText: '+4.2%',
+      badgeText: `${attendanceRateVal}%`,
       badgeBg: colors.present.bg,
       badgeColor: colors.present.main,
-      subText: `${metrics?.attendanceRate ?? 60}% floor coverage`,
+      subText: `${attendanceRateVal}% floor coverage`,
       path: '/admin/reports',
     },
     {
       title: 'Late Today',
-      value: metrics?.lateToday ?? 1,
+      value: lateTodayCount,
       icon: <LateIcon sx={{ fontSize: 24, color: colors.late.main }} />,
       bgColor: colors.late.bg,
-      badgeText: 'Avg 12.4m',
+      badgeText: lateTodayCount > 0 ? `${lateTodayCount} Late` : '0 Late',
       badgeBg: colors.late.bg,
       badgeColor: colors.late.main,
-      subText: 'After 09:15 AM cutoff',
+      subText: 'After shift cutoff',
       path: '/admin/reports',
     },
     {
@@ -211,16 +219,16 @@ export const AdminDashboard: React.FC = () => {
     },
     {
       title: 'Geofence Compliance',
-      value: '100%',
+      value: verifiedPunchesCount > 0 ? '100%' : '0%',
       icon: <GpsFixedIcon sx={{ fontSize: 24, color: colors.geofence.main }} />,
       bgColor: colors.geofence.bg,
       badgeText: 'In-Bounds',
       badgeBg: colors.geofence.bg,
       badgeColor: colors.geofence.main,
-      subText: `${(rawAttendance || []).filter((r) => r.status !== 'absent').length || 3} punches verified`,
+      subText: `${verifiedPunchesCount} punches verified`,
       path: '/admin/settings',
     },
-  ], [metrics, colors, employees.length, rawAttendance]);
+  ], [totalEmployeesCount, presentTodayCount, lateTodayCount, absentTodayCount, attendanceRateVal, verifiedPunchesCount, metrics?.autoClosedToday, colors]);
 
   // 2. Row 2: Administrative Actions Full-Width Launchpad
   const adminActions = useMemo(() => [
@@ -274,7 +282,7 @@ export const AdminDashboard: React.FC = () => {
       cursor = cursor.subtract(1, 'day');
     }
 
-    const totalStaff = metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 24);
+    const totalStaff = metrics?.totalEmployees ?? employees.length;
 
     return days.map(({ dateStr, day }) => {
       const dayRecs = (rawAttendance || []).filter((r) => r.date === dateStr);
@@ -357,15 +365,9 @@ export const AdminDashboard: React.FC = () => {
     if (rawAttendance && rawAttendance.length > 0) {
       // Map first 5 items
       return rawAttendance.slice(0, 5).map((item, idx) => {
-        // Ensure EMP-GA00X formatting
-        const rawId = item.employeeId || `GA-${idx + 1}`;
-        const formattedId = rawId.startsWith('EMP-')
-          ? rawId
-          : rawId.startsWith('GA-')
-            ? `EMP-${rawId}`
-            : `EMP-GA00${idx + 1}`;
+        const formattedId = item.employeeId || (item as any).employee?.employeeCode || (item as any).employee?.id || item.id || '--';
 
-        let checkInTime = '09:00 AM';
+        let checkInTime = '--';
         if (item.checkIn) {
           try {
             checkInTime = dayjs(`${item.date}T${item.checkIn}`).format('hh:mm A');
@@ -391,77 +393,22 @@ export const AdminDashboard: React.FC = () => {
       });
     }
 
-    // Default Fallback Feed
-    return [
-      {
-        id: 'stream-1',
-        name: 'Maria Rodriguez',
-        empId: 'EMP-GA001',
-        workspace: 'Main Office',
-        time: '08:58 AM',
-        type: 'On Time',
-        status: 'present',
-        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-      },
-      {
-        id: 'stream-2',
-        name: 'Jennifer Chen',
-        empId: 'EMP-GA002',
-        workspace: 'Main Office',
-        time: '09:00 AM',
-        type: 'On Time',
-        status: 'present',
-        avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
-      },
-      {
-        id: 'stream-3',
-        name: 'Smit Patel',
-        empId: 'EMP-GA005',
-        workspace: 'Field Operations',
-        time: '09:22 AM',
-        type: 'Late (+7m)',
-        status: 'late',
-        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
-      },
-    ];
+    // No mock fallback feed
+    return [];
   }, [rawAttendance]);
 
   // Leave & Time-Off Requests State (Pending Approvals & Adjustments)
-  const [leaveRequests, setLeaveRequests] = useState([
-    {
-      id: 'lr-1',
-      name: 'Maria Rodriguez',
-      empId: 'EMP-GA001',
-      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-      department: 'Operations',
-      type: 'Casual Leave',
-      duration: 'Today · Full Day',
-      reason: 'Scheduled medical appointment & family emergency',
-      status: 'pending' as 'pending' | 'approved' | 'rejected',
-    },
-    {
-      id: 'lr-2',
-      name: 'David Park',
-      empId: 'EMP-GA003',
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
-      department: 'Field Operations',
-      type: 'Sick Leave',
-      duration: 'Oct 15 - Oct 16 (2 Days)',
-      reason: 'Viral fever & doctor-advised rest',
-      status: 'pending' as 'pending' | 'approved' | 'rejected',
-    },
-    {
-      id: 'lr-3',
-      name: 'Yash Solanki',
-      empId: 'EMP-GA004',
-      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-      department: 'Engineering',
-      type: 'Punch Adjustment',
-      duration: 'Yesterday · Shift End (17:05)',
-      reason: 'Workstation battery shutdown before checkout punch',
-      status: 'pending' as 'pending' | 'approved' | 'rejected',
-    },
-  ]);
+  const [leaveRequests, setLeaveRequests] = useState<Array<{
+    id: string;
+    name: string;
+    empId: string;
+    avatarUrl?: string | null;
+    department: string;
+    type: string;
+    duration: string;
+    reason: string;
+    status: 'pending' | 'approved' | 'rejected';
+  }>>([]);
 
   const handleApproveRequest = (id: string) => {
     setLeaveRequests((prev) =>
@@ -481,12 +428,12 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const totalStaffCount = useMemo(
-    () => metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5),
+    () => metrics?.totalEmployees ?? employees.length ?? 0,
     [metrics?.totalEmployees, employees.length]
   );
 
   const presentStaffCount = useMemo(
-    () => metrics?.presentToday ?? (rawAttendance && rawAttendance.length > 0 ? rawAttendance.length : 3),
+    () => metrics?.presentToday ?? (rawAttendance?.length ?? 0),
     [metrics?.presentToday, rawAttendance]
   );
 
@@ -496,7 +443,7 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const shiftCoveragePercent = useMemo(
-    () => (totalStaffCount > 0 ? Math.round((presentStaffCount / totalStaffCount) * 100) : 100),
+    () => (totalStaffCount > 0 ? Math.round((presentStaffCount / totalStaffCount) * 100) : 0),
     [totalStaffCount, presentStaffCount]
   );
 
@@ -937,93 +884,104 @@ export const AdminDashboard: React.FC = () => {
                   },
                 }}
               >
-                {liveStreamRecords.map((stream) => {
-                  const initials = stream.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')
-                    .substring(0, 2);
+                {liveStreamRecords.length === 0 ? (
+                  <Box sx={{ py: 6, textAlign: 'center' }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      No live activity yet
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      Employee punches will stream here in real time.
+                    </Typography>
+                  </Box>
+                ) : (
+                  liveStreamRecords.map((stream) => {
+                    const initials = stream.name
+                      .split(' ')
+                      .map((n) => n[0])
+                      .join('')
+                      .substring(0, 2);
 
-                  const isLate = stream.status === 'late';
-                  const isGps = stream.status === 'gps';
+                    const isLate = stream.status === 'late';
+                    const isGps = stream.status === 'gps';
 
-                  return (
-                    <Box
-                      key={stream.id}
-                      sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        p: 1.25,
-                        borderRadius: 2,
-                        bgcolor: isDark ? 'background.default' : '#f8fafc',
-                        border: `1px solid ${theme.palette.divider}`,
-                        transition: 'background-color 0.15s ease',
-                        '&:hover': {
-                          bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
-                        },
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <Box sx={{ position: 'relative' }}>
-                          <Avatar
-                            src={getAvatarUrl(stream.avatarUrl)}
-                            alt={stream.name}
+                    return (
+                      <Box
+                        key={stream.id}
+                        sx={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          p: 1.25,
+                          borderRadius: 2,
+                          bgcolor: isDark ? 'background.default' : '#f8fafc',
+                          border: `1px solid ${theme.palette.divider}`,
+                          transition: 'background-color 0.15s ease',
+                          '&:hover': {
+                            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
+                          },
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Box sx={{ position: 'relative' }}>
+                            <Avatar
+                              src={getAvatarUrl(stream.avatarUrl)}
+                              alt={stream.name}
+                              sx={{
+                                width: 36,
+                                height: 36,
+                                fontSize: '0.8rem',
+                                fontWeight: 700,
+                                bgcolor: isLate ? colors.late.bg : colors.primary.bg,
+                                color: isLate ? colors.late.main : colors.primary.main,
+                              }}
+                            >
+                              {initials}
+                            </Avatar>
+                            <Box
+                              sx={{
+                                position: 'absolute',
+                                bottom: 0,
+                                right: 0,
+                                width: 9,
+                                height: 9,
+                                borderRadius: '50%',
+                                bgcolor: isLate ? colors.late.main : colors.present.main,
+                                border: `2px solid ${theme.palette.background.paper}`,
+                              }}
+                            />
+                          </Box>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                              {stream.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                              {stream.empId} · {stream.workspace}
+                            </Typography>
+                          </Box>
+                        </Box>
+
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                            {stream.time}
+                          </Typography>
+                          <Chip
+                            label={stream.type}
+                            size="small"
                             sx={{
-                              width: 36,
-                              height: 36,
-                              fontSize: '0.8rem',
+                              height: 18,
+                              fontSize: '0.65rem',
                               fontWeight: 700,
-                              bgcolor: isLate ? colors.late.bg : colors.primary.bg,
-                              color: isLate ? colors.late.main : colors.primary.main,
-                            }}
-                          >
-                            {initials}
-                          </Avatar>
-                          <Box
-                            sx={{
-                              position: 'absolute',
-                              bottom: 0,
-                              right: 0,
-                              width: 9,
-                              height: 9,
-                              borderRadius: '50%',
-                              bgcolor: isLate ? colors.late.main : colors.present.main,
-                              border: `2px solid ${theme.palette.background.paper}`,
+                              borderRadius: 1,
+                              bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
+                              color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
+                              mt: 0.25,
                             }}
                           />
                         </Box>
-                        <Box>
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                            {stream.name}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {stream.empId} · {stream.workspace}
-                          </Typography>
-                        </Box>
                       </Box>
-
-                      <Box sx={{ textAlign: 'right' }}>
-                        <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                          {stream.time}
-                        </Typography>
-                        <Chip
-                          label={stream.type}
-                          size="small"
-                          sx={{
-                            height: 18,
-                            fontSize: '0.65rem',
-                            fontWeight: 700,
-                            borderRadius: 1,
-                            bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
-                            color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
-                            mt: 0.25,
-                          }}
-                        />
-                      </Box>
-                    </Box>
-                  );
-                })}
+                    );
+                  })
+                )}
               </Box>
             </Card>
           </Grid>
@@ -1068,170 +1026,181 @@ export const AdminDashboard: React.FC = () => {
               </Box>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, flexGrow: 1 }}>
-                {leaveRequests.map((req) => {
-                  const isPending = req.status === 'pending';
-                  const isApproved = req.status === 'approved';
-                  const isRejected = req.status === 'rejected';
+                {leaveRequests.length === 0 ? (
+                  <Box sx={{ py: 6, textAlign: 'center', my: 'auto' }}>
+                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      No pending requests
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                      All time-off and punch adjustment requests are resolved.
+                    </Typography>
+                  </Box>
+                ) : (
+                  leaveRequests.map((req) => {
+                    const isPending = req.status === 'pending';
+                    const isApproved = req.status === 'approved';
+                    const isRejected = req.status === 'rejected';
 
-                  const typeStyle =
-                    req.type === 'Casual Leave'
-                      ? { bg: colors.late.bg, color: colors.late.main }
-                      : req.type === 'Sick Leave'
-                        ? { bg: colors.autoclosed.bg, color: colors.autoclosed.main }
-                        : { bg: colors.primary.bg, color: colors.primary.main };
+                    const typeStyle =
+                      req.type === 'Casual Leave'
+                        ? { bg: colors.late.bg, color: colors.late.main }
+                        : req.type === 'Sick Leave'
+                          ? { bg: colors.autoclosed.bg, color: colors.autoclosed.main }
+                          : { bg: colors.primary.bg, color: colors.primary.main };
 
-                  return (
-                    <Paper
-                      key={req.id}
-                      elevation={0}
-                      sx={{
-                        p: 1.75,
-                        borderRadius: 2,
-                        bgcolor: isDark ? 'background.default' : '#f8fafc',
-                        border: `1px solid ${theme.palette.divider}`,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 1.25,
-                        transition: 'background-color 0.2s ease',
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                          <Avatar
-                            src={req.avatarUrl}
+                    return (
+                      <Paper
+                        key={req.id}
+                        elevation={0}
+                        sx={{
+                          p: 1.75,
+                          borderRadius: 2,
+                          bgcolor: isDark ? 'background.default' : '#f8fafc',
+                          border: `1px solid ${theme.palette.divider}`,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1.25,
+                          transition: 'background-color 0.2s ease',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                            <Avatar
+                              src={getAvatarUrl(req.avatarUrl)}
+                              sx={{
+                                width: 38,
+                                height: 38,
+                                fontSize: '0.875rem',
+                                fontWeight: 700,
+                                bgcolor: colors.primary.main,
+                              }}
+                            >
+                              {req.name[0]}
+                            </Avatar>
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                                {req.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                {req.empId} · {req.department}
+                              </Typography>
+                            </Box>
+                          </Box>
+
+                          <Chip
+                            label={req.type}
+                            size="small"
                             sx={{
-                              width: 38,
-                              height: 38,
-                              fontSize: '0.875rem',
+                              height: 20,
+                              fontSize: '0.68rem',
                               fontWeight: 700,
-                              bgcolor: colors.primary.main,
+                              bgcolor: typeStyle.bg,
+                              color: typeStyle.color,
+                              borderRadius: 1,
+                            }}
+                          />
+                        </Box>
+
+                        {/* Time / Duration & Reason */}
+                        <Box sx={{ pl: 0.25 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                            <EventNoteIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                              {req.duration}
+                            </Typography>
+                          </Box>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              display: 'block',
+                              fontStyle: 'italic',
+                              lineHeight: 1.35,
+                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
+                              p: 0.75,
+                              borderRadius: 1,
+                              border: `1px dashed ${theme.palette.divider}`,
                             }}
                           >
-                            {req.name[0]}
-                          </Avatar>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                              {req.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                              {req.empId} · {req.department}
-                            </Typography>
-                          </Box>
-                        </Box>
-
-                        <Chip
-                          label={req.type}
-                          size="small"
-                          sx={{
-                            height: 20,
-                            fontSize: '0.68rem',
-                            fontWeight: 700,
-                            bgcolor: typeStyle.bg,
-                            color: typeStyle.color,
-                            borderRadius: 1,
-                          }}
-                        />
-                      </Box>
-
-                      {/* Time / Duration & Reason */}
-                      <Box sx={{ pl: 0.25 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
-                          <EventNoteIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
-                          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                            {req.duration}
+                            "{req.reason}"
                           </Typography>
                         </Box>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{
-                            display: 'block',
-                            fontStyle: 'italic',
-                            lineHeight: 1.35,
-                            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
-                            p: 0.75,
-                            borderRadius: 1,
-                            border: `1px dashed ${theme.palette.divider}`,
-                          }}
-                        >
-                          "{req.reason}"
-                        </Typography>
-                      </Box>
 
-                      {/* Action Buttons or Resolved Status */}
-                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', pt: 0.25 }}>
-                        {isPending && (
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button
+                        {/* Action Buttons or Resolved Status */}
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', pt: 0.25 }}>
+                          {isPending && (
+                            <Box sx={{ display: 'flex', gap: 1 }}>
+                              <Button
+                                size="small"
+                                variant="text"
+                                color="error"
+                                onClick={() => handleRejectRequest(req.id)}
+                                startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
+                                sx={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  py: 0.3,
+                                  px: 1,
+                                  textTransform: 'none',
+                                }}
+                              >
+                                Decline
+                              </Button>
+                              <Button
+                                size="small"
+                                variant="contained"
+                                color="success"
+                                onClick={() => handleApproveRequest(req.id)}
+                                startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+                                sx={{
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  py: 0.3,
+                                  px: 1.5,
+                                  borderRadius: 1.5,
+                                  textTransform: 'none',
+                                  boxShadow: 'none',
+                                }}
+                              >
+                                Approve
+                              </Button>
+                            </Box>
+                          )}
+                          {isApproved && (
+                            <Chip
+                              icon={<CheckIcon sx={{ fontSize: '14px !important', color: `${colors.present.main} !important` }} />}
+                              label="Approved by Admin"
                               size="small"
-                              variant="text"
-                              color="error"
-                              onClick={() => handleRejectRequest(req.id)}
-                              startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
                               sx={{
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                py: 0.3,
-                                px: 1,
-                                textTransform: 'none',
-                              }}
-                            >
-                              Decline
-                            </Button>
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="success"
-                              onClick={() => handleApproveRequest(req.id)}
-                              startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
-                              sx={{
-                                fontSize: '0.72rem',
+                                height: 22,
+                                fontSize: '0.68rem',
                                 fontWeight: 700,
-                                py: 0.3,
-                                px: 1.5,
-                                borderRadius: 1.5,
-                                textTransform: 'none',
-                                boxShadow: 'none',
+                                bgcolor: colors.present.bg,
+                                color: colors.present.main,
+                                borderRadius: 1,
                               }}
-                            >
-                              Approve
-                            </Button>
-                          </Box>
-                        )}
-                        {isApproved && (
-                          <Chip
-                            icon={<CheckIcon sx={{ fontSize: '14px !important', color: `${colors.present.main} !important` }} />}
-                            label="Approved by Admin"
-                            size="small"
-                            sx={{
-                              height: 22,
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              bgcolor: colors.present.bg,
-                              color: colors.present.main,
-                              borderRadius: 1,
-                            }}
-                          />
-                        )}
-                        {isRejected && (
-                          <Chip
-                            icon={<CloseIcon sx={{ fontSize: '14px !important', color: `${colors.late.main} !important` }} />}
-                            label="Declined"
-                            size="small"
-                            sx={{
-                              height: 22,
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              bgcolor: colors.late.bg,
-                              color: colors.late.main,
-                              borderRadius: 1,
-                            }}
-                          />
-                        )}
-                      </Box>
-                    </Paper>
-                  );
-                })}
+                            />
+                          )}
+                          {isRejected && (
+                            <Chip
+                              icon={<CloseIcon sx={{ fontSize: '14px !important', color: `${colors.late.main} !important` }} />}
+                              label="Declined"
+                              size="small"
+                              sx={{
+                                height: 22,
+                                fontSize: '0.68rem',
+                                fontWeight: 700,
+                                bgcolor: colors.late.bg,
+                                color: colors.late.main,
+                                borderRadius: 1,
+                              }}
+                            />
+                          )}
+                        </Box>
+                      </Paper>
+                    );
+                  })
+                )}
               </Box>
             </Card>
           </Grid>
