@@ -80,6 +80,7 @@ model User {
   createdChecks             Check[]                    @relation("CheckCreatedBy")
   printedChecks             Check[]                    @relation("CheckPrintedBy")
   voidedChecks              Check[]                    @relation("CheckVoidedBy")
+  printConfirmedChecks      Check[]                    @relation("CheckPrintConfirmedBy")
   clearedChecks             Check[]                    @relation("CheckClearedBy")
   statusChanges             CheckStatusHistory[]
   uploadedAttachment        CheckAttachment[]
@@ -341,6 +342,13 @@ model Payee {
   @@map("payees")
 }
 
+// Why a check was voided. Reports and the user's next step depend on it.
+enum VoidType {
+  CANCELLED // voided before it was printed: no paper exists
+  SPOILED // reported spoiled right after printing (jam, smudge): destroy the paper
+  VOIDED_AFTER_PRINT // voided later: the paper may have left the office (stop payment)
+}
+
 enum CheckStatus {
   NEW
   PENDING_APPROVAL
@@ -375,10 +383,15 @@ model Check {
   voidReason String?   @map("void_reason")
   voidedAt   DateTime? @map("voided_at")
   voidedById String?   @map("voided_by_id")
+  voidType   VoidType? @map("void_type")
 
   // Print fields
   printedAt   DateTime? @map("printed_at")
   printedById String?   @map("printed_by_id")
+
+  // The printer's report that the paper came out fine (set once; a spoiled print is voided instead)
+  printConfirmedAt   DateTime? @map("print_confirmed_at")
+  printConfirmedById String?   @map("print_confirmed_by_id")
 
   // Print snapshot: the printer profile and exact offsets used, kept even if the profile later changes
   calibrationProfileId String?    @map("calibration_profile_id")
@@ -409,6 +422,7 @@ model Check {
   createdBy          User                @relation("CheckCreatedBy", fields: [createdById], references: [id])
   printedBy          User?               @relation("CheckPrintedBy", fields: [printedById], references: [id])
   voidedBy           User?               @relation("CheckVoidedBy", fields: [voidedById], references: [id])
+  printConfirmedBy   User?               @relation("CheckPrintConfirmedBy", fields: [printConfirmedById], references: [id])
   clearedBy          User?               @relation("CheckClearedBy", fields: [clearedById], references: [id])
   calibrationProfile CalibrationProfile? @relation(fields: [calibrationProfileId], references: [id], onDelete: SetNull)
   reissuedFromCheck  Check?              @relation("CheckReissue", fields: [reissuedFromCheckId], references: [id])
