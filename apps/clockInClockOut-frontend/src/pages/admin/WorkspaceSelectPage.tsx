@@ -18,14 +18,12 @@ import {
   CircularProgress,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import ApartmentRoundedIcon from '@mui/icons-material/ApartmentRounded';
 import { useAuth } from '../../context/AuthContext';
 import { Workspace } from '../../types';
 
@@ -133,104 +131,41 @@ export const WorkspaceSelectPage: React.FC = () => {
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        bgcolor: theme.palette.mode === 'light' ? '#F8FAFC' : '#0F172A',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        p: { xs: 2, sm: 3, lg: 4 },
-      }}
-    >
-      {/* Top Navigation & Header Bar */}
+    <Box sx={{ pb: 4, width: '100%' }}>
+      {/* Top Header Bar */}
       <Box
         sx={{
-          maxWidth: 1040,
-          mx: 'auto',
-          width: '100%',
           display: 'flex',
-          alignItems: 'center',
           justifyContent: 'space-between',
-          py: 2,
-          borderBottom: `1px solid ${theme.palette.divider}`,
+          alignItems: { xs: 'flex-start', sm: 'center' },
+          flexDirection: { xs: 'column', sm: 'row' },
+          gap: 2,
+          mb: 3,
         }}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Back to Dashboard */}
-          <IconButton
-            onClick={() => navigate('/admin/dashboard')}
-            sx={{
-              p: 1.2,
-              borderRadius: 2.5,
-              color: 'text.secondary',
-              '&:hover': {
-                bgcolor: theme.palette.mode === 'light' ? '#E2E8F0' : alpha('#FFFFFF', 0.08),
-                color: 'text.primary',
-              },
-            }}
-            title="Return to Dashboard"
-          >
-            <ArrowBackRoundedIcon sx={{ fontSize: 22 }} />
-          </IconButton>
-
-          {/* Icon Badge */}
-          <Box
-            sx={{
-              width: 40,
-              height: 40,
-              borderRadius: 2.75,
-              bgcolor: theme.palette.primary.main,
-              color: '#FFFFFF',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-            }}
-          >
-            <ApartmentRoundedIcon sx={{ fontSize: 22 }} />
-          </Box>
-
-          {/* Title & Subtitle */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 800,
-                  fontSize: { xs: '1rem', sm: '1.15rem' },
-                  color: 'text.primary',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                ClockInClockOut Workspaces
-              </Typography>
-              <Box
-                component="span"
-                sx={{
-                  px: 1.25,
-                  py: 0.35,
-                  borderRadius: 10,
-                  bgcolor: theme.palette.mode === 'light' ? '#EEF2FF' : alpha(theme.palette.primary.main, 0.2),
-                  color: theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE',
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                }}
-              >
-                {workspaces.length} Branches
-              </Box>
-            </Box>
-            <Typography
-              variant="body2"
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: -0.5 }}>
+              Workspaces & Branches
+            </Typography>
+            <Box
+              component="span"
               sx={{
-                fontSize: '0.78rem',
-                color: 'text.secondary',
-                mt: 0.25,
+                px: 1.25,
+                py: 0.35,
+                borderRadius: 10,
+                bgcolor: theme.palette.mode === 'light' ? '#EEF2FF' : alpha(theme.palette.primary.main, 0.2),
+                color: theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE',
+                fontSize: '0.72rem',
+                fontWeight: 700,
               }}
             >
-              Manage employee attendance, geofences, and shifts per location under <strong>{companyName}</strong>.
-            </Typography>
+              {workspaces.length} Branches
+            </Box>
           </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mt: 0.5 }}>
+            Manage attendance registers, geofences, and shifts per physical location under <strong>{companyName}</strong>.
+          </Typography>
         </Box>
 
         {/* New Workspace Action Button */}
@@ -239,11 +174,11 @@ export const WorkspaceSelectPage: React.FC = () => {
           variant="contained"
           startIcon={<AddRoundedIcon />}
           sx={{
-            borderRadius: 2.5,
+            borderRadius: 2,
             px: 2.5,
             py: 1,
             fontWeight: 700,
-            fontSize: '0.82rem',
+            fontSize: '0.85rem',
             textTransform: 'none',
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
           }}
@@ -253,38 +188,29 @@ export const WorkspaceSelectPage: React.FC = () => {
       </Box>
 
       {/* Main Workspace Selection Body */}
-      <Box
-        sx={{
-          maxWidth: 1040,
-          mx: 'auto',
-          width: '100%',
-          my: { xs: 3, sm: 4 },
-          flexGrow: 1,
-        }}
-      >
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="h6"
-            sx={{
-              fontWeight: 800,
-              fontSize: '1.1rem',
-              color: 'text.primary',
-              letterSpacing: '-0.01em',
-            }}
-          >
-            Select Active Workspace
-          </Typography>
-          <Typography
-            variant="body2"
-            sx={{
-              fontSize: '0.8rem',
-              color: 'text.secondary',
-              mt: 0.3,
-            }}
-          >
-            Click on a workspace to switch your active attendance register, check-in logs, and branch settings.
-          </Typography>
-        </Box>
+      <Box sx={{ mb: 3 }}>
+        <Typography
+          variant="subtitle1"
+          sx={{
+            fontWeight: 700,
+            fontSize: '1rem',
+            color: 'text.primary',
+            letterSpacing: '-0.01em',
+          }}
+        >
+          Select Active Workspace
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            fontSize: '0.82rem',
+            color: 'text.secondary',
+            mt: 0.25,
+          }}
+        >
+          Click on a workspace to switch your active attendance register, check-in logs, and branch settings.
+        </Typography>
+      </Box>
 
         {/* 3-Column Responsive Cards Grid */}
         <Grid container spacing={2.5}>
@@ -447,7 +373,6 @@ export const WorkspaceSelectPage: React.FC = () => {
             );
           })}
         </Grid>
-      </Box>
 
       {/* Modal: "Add Workspace & Branch" */}
       <Dialog

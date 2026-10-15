@@ -90,17 +90,7 @@ export const AppRoutes: React.FC = () => {
       <Route path="/create-workspace" element={user ? <Navigate to="/admin/dashboard" replace /> : <RegisterPage />} />
       <Route path="/register" element={<Navigate to="/create-workspace" replace />} />
 
-      {/* Standalone Workspace Selection & Management Route */}
-      <Route
-        path="/workspace/select"
-        element={
-          <ProtectedRoute>
-            <RoleRoute allowedRole="admin">
-              <WorkspaceSelectPage />
-            </RoleRoute>
-          </ProtectedRoute>
-        }
-      />
+
 
       {/* Protected Layout Routes */}
       <Route
@@ -218,6 +208,14 @@ export const AppRoutes: React.FC = () => {
         />
         <Route
           path="admin/workspaces"
+          element={
+            <RoleRoute allowedRole="admin">
+              <WorkspaceSelectPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="workspace/select"
           element={
             <RoleRoute allowedRole="admin">
               <WorkspaceSelectPage />

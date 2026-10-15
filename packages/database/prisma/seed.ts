@@ -132,7 +132,6 @@ function d(daysAgo: number, hours = 9, minutes = 0): Date {
       await prisma.checkPrintingSettings.deleteMany();
 
       // 1. Delete Attendance child records first
-      await prisma.attendanceSchedule.deleteMany();
       await prisma.attendanceRecord.deleteMany();
       await prisma.attendanceEmployeeDetails.deleteMany();
       await prisma.attendanceSettings.deleteMany();

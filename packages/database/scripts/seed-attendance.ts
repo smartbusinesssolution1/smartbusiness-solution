@@ -179,6 +179,16 @@ async function seedEmployees() {
       );
     }
 
+    const defaultWeeklySchedule = [
+      { day: "MON", isWorkDay: true, startTime: "09:00", endTime: "18:00" },
+      { day: "TUE", isWorkDay: true, startTime: "09:00", endTime: "18:00" },
+      { day: "WED", isWorkDay: true, startTime: "09:00", endTime: "18:00" },
+      { day: "THU", isWorkDay: true, startTime: "09:00", endTime: "18:00" },
+      { day: "FRI", isWorkDay: true, startTime: "09:00", endTime: "18:00" },
+      { day: "SAT", isWorkDay: false, startTime: "09:00", endTime: "18:00" },
+      { day: "SUN", isWorkDay: false, startTime: "09:00", endTime: "18:00" },
+    ];
+
     await prisma.attendanceEmployeeDetails.upsert({
       where: {
         workspaceMemberId: member.id,
@@ -188,6 +198,8 @@ async function seedEmployees() {
         designation: employee.designation,
         department: employee.department,
         biometricPhotoUrl: employee.biometricPhotoUrl,
+        shiftType: "general",
+        weeklySchedule: defaultWeeklySchedule,
         isActive: true,
       },
       create: {
@@ -197,6 +209,8 @@ async function seedEmployees() {
         designation: employee.designation,
         department: employee.department,
         biometricPhotoUrl: employee.biometricPhotoUrl,
+        shiftType: "general",
+        weeklySchedule: defaultWeeklySchedule,
         isActive: true,
       },
     });
@@ -333,66 +347,6 @@ async function seedAttendanceRecords() {
 }
 
 // ============================================================================
-// SEED: EMPLOYEE SCHEDULES
-// ============================================================================
-
-async function seedAttendanceSchedules() {
-  console.log("\nSeeding employee schedules...");
-
-  const schedules = [
-    {
-      id: IDS.SCHEDULES.MARIA,
-      employeeId: IDS.EMPLOYEES.MARIA,
-      shiftStartDay: "MON" as const,
-      shiftStartTime: shiftTime(9, 0),
-      shiftEndDay: shiftTime(17, 0),
-      shiftEndTime: "FRI" as const,
-    },
-    {
-      id: IDS.SCHEDULES.JENNIFER,
-      employeeId: IDS.EMPLOYEES.JENNIFER,
-      shiftStartDay: "MON" as const,
-      shiftStartTime: shiftTime(9, 0),
-      shiftEndDay: shiftTime(17, 0),
-      shiftEndTime: "FRI" as const,
-    },
-    {
-      id: IDS.SCHEDULES.DAVID,
-      employeeId: IDS.EMPLOYEES.DAVID,
-      shiftStartDay: "MON" as const,
-      shiftStartTime: shiftTime(8, 0),
-      shiftEndDay: shiftTime(16, 30),
-      shiftEndTime: "FRI" as const,
-    },
-    {
-      id: IDS.SCHEDULES.SARAH,
-      employeeId: IDS.EMPLOYEES.SARAH,
-      shiftStartDay: "MON" as const,
-      shiftStartTime: shiftTime(8, 30),
-      shiftEndDay: shiftTime(17, 0),
-      shiftEndTime: "FRI" as const,
-    },
-  ];
-
-  for (const schedule of schedules) {
-    await prisma.attendanceSchedule.upsert({
-      where: {
-        id: schedule.id,
-      },
-      update: {
-        shiftStartDay: schedule.shiftStartDay,
-        shiftStartTime: schedule.shiftStartTime,
-        shiftEndDay: schedule.shiftEndDay,
-        shiftEndTime: schedule.shiftEndTime,
-      },
-      create: schedule,
-    });
-  }
-
-  console.log(`  Created/verified ${schedules.length} schedules.`);
-}
-
-// ============================================================================
 // MAIN
 // ============================================================================
 
@@ -404,7 +358,6 @@ async function main() {
   await seedAttendanceSettings();
   await seedEmployees();
   await seedAttendanceRecords();
-  await seedAttendanceSchedules();
 
   console.log("\nAttendance seed summary:");
   console.log(
@@ -418,10 +371,6 @@ async function main() {
   console.log(
     "  Attendance records:",
     await prisma.attendanceRecord.count(),
-  );
-  console.log(
-    "  Schedules:",
-    await prisma.attendanceSchedule.count(),
   );
 
   console.log("\nAttendance seeding complete.");
