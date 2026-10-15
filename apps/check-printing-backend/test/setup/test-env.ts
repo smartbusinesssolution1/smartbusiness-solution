@@ -37,6 +37,14 @@ export const TEST_STORAGE_PATH = path.join(os.tmpdir(), "check-printing-tests");
 // Test-only secrets. They protect nothing and must never be used outside tests.
 export const TEST_JWT_SECRET = "test-only-jwt-secret-0123456789abcdef0123456789";
 export const TEST_ENCRYPTION_KEY = "0f".repeat(32);
+export const TEST_STORAGE_KEY = "0e".repeat(32);
+
+// The S3 imitation from docker-compose.test.yml (Adobe S3Mock), with its test bucket.
+export const TEST_S3 = {
+  endpoint: process.env.TEST_S3_ENDPOINT ?? "http://127.0.0.1:59090",
+  bucket: "check-printing-test",
+  region: "us-east-1",
+};
 
 /** Sets the environment before any application module reads its config. */
 export function applyTestEnv(): void {
@@ -45,6 +53,12 @@ export function applyTestEnv(): void {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
   process.env.ENCRYPTION_KEY = TEST_ENCRYPTION_KEY;
   process.env.PDF_STORAGE_PATH = TEST_STORAGE_PATH;
+  process.env.STORAGE_DRIVER = "local";
+  process.env.STORAGE_ENCRYPTION_KEY = TEST_STORAGE_KEY;
+  process.env.STORAGE_ENCRYPTION_KEY_ID = "test1";
+  // The S3 driver tests talk to S3Mock, which accepts any credentials.
+  process.env.AWS_ACCESS_KEY_ID = "test";
+  process.env.AWS_SECRET_ACCESS_KEY = "test";
   process.env.E13B_FONT_PATH = process.env.TEST_E13B_FONT_PATH ?? "./micr/MICR.ttf";
   // The development font is a trial with defective glyphs; tests check layout, not the font.
   process.env.E13B_FONT_STRICT = "false";

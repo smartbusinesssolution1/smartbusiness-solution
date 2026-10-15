@@ -7,6 +7,7 @@ import { createPrinterProfile, createWorld, type TestWorld } from "../helpers/fi
 import { checksApi } from "../helpers/api.js";
 import { TEST_STORAGE_PATH } from "../setup/test-env.js";
 import { AuditService } from "../../src/shared/services/audit.service.js";
+import { fileStorage } from "../../src/modules/pdf/index.js";
 
 // Phase 0.3: a check PDF is a negotiable instrument. It is stored once per
 // successful print, verified on every download, refused once the check is void or
@@ -84,6 +85,18 @@ describe.skipIf(!hasFont)("check PDF storage and download", () => {
     expect(sha256(binary(res))).toBe(check.pdfSha256);
   });
 
+  it("keeps the PDF encrypted at rest: the stored file is not a readable check", async () => {
+    const id = await printedCheck();
+    const [file] = storedPdfs(world.workspaceId);
+    const onDisk = fs.readFileSync(path.join(TEST_STORAGE_PATH, "checks", world.workspaceId, file!));
+
+    expect(onDisk.subarray(0, 4).toString()).toBe("SBE1");
+    expect(onDisk.toString("latin1")).not.toContain("%PDF");
+    expect(onDisk.toString("latin1")).not.toContain("987654321012");
+    // ...while the download still returns the real PDF.
+    expect((await checksApi(world, world.printer).pdf(id)).status).toBe(200);
+  });
+
   it("records every download in the audit log", async () => {
     const id = await printedCheck();
     await download(id);
@@ -157,7 +170,8 @@ describe.skipIf(!hasFont)("check PDF storage and download", () => {
     const files = storedPdfs(world.workspaceId);
     expect(files).toHaveLength(1);
     const check = await prisma.check.findUniqueOrThrow({ where: { id } });
-    const bytes = fs.readFileSync(path.join(TEST_STORAGE_PATH, "checks", world.workspaceId, files[0]!));
+    // The file on disk is encrypted; the storage layer decrypts it.
+    const bytes = await fileStorage.get(check.pdfStorageUrl!);
     expect(sha256(bytes)).toBe(check.pdfSha256);
     expect(check.pdfStorageUrl).toBe(`checks/${world.workspaceId}/${files[0]}`);
   });

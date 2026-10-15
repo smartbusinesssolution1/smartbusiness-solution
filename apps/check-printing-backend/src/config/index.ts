@@ -64,6 +64,23 @@ export const rateLimit = {
   max: config.RATE_LIMIT_MAX
 } as const
 
+export const storage = {
+  driver: config.STORAGE_DRIVER,
+  localDirectory: config.PDF_STORAGE_PATH,
+  s3: {
+    bucket: config.S3_BUCKET ?? "",
+    region: config.S3_REGION,
+    endpoint: config.S3_ENDPOINT,
+    forcePathStyle: config.S3_FORCE_PATH_STYLE,
+    serverSideEncryption: config.S3_SERVER_SIDE_ENCRYPTION,
+    prefix: config.S3_PREFIX,
+  },
+  encryption: {
+    currentKey: { id: config.STORAGE_ENCRYPTION_KEY_ID, hex: config.STORAGE_ENCRYPTION_KEY },
+    previousKeys: config.STORAGE_PREVIOUS_KEYS,
+  },
+} as const;
+
 export const cors = {
   origin: config.CORS_ORIGIN
 } as const

@@ -1,4 +1,4 @@
-# Disposable Postgres and Redis for the integration tests. Data lives in memory (tmpfs),
+# Disposable Postgres, Redis and S3 for the integration tests. Data lives in memory (tmpfs),
 # so every `up` starts empty and nothing touches the development database.
 #   pnpm test:db:up     start it (waits until healthy)
 #   pnpm test:db:down   stop and discard it
@@ -33,5 +33,20 @@ services:
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 1s
+      timeout: 3s
+      retries: 30
+
+  # An S3 imitation, so the S3 storage driver is tested against the real S3 API
+  # without touching AWS. The test bucket exists from the start.
+  s3-test:
+    image: adobe/s3mock:3.12.0
+    container_name: smartbusiness-test-s3
+    environment:
+      initialBuckets: check-printing-test
+    ports:
+      - "127.0.0.1:59090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/favicon.ico >/dev/null 2>&1 || curl -fsS http://localhost:9090/ >/dev/null 2>&1 || exit 1"]
+      interval: 2s
       timeout: 3s
       retries: 30
