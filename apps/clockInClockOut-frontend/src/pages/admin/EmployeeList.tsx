@@ -3,6 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { employeeService } from '../../services/employeeService';
 import { User } from '../../types';
+import { getAvatarUrl } from '../../utils/imageUrl';
+import { useAuth } from '../../context/AuthContext';
 import {
   Box,
   Card,
@@ -47,19 +49,28 @@ import {
   Cancel as CancelIcon,
   CheckCircle as ActiveIcon,
   Person as PersonIcon,
+  RestartAlt as ResetIcon,
 } from '@mui/icons-material';
+import { useDebounce } from '../../hooks/useDebounce';
+import { STANDARD_DEPARTMENTS } from '../../constants/departments';
 
 export const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const queryClient = useQueryClient();
+  const { currentTenant, isSuperAdmin, user } = useAuth();
+  const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [deptFilter, setDeptFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [roleFilter, setRoleFilter] = useState('all');
 
-  // Pagination
+  // Debounced search term for server-side query
+  const debouncedSearch = useDebounce(searchTerm, 350);
+
+  // Pagination (0-indexed for MUI TablePagination)
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -74,11 +85,51 @@ export const EmployeeList: React.FC = () => {
     severity: 'success',
   });
 
-  // Fetch employees
-  const { data: employees = [], isLoading } = useQuery({
-    queryKey: ['adminEmployees'],
-    queryFn: () => employeeService.getEmployees(),
+  // Fetch employees from backend with active filters and pagination
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: [
+      'adminEmployees',
+      {
+        page: page + 1,
+        limit: rowsPerPage,
+        search: debouncedSearch.trim(),
+        department: deptFilter,
+        status: statusFilter,
+        role: roleFilter,
+      },
+    ],
+    queryFn: () =>
+      employeeService.getEmployees({
+        page: page + 1,
+        limit: rowsPerPage,
+        search: debouncedSearch.trim() || undefined,
+        department: deptFilter !== 'all' ? deptFilter : undefined,
+        status: statusFilter !== 'all' ? statusFilter : undefined,
+        role: roleFilter !== 'all' ? roleFilter : undefined,
+      }),
   });
+
+  // Filter out self user as an extra guarantee (also excluded on the backend)
+  const rawItems = data?.items || [];
+  const employees = rawItems.filter(
+    (emp) =>
+      emp.email?.toLowerCase() !== user?.email?.toLowerCase() &&
+      emp.id !== user?.id &&
+      (!emp.userId || emp.userId !== user?.id)
+  );
+  const totalEmployees = data?.total || employees.length;
+
+  const isFiltered = Boolean(
+    searchTerm.trim() || deptFilter !== 'all' || statusFilter !== 'all' || roleFilter !== 'all'
+  );
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setDeptFilter('all');
+    setStatusFilter('all');
+    setRoleFilter('all');
+    setPage(0);
+  };
 
   // Delete Mutation
   const deleteMutation = useMutation({
@@ -100,7 +151,7 @@ export const EmployeeList: React.FC = () => {
         severity: 'error',
       });
       setDeleteDialogOpen(false);
-    }
+    },
   });
 
   const handleDeleteClick = (employee: User) => {
@@ -122,25 +173,6 @@ export const EmployeeList: React.FC = () => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-
-  // Extract unique departments for filtering
-  const departments = Array.from(new Set(employees.map((e) => e.department))).filter(Boolean);
-
-  // Filtering Logic
-  const filteredEmployees = employees.filter((emp) => {
-    const matchesSearch =
-      emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.employeeId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesDept = deptFilter === 'all' || emp.department === deptFilter;
-    const matchesStatus = statusFilter === 'all' || emp.status === statusFilter;
-    return matchesSearch && matchesDept && matchesStatus;
-  });
-
-  const paginatedEmployees = filteredEmployees.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
-  );
 
   return (
     <Box>
@@ -175,8 +207,8 @@ export const EmployeeList: React.FC = () => {
             </Typography>
           </Box>
 
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 4 }}>
+          <Grid container spacing={2} sx={{ alignItems: 'center' }}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -195,7 +227,7 @@ export const EmployeeList: React.FC = () => {
               />
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
               <FormControl fullWidth size="small">
                 <InputLabel id="dept-filter-label">Department</InputLabel>
                 <Select
@@ -209,7 +241,7 @@ export const EmployeeList: React.FC = () => {
                   }}
                 >
                   <MenuItem value="all">All Departments</MenuItem>
-                  {departments.map((d) => (
+                  {STANDARD_DEPARTMENTS.map((d) => (
                     <MenuItem key={d} value={d}>
                       {d}
                     </MenuItem>
@@ -218,7 +250,7 @@ export const EmployeeList: React.FC = () => {
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+            <Grid size={{ xs: 12, sm: 6, md: 2 }}>
               <FormControl fullWidth size="small">
                 <InputLabel id="status-filter-label">Status</InputLabel>
                 <Select
@@ -236,6 +268,41 @@ export const EmployeeList: React.FC = () => {
                   <MenuItem value="inactive">Inactive</MenuItem>
                 </Select>
               </FormControl>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel id="role-filter-label">Role</InputLabel>
+                <Select
+                  labelId="role-filter-label"
+                  id="role-filter"
+                  value={roleFilter}
+                  label="Role"
+                  onChange={(e) => {
+                    setRoleFilter(e.target.value);
+                    setPage(0);
+                  }}
+                >
+                  <MenuItem value="all">All Roles</MenuItem>
+                  <MenuItem value="admin">Administrator</MenuItem>
+                  <MenuItem value="employee">Standard Employee</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 12, md: 2 }}>
+              <Button
+                fullWidth
+                size="medium"
+                variant="outlined"
+                color="secondary"
+                disabled={!isFiltered}
+                onClick={handleResetFilters}
+                startIcon={<ResetIcon />}
+                sx={{ height: 40, textTransform: 'none', borderRadius: 1.5 }}
+              >
+                Reset
+              </Button>
             </Grid>
           </Grid>
         </CardContent>
@@ -256,7 +323,6 @@ export const EmployeeList: React.FC = () => {
               <Table sx={{ minWidth: 650 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Employee ID</TableCell>
                     <TableCell>Name</TableCell>
                     <TableCell>Email</TableCell>
                     <TableCell>Phone</TableCell>
@@ -266,8 +332,8 @@ export const EmployeeList: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredEmployees.length > 0 ? (
-                    paginatedEmployees.map((emp) => (
+                  {employees.length > 0 ? (
+                    employees.map((emp) => (
                       <TableRow
                         key={emp.id}
                         sx={{
@@ -275,18 +341,15 @@ export const EmployeeList: React.FC = () => {
                           '&:hover': { bgcolor: 'action.hover' },
                         }}
                       >
-                        <TableCell sx={{ fontWeight: 700, color: 'primary.main' }}>
-                          {emp.employeeId}
-                        </TableCell>
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar src={emp.avatarUrl} alt={emp.name} sx={{ width: 32, height: 32 }} />
+                            <Avatar src={getAvatarUrl(emp.avatarUrl)} alt={emp.name} sx={{ width: 32, height: 32 }} />
                             <Box>
                               <Typography variant="body2" sx={{ fontWeight: 700 }}>
                                 {emp.name}
                               </Typography>
                               <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                {emp.designation} • {emp.department}
+                                {emp.employeeId} • {emp.designation} • {emp.department}
                               </Typography>
                             </Box>
                           </Box>
@@ -327,13 +390,24 @@ export const EmployeeList: React.FC = () => {
                               </IconButton>
                             </Tooltip>
                             
-                            <Tooltip title="Delete Employee">
+                            <Tooltip
+                              title={
+                                emp.id === user?.id
+                                  ? "Cannot delete your own account"
+                                  : emp.role === 'admin' && !isOwner
+                                  ? "Only organization owners can delete administrator accounts"
+                                  : "Delete Employee"
+                              }
+                            >
                               <span>
                                 <IconButton
                                   size="small"
                                   onClick={() => handleDeleteClick(emp)}
                                   color="error"
-                                  disabled={emp.role === 'admin'} // Cannot delete self or admin
+                                  disabled={
+                                    emp.id === user?.id ||
+                                    (emp.role === 'admin' && !isOwner)
+                                  }
                                 >
                                   <DeleteIcon fontSize="small" />
                                 </IconButton>
@@ -366,7 +440,7 @@ export const EmployeeList: React.FC = () => {
             <TablePagination
               rowsPerPageOptions={[5, 10, 25]}
               component="div"
-              count={filteredEmployees.length}
+              count={totalEmployees}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={handlePageChange}

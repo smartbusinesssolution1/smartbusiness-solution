@@ -5,6 +5,7 @@ import { attendanceService } from '../../services/attendanceService';
 import { settingsService } from '../../services/settingsService';
 import { useGeolocation } from '../../hooks/useGeolocation';
 import { AttendanceCameraDialog } from '../../components/AttendanceCameraDialog';
+import { getAvatarUrl } from '../../utils/imageUrl';
 import {
   Box,
   Grid,
@@ -252,7 +253,7 @@ export const EmployeeDashboard: React.FC = () => {
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', gap: 3 }}>
                   <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                     <Avatar
-                      src={user?.avatarUrl}
+                      src={getAvatarUrl(user?.avatarUrl)}
                       alt={user?.name}
                       sx={{ width: 64, height: 64, border: `2px solid ${theme.palette.primary.main}` }}
                     />

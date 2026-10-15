@@ -7,6 +7,7 @@ export class EmployeeRepository {
   async findEmployeeByUserIdAndTenant(userId: string, tenantId: string) {
     return prisma.attendanceEmployeeDetails.findFirst({
       where: {
+        deletedAt: null,
         workspaceMember: {
           userId,
           workspace: {
@@ -44,6 +45,7 @@ export class EmployeeRepository {
   async findEmployeesByTenant(tenantId: string, workspaceId?: string) {
     return prisma.attendanceEmployeeDetails.findMany({
       where: {
+        deletedAt: null,
         workspaceMember: {
           ...(workspaceId ? { workspaceId } : {}),
           workspace: {

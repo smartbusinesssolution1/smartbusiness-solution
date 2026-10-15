@@ -7,6 +7,7 @@ import { globalRateLimiter } from "./middlewares/rateLimiter";
 import { requestLogger } from "./middlewares/requestLogger";
 import { requestID } from "./middlewares/requestID";
 import { apiV1 } from "./routes";
+import { UPLOADS_DIR } from "./shared/utils/uploadDir.js";
 import { notFoundHandler } from "./middlewares/notFoundHandler";
 import { errorHandler } from "./middlewares/errorHandler";
 
@@ -37,6 +38,9 @@ export function createApp(): Express {
         requestLogger, // Structured request logging (pino-http) — generates reqId + auto-logs completion
         requestID // Bridge pino-http's req.id to req.requestId + X-Request-Id response header
     );
+
+    // ─── Static Uploads ──────────────────────────────
+    app.use("/uploads", express.static(UPLOADS_DIR));
 
     // ─── API Versioning ───────────────────────────────
     app.use("/api/v1", apiV1);

@@ -32,7 +32,13 @@ export const UpdateGeofenceSchema = z.object({
 });
 
 export const WorkspaceIdParamSchema = z.object({
-  workspaceId: z.string().uuid("Invalid workspace ID format"),
+  workspaceId: z
+    .string()
+    .trim()
+    .min(1, "Workspace ID is required")
+    .refine((val) => val !== "undefined" && val !== "null", {
+      message: "Invalid workspace ID",
+    }),
 });
 
 export type UpdateGeofenceInput = z.infer<typeof UpdateGeofenceSchema>;

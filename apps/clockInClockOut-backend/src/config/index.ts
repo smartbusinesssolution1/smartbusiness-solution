@@ -26,4 +26,15 @@ export const env = {
         url: parsedEnv.DATABASE_URL,
         poolMax: parsedEnv.DB_POOL_MAX,
     },
+
+    smtp: {
+        host: parsedEnv.SMTP_HOST,
+        port: parsedEnv.SMTP_PORT,
+        secure: parsedEnv.SMTP_SECURE,
+        user: parsedEnv.SMTP_USER,
+        pass: parsedEnv.SMTP_PASS,
+        from: parsedEnv.SMTP_FROM || (parsedEnv.SMTP_USER ? `SmartBusiness <${parsedEnv.SMTP_USER}>` : "noreply@smartbusiness.com"),
+    },
+
+    portalLoginUrl: parsedEnv.PORTAL_LOGIN_URL,
 } as const;

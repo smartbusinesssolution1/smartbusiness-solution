@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { employeeService } from '../../services/employeeService';
 import { settingsService } from '../../services/settingsService';
+import { useAuth } from '../../context/AuthContext';
 import {
   Box,
   Card,
@@ -45,8 +46,13 @@ import {
   Tune as TuneIcon,
   InfoOutlined as InfoIcon,
   AccessTime as AccessTimeIcon,
+  Badge as BadgeIcon,
 } from '@mui/icons-material';
 import { ShiftTimePicker } from '../../components/ShiftTimePicker';
+import { DayWiseShiftPicker, DEFAULT_WEEKLY_SCHEDULE } from '../../components/DayWiseShiftPicker';
+import { WeeklySchedule } from '../../types';
+import { getAvatarUrl } from '../../utils/imageUrl';
+import { STANDARD_DEPARTMENTS } from '../../constants/departments';
 
 // Helper for formatting HH:mm to 12-hour AM/PM
 const formatTime12Hour = (time24?: string) => {
@@ -84,26 +90,6 @@ const schema = z.object({
   shiftType: z.enum(['general', 'custom']),
   shiftStartTime: z.string().optional(),
   shiftEndTime: z.string().optional(),
-}).refine((data) => {
-  if (data.shiftType === 'custom') {
-    if (!data.shiftStartTime || !data.shiftStartTime.match(/^([01]\d|2[0-3]):[0-5]\d$/)) {
-      return false;
-    }
-  }
-  return true;
-}, {
-  message: 'Valid Start Time (HH:mm) is required for custom shifts',
-  path: ['shiftStartTime'],
-}).refine((data) => {
-  if (data.shiftType === 'custom') {
-    if (!data.shiftEndTime || !data.shiftEndTime.match(/^([01]\d|2[0-3]):[0-5]\d$/)) {
-      return false;
-    }
-  }
-  return true;
-}, {
-  message: 'Valid End Time (HH:mm) is required for custom shifts',
-  path: ['shiftEndTime'],
 });
 
 type EmployeeFormValues = z.infer<typeof schema>;
@@ -114,11 +100,14 @@ export const EditEmployee: React.FC = () => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { currentTenant, isSuperAdmin, user } = useAuth();
+  const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
 
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [weeklySchedule, setWeeklySchedule] = useState<WeeklySchedule>(DEFAULT_WEEKLY_SCHEDULE);
 
   // Fetch current employee data
   const { data: employee, isLoading, error: fetchError } = useQuery({
@@ -139,6 +128,7 @@ export const EditEmployee: React.FC = () => {
     reset,
     watch,
     setValue,
+    control,
     formState: { errors },
   } = useForm<EmployeeFormValues>({
     resolver: zodResolver(schema),
@@ -160,6 +150,14 @@ export const EditEmployee: React.FC = () => {
   const watchStartTime = watch('shiftStartTime');
   const watchEndTime = watch('shiftEndTime');
 
+  const departmentOptions = React.useMemo(() => {
+    const list = [...STANDARD_DEPARTMENTS];
+    if (employee?.department && !list.includes(employee.department as any)) {
+      list.push(employee.department as any);
+    }
+    return list;
+  }, [employee?.department]);
+
   // Populate form values when data loaded
   useEffect(() => {
     if (employee) {
@@ -169,7 +167,7 @@ export const EditEmployee: React.FC = () => {
         phone: employee.phone,
         designation: employee.designation,
         department: employee.department,
-        role: employee.role,
+        role: employee.role === 'admin' ? 'admin' : 'employee',
         status: employee.status,
         shiftType: employee.shiftType || 'general',
         shiftStartTime: employee.shiftStartTime || orgSettings?.officeStartTime || '09:00',
@@ -177,6 +175,19 @@ export const EditEmployee: React.FC = () => {
       });
       if (employee.avatarUrl) {
         setPreviewUrl(employee.avatarUrl);
+      }
+      if (Array.isArray(employee.weeklySchedule) && employee.weeklySchedule.length > 0) {
+        setWeeklySchedule(employee.weeklySchedule);
+      } else if (employee.weeklySchedule && typeof employee.weeklySchedule === 'object') {
+        const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const;
+        setWeeklySchedule(
+          days.map((d) => ({
+            day: d,
+            isWorkDay: (employee.weeklySchedule as any)[d]?.isWorkDay ?? !['SAT', 'SUN'].includes(d),
+            startTime: (employee.weeklySchedule as any)[d]?.startTime || '09:00',
+            endTime: (employee.weeklySchedule as any)[d]?.endTime || '18:00',
+          }))
+        );
       }
     }
   }, [employee, orgSettings, reset]);
@@ -204,7 +215,7 @@ export const EditEmployee: React.FC = () => {
       }
       setSelectedFile(file);
       setFileError(null);
-      
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreviewUrl(reader.result as string);
@@ -230,25 +241,29 @@ export const EditEmployee: React.FC = () => {
       return;
     }
 
+    if (data.role === 'admin' && !isOwner && employee?.role !== 'admin') {
+      setError('Only organization owners can grant administrator privileges.');
+      return;
+    }
+
+    if (employee?.role === 'admin' && !isOwner) {
+      setError('Only organization owners can modify administrator profiles.');
+      return;
+    }
+
     const formData = new FormData();
     formData.append('name', data.name);
     formData.append('email', data.email);
     formData.append('phone', data.phone);
     formData.append('designation', data.designation);
     formData.append('department', data.department);
-    formData.append('role', data.role);
+    formData.append('role', isOwner ? data.role : 'employee');
     formData.append('status', data.status);
-    
+
     // Shift Schedule
     formData.append('shiftType', data.shiftType);
     if (data.shiftType === 'custom') {
-      if (data.shiftStartTime) formData.append('shiftStartTime', data.shiftStartTime);
-      if (data.shiftEndTime) formData.append('shiftEndTime', data.shiftEndTime);
-    } else {
-      const defaultStart = orgSettings?.officeStartTime || '09:00';
-      const defaultEnd = orgSettings?.officeEndTime || '18:00';
-      formData.append('shiftStartTime', defaultStart);
-      formData.append('shiftEndTime', defaultEnd);
+      formData.append('weeklySchedule', JSON.stringify(weeklySchedule));
     }
 
     if (selectedFile) {
@@ -270,7 +285,7 @@ export const EditEmployee: React.FC = () => {
   }
 
   return (
-    <Box sx={{ maxWidth: 850, mx: 'auto', width: '100%' }}>
+    <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%' }}>
       {/* Back Button */}
       <Button
         startIcon={<BackIcon />}
@@ -288,7 +303,7 @@ export const EditEmployee: React.FC = () => {
         <Typography variant="body2" color="text.secondary">
           Modify the corporate parameters, title positioning, contact channels, or systems permissions for{' '}
           <span style={{ fontWeight: 700, color: theme.palette.primary.main }}>
-            {employee?.name || 'Employee'}
+            {employee?.name || 'Employee'}{employee?.employeeId ? ` (${employee.employeeId})` : ''}
           </span>
         </Typography>
       </Box>
@@ -296,6 +311,12 @@ export const EditEmployee: React.FC = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
           {error}
+        </Alert>
+      )}
+
+      {employee?.role === 'admin' && !isOwner && (
+        <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
+          This employee has <strong>Administrator</strong> privileges. Only organization owners can modify administrator accounts or change their access authorization role.
         </Alert>
       )}
 
@@ -320,7 +341,7 @@ export const EditEmployee: React.FC = () => {
           ) : (
             <form onSubmit={handleSubmit(onSubmit)}>
               <Grid container spacing={3}>
-                
+
                 {/* Personal / Contact */}
                 <Grid size={{ xs: 12 }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main' }}>
@@ -391,7 +412,7 @@ export const EditEmployee: React.FC = () => {
                     />
                     <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2 }}>
                       <Avatar
-                        src={previewUrl || undefined}
+                        src={getAvatarUrl(previewUrl) || undefined}
                         sx={{ width: 64, height: 64, border: '2px solid', borderColor: fileError ? 'error.main' : 'divider' }}
                       >
                         <PersonIcon sx={{ fontSize: 32 }} />
@@ -465,46 +486,96 @@ export const EditEmployee: React.FC = () => {
                 </Grid>
 
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField
-                    fullWidth
-                    label="Department / Cost Center"
-                    error={!!errors.department}
-                    helperText={errors.department?.message}
-                    disabled={updateMutation.isPending}
-                    {...register('department')}
-                  />
+                  <FormControl fullWidth error={!!errors.department}>
+                    <InputLabel id="dept-edit-select-label">Department / Cost Center *</InputLabel>
+                    <Controller
+                      name="department"
+                      control={control}
+                      render={({ field }) => (
+                        <Select
+                          {...field}
+                          value={field.value || ''}
+                          labelId="dept-edit-select-label"
+                          id="dept-edit-select"
+                          label="Department / Cost Center *"
+                          disabled={updateMutation.isPending}
+                        >
+                          {departmentOptions.map((dept) => (
+                            <MenuItem key={dept} value={dept}>
+                              {dept}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      )}
+                    />
+                    {errors.department && (
+                      <FormHelperText error>{errors.department.message}</FormHelperText>
+                    )}
+                  </FormControl>
                 </Grid>
 
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth error={!!errors.role}>
                     <InputLabel id="role-select-label">Access Authorization Role</InputLabel>
-                    <Select
-                      labelId="role-select-label"
-                      id="role-select"
-                      label="Access Authorization Role"
-                      disabled={updateMutation.isPending || employee?.id === 'u1'} // Prevent admin from locking themselves out
-                      {...register('role')}
-                    >
-                      <MenuItem value="employee">Standard Employee</MenuItem>
-                      <MenuItem value="admin">Platform Administrator</MenuItem>
-                    </Select>
-                    {errors.role && <FormHelperText>{errors.role.message}</FormHelperText>}
+                    <Controller
+                      name="role"
+                      control={control}
+                      defaultValue="employee"
+                      render={({ field }) => (
+                        <Select
+                          {...field}
+                          value={field.value || 'employee'}
+                          labelId="role-select-label"
+                          id="role-select"
+                          label="Access Authorization Role"
+                          disabled={updateMutation.isPending}
+                          readOnly={!isOwner || employee?.id === user?.id}
+                          inputProps={{ readOnly: !isOwner || employee?.id === user?.id }}
+                          sx={{
+                            '& .MuiSelect-select': {
+                              color: 'text.primary',
+                              fontWeight: 600,
+                            },
+                          }}
+                        >
+                          <MenuItem value="employee">Standard Employee</MenuItem>
+                          <MenuItem value="admin" disabled={!isOwner}>
+                            Platform Administrator {!isOwner ? '(Requires Owner Access)' : ''}
+                          </MenuItem>
+                        </Select>
+                      )}
+                    />
+                    {errors.role ? (
+                      <FormHelperText>{errors.role.message}</FormHelperText>
+                    ) : !isOwner ? (
+                      <FormHelperText sx={{ color: 'text.secondary' }}>
+                        Admins have access to manage Standard Employees only.
+                      </FormHelperText>
+                    ) : null}
                   </FormControl>
                 </Grid>
 
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth error={!!errors.status}>
                     <InputLabel id="status-select-label">Employment Status</InputLabel>
-                    <Select
-                      labelId="status-select-label"
-                      id="status-select"
-                      label="Employment Status"
-                      disabled={updateMutation.isPending || employee?.id === 'u1'} // Prevent self-deactivation
-                      {...register('status')}
-                    >
-                      <MenuItem value="active">Active Duty</MenuItem>
-                      <MenuItem value="inactive">Suspended / Inactive</MenuItem>
-                    </Select>
+                    <Controller
+                      name="status"
+                      control={control}
+                      defaultValue="active"
+                      render={({ field }) => (
+                        <Select
+                          {...field}
+                          value={field.value || 'active'}
+                          labelId="status-select-label"
+                          id="status-select"
+                          label="Employment Status"
+                          disabled={updateMutation.isPending || employee?.id === 'u1'} // Prevent self-deactivation
+                        >
+                          <MenuItem value="active">Active Duty</MenuItem>
+                          <MenuItem value="inactive">Suspended / Inactive</MenuItem>
+                        </Select>
+                      )}
+                    />
                     {errors.status && <FormHelperText>{errors.status.message}</FormHelperText>}
                   </FormControl>
                 </Grid>
@@ -656,7 +727,7 @@ export const EditEmployee: React.FC = () => {
                               Organization Configured Shift
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              Standard operating hours defined in Organization Settings
+                              Standard operating hours defined in Organization
                             </Typography>
                           </Box>
                         </Box>
@@ -686,68 +757,17 @@ export const EditEmployee: React.FC = () => {
                   </Grid>
                 )}
 
-                {/* Custom Shift Selected: Two Time Pickers */}
+                {/* Custom Shift Selected: Day-Wise Shift Configuration */}
                 {watchShiftType === 'custom' && (
-                  <>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <ShiftTimePicker
-                        label="Shift Start Time"
-                        value={watchStartTime || '09:00'}
-                        onChange={(val) => setValue('shiftStartTime', val, { shouldValidate: true })}
-                        error={!!errors.shiftStartTime}
-                        helperText={errors.shiftStartTime?.message || 'Expected morning clock-in time'}
-                        disabled={updateMutation.isPending}
-                      />
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <ShiftTimePicker
-                        label="Shift End Time"
-                        value={watchEndTime || '18:00'}
-                        onChange={(val) => setValue('shiftEndTime', val, { shouldValidate: true })}
-                        error={!!errors.shiftEndTime}
-                        helperText={errors.shiftEndTime?.message || 'Expected evening clock-out time'}
-                        disabled={updateMutation.isPending}
-                      />
-                    </Grid>
-
-                    {watchStartTime && watchEndTime && (
-                      <Grid size={{ xs: 12 }}>
-                        <Paper
-                          elevation={0}
-                          sx={{
-                            py: 1.5,
-                            px: 2,
-                            borderRadius: 2,
-                            bgcolor: (theme) =>
-                              theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.05)',
-                            border: '1px dashed',
-                            borderColor: 'primary.main',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            flexWrap: 'wrap',
-                            gap: 1,
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <ClockIcon sx={{ color: 'primary.main', fontSize: 18 }} />
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                              Custom Shift Duration Window: {formatTime12Hour(watchStartTime)} - {formatTime12Hour(watchEndTime)}
-                            </Typography>
-                          </Box>
-                          {calculateShiftDuration(watchStartTime, watchEndTime) && (
-                            <Chip
-                              size="small"
-                              label={`Calculated: ${calculateShiftDuration(watchStartTime, watchEndTime)}`}
-                              color="primary"
-                              sx={{ fontWeight: 700, height: 22, fontSize: '0.72rem' }}
-                            />
-                          )}
-                        </Paper>
-                      </Grid>
-                    )}
-                  </>
+                  <Grid size={{ xs: 12 }}>
+                    <DayWiseShiftPicker
+                      value={weeklySchedule}
+                      onChange={(newSched) => {
+                        setWeeklySchedule(newSched);
+                      }}
+                      disabled={updateMutation.isPending}
+                    />
+                  </Grid>
                 )}
 
                 <Grid size={{ xs: 12 }}>
@@ -767,7 +787,7 @@ export const EditEmployee: React.FC = () => {
                     type="submit"
                     variant="contained"
                     color="primary"
-                    disabled={updateMutation.isPending}
+                    disabled={updateMutation.isPending || (employee?.role === 'admin' && !isOwner)}
                     startIcon={updateMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
                     sx={{ py: 1.25, px: 4 }}
                   >

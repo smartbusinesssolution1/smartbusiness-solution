@@ -23,10 +23,15 @@ import { Workspace } from '../types';
 export const WorkspaceSwitcher: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { currentTenant, workspaces, currentWorkspace, switchWorkspace } = useAuth();
+  const { currentTenant, workspaces, currentWorkspace, switchWorkspace, isSuperAdmin } = useAuth();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Workspace switcher is strictly restricted to Super Admin / Organization Owner
+  if (!isSuperAdmin) {
+    return null;
+  }
 
   const isOpen = Boolean(anchorEl);
 

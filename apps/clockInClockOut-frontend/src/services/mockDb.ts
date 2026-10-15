@@ -99,8 +99,36 @@ const generateHistoricalAttendance = (users: User[]): AttendanceRecord[] => {
     const dateStr = currentDate.format('YYYY-MM-DD');
 
     activeEmployees.forEach(emp => {
-      // Don't generate records for today yet unless it's past check-in time
-      if (i === 0) return;
+      // For today, generate realistic records: 1 absent, others active
+      if (i === 0) {
+        if (emp.employeeId === 'EMP-GA004') {
+          records.push({
+            id: `att_${emp.id}_${dateStr}`,
+            employeeId: emp.employeeId,
+            employeeName: emp.name,
+            date: dateStr,
+            checkIn: null,
+            checkOut: null,
+            status: 'absent',
+            workingHours: 0,
+            notes: 'Unexcused absence - No clock-in recorded',
+          });
+          return;
+        }
+
+        const checkInTime = dayjs(`${dateStr} 08:55`, 'YYYY-MM-DD HH:mm');
+        records.push({
+          id: `att_${emp.id}_${dateStr}`,
+          employeeId: emp.employeeId,
+          employeeName: emp.name,
+          date: dateStr,
+          checkIn: checkInTime.format('HH:mm:ss'),
+          checkOut: null,
+          status: 'present',
+          workingHours: 0,
+        });
+        return;
+      }
 
       // 10% chance of absence
       const isAbsent = Math.random() < 0.1;
@@ -187,7 +215,16 @@ export const saveUsers = (users: User[]) => {
 
 export const getAttendance = (): AttendanceRecord[] => {
   initDb();
-  return JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]');
+  let records: AttendanceRecord[] = JSON.parse(localStorage.getItem(ATTENDANCE_KEY) || '[]');
+  const todayStr = dayjs().format('YYYY-MM-DD');
+  const hasToday = records.some((r) => r.date === todayStr);
+  if (!hasToday && records.length > 0) {
+    const users = getUsers();
+    const todayRecords = generateHistoricalAttendance(users).filter((r) => r.date === todayStr);
+    records = [...todayRecords, ...records];
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(records));
+  }
+  return records;
 };
 
 export const saveAttendance = (records: AttendanceRecord[]) => {

@@ -2,7 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../../services/attendanceService';
+import { employeeService } from '../../services/employeeService';
 import { useAuth } from '../../context/AuthContext';
+import { getAvatarUrl } from '../../utils/imageUrl';
+import { User } from '../../types';
 import {
   Box,
   Grid,
@@ -43,13 +46,16 @@ import {
   PersonAdd as AddEmployeeIcon,
   Assessment as ReportIcon,
   LocationOn as GeofenceIcon,
-  Business as WorkspaceIcon,
+  Settings as SettingsIcon,
   CloudDownload as ExportIcon,
   Domain as DomainIcon,
   Schedule as ScheduleIcon,
   Info as InfoIcon,
   Refresh as RefreshIcon,
   FiberManualRecord as DotIcon,
+  Check as CheckIcon,
+  Close as CloseIcon,
+  EventNote as EventNoteIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 
@@ -61,6 +67,7 @@ interface StreamRecord {
   time: string;
   type: string;
   status: 'present' | 'late' | 'gps' | 'biometric';
+  avatarUrl?: string | null;
 }
 
 export const AdminDashboard: React.FC = () => {
@@ -121,71 +128,88 @@ export const AdminDashboard: React.FC = () => {
     queryFn: () => attendanceService.getAllAttendance(),
   });
 
-  const isLoading = isMetricsLoading || isAttendanceLoading;
+  // Fetch employees directory to support dynamic department analytics
+  const {
+    data: employeesData,
+    isLoading: isEmployeesLoading,
+    refetch: refetchEmployees,
+  } = useQuery({
+    queryKey: ['adminEmployeesList'],
+    queryFn: () => employeeService.getEmployees(),
+  });
+
+  const employees: User[] = useMemo(() => {
+    if (!employeesData) return [];
+    if (Array.isArray(employeesData)) return employeesData;
+    return (employeesData as any).items || [];
+  }, [employeesData]);
+
+  const isLoading = isMetricsLoading || isAttendanceLoading || isEmployeesLoading;
 
   const handleRefreshAll = () => {
     refetchMetrics();
     refetchAttendance();
+    refetchEmployees();
   };
 
   // 1. Row 1: 5-Pillar High-Impact KPI Strip
   const kpiPillars = useMemo(() => [
     {
       title: 'Total Employees',
-      value: metrics?.totalEmployees ?? 24,
+      value: metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5),
       icon: <PeopleIcon sx={{ fontSize: 24, color: colors.primary.main }} />,
       bgColor: colors.primary.bg,
-      badgeText: `${Math.max(0, (metrics?.totalEmployees ?? 24) - 2)} Active`,
+      badgeText: `${Math.max(0, (metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5)) - 2)} Active`,
       badgeBg: colors.present.bg,
       badgeColor: colors.present.main,
-      subText: '2 Approved Leave',
+      subText: `${metrics?.absentCount ?? 2} on leave / absent`,
       path: '/admin/employees',
     },
     {
       title: 'Present Today',
-      value: metrics?.presentToday ?? 18,
+      value: metrics?.presentToday ?? 3,
       icon: <PresentIcon sx={{ fontSize: 24, color: colors.present.main }} />,
       bgColor: colors.present.bg,
       badgeText: '+4.2%',
       badgeBg: colors.present.bg,
       badgeColor: colors.present.main,
-      subText: `${metrics?.attendanceRate ?? 75}% floor coverage`,
+      subText: `${metrics?.attendanceRate ?? 60}% floor coverage`,
       path: '/admin/reports',
     },
     {
       title: 'Late Today',
-      value: metrics?.lateToday ?? 3,
+      value: metrics?.lateToday ?? 1,
       icon: <LateIcon sx={{ fontSize: 24, color: colors.late.main }} />,
       bgColor: colors.late.bg,
       badgeText: 'Avg 12.4m',
       badgeBg: colors.late.bg,
       badgeColor: colors.late.main,
-      subText: 'After 9:15 AM threshold',
+      subText: 'After 09:15 AM cutoff',
       path: '/admin/reports',
     },
     {
       title: 'Auto Closed',
-      value: metrics?.autoClosedToday ?? 1,
+      value: metrics?.autoClosedToday ?? 0,
       icon: <AutoClosedIcon sx={{ fontSize: 24, color: colors.autoclosed.main }} />,
       bgColor: colors.autoclosed.bg,
-      badgeText: 'Action Req.',
-      badgeBg: colors.autoclosed.bg,
-      badgeColor: colors.autoclosed.main,
+      badgeText: (metrics?.autoClosedToday ?? 0) > 0 ? 'Action Req.' : '0 Anomaly',
+      badgeBg: (metrics?.autoClosedToday ?? 0) > 0 ? colors.autoclosed.bg : colors.present.bg,
+      badgeColor: (metrics?.autoClosedToday ?? 0) > 0 ? colors.autoclosed.main : colors.present.main,
       subText: 'Missed check-out',
       path: '/admin/reports',
     },
     {
       title: 'Geofence Compliance',
-      value: '98.5%',
+      value: '100%',
       icon: <GpsFixedIcon sx={{ fontSize: 24, color: colors.geofence.main }} />,
       bgColor: colors.geofence.bg,
       badgeText: 'In-Bounds',
       badgeBg: colors.geofence.bg,
       badgeColor: colors.geofence.main,
-      subText: '0 Spoof attempts',
+      subText: `${(rawAttendance || []).filter((r) => r.status !== 'absent').length || 3} punches verified`,
       path: '/admin/settings',
     },
-  ], [metrics, colors]);
+  ], [metrics, colors, employees.length, rawAttendance]);
 
   // 2. Row 2: Administrative Actions Full-Width Launchpad
   const adminActions = useMemo(() => [
@@ -204,18 +228,11 @@ export const AdminDashboard: React.FC = () => {
       onClick: () => navigate('/admin/reports'),
     },
     {
-      title: 'Geofence GPS',
-      desc: 'Configure office radius',
-      icon: <GeofenceIcon sx={{ fontSize: 22, color: colors.geofence.main }} />,
+      title: 'Organization',
+      desc: 'Policies, shifts & geofence',
+      icon: <SettingsIcon sx={{ fontSize: 22, color: colors.geofence.main }} />,
       bgColor: colors.geofence.bg,
       onClick: () => navigate('/admin/settings'),
-    },
-    {
-      title: 'Workspaces',
-      desc: 'HQ, North & South',
-      icon: <WorkspaceIcon sx={{ fontSize: 22, color: colors.late.main }} />,
-      bgColor: colors.late.bg,
-      onClick: () => navigate('/admin/workspaces'),
     },
     {
       title: 'Export Audit',
@@ -226,14 +243,103 @@ export const AdminDashboard: React.FC = () => {
     },
   ], [colors, navigate]);
 
-  // Department Attendance Stats
-  const departmentStats = useMemo(() => [
-    { name: 'Operations', rate: 94, present: 16, late: 1, absent: 0 },
-    { name: 'Engineering', rate: 88, present: 12, late: 2, absent: 1 },
-    { name: 'Support', rate: 92, present: 10, late: 1, absent: 0 },
-    { name: 'Logistics', rate: 100, present: 8, late: 0, absent: 0 },
-    { name: 'Administration', rate: 85, present: 5, late: 1, absent: 1 },
-  ], []);
+  // Dynamic Weekly Trend Analytics (Mon-Fri)
+  const weeklyChartData = useMemo(() => {
+    if (metrics?.weeklyStats && metrics.weeklyStats.length > 0) {
+      return metrics.weeklyStats;
+    }
+
+    // Dynamic derivation from rawAttendance across the last 5 business days
+    const days: { dateStr: string; day: string }[] = [];
+    let cursor = dayjs();
+    while (days.length < 5) {
+      const dow = cursor.day();
+      if (dow !== 0 && dow !== 6) {
+        days.unshift({
+          dateStr: cursor.format('YYYY-MM-DD'),
+          day: cursor.format('ddd'),
+        });
+      }
+      cursor = cursor.subtract(1, 'day');
+    }
+
+    const totalStaff = metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 24);
+
+    return days.map(({ dateStr, day }) => {
+      const dayRecs = (rawAttendance || []).filter((r) => r.date === dateStr);
+      const present = dayRecs.filter((r) => r.status === 'present' || r.status === 'half_day').length;
+      const late = dayRecs.filter((r) => r.status === 'late').length;
+      const explicitAbsent = dayRecs.filter((r) => r.status === 'absent').length;
+      const absent = dayRecs.length > 0
+        ? (explicitAbsent > 0 ? explicitAbsent : Math.max(0, totalStaff - (present + late)))
+        : 0;
+
+      return {
+        day,
+        present,
+        late,
+        absent,
+      };
+    });
+  }, [metrics?.weeklyStats, metrics?.totalEmployees, employees.length, rawAttendance]);
+
+  // Dynamic Department Attendance Stats
+  const departmentStats = useMemo(() => {
+    if (metrics?.departmentStats && metrics.departmentStats.length > 0) {
+      return metrics.departmentStats;
+    }
+
+    // Dynamic grouping from employee records and attendance logs
+    if (employees && employees.length > 0) {
+      const deptMap: Record<string, { total: number; empIds: Set<string> }> = {};
+      employees.forEach((emp) => {
+        const dept = emp.department?.trim() || 'General';
+        if (!deptMap[dept]) {
+          deptMap[dept] = { total: 0, empIds: new Set() };
+        }
+        deptMap[dept].total += 1;
+        if (emp.id) deptMap[dept].empIds.add(emp.id);
+        if (emp.employeeId) deptMap[dept].empIds.add(emp.employeeId);
+      });
+
+      // Target today's records, or fallback to the most recent record date
+      const todayStr = dayjs().format('YYYY-MM-DD');
+      let targetRecords = (rawAttendance || []).filter((r) => r.date === todayStr);
+      if (targetRecords.length === 0 && rawAttendance && rawAttendance.length > 0) {
+        const sortedDates = Array.from(new Set(rawAttendance.map((r) => r.date))).sort();
+        const latestDate = sortedDates[sortedDates.length - 1];
+        targetRecords = rawAttendance.filter((r) => r.date === latestDate);
+      }
+
+      const statusMap = new Map<string, string>();
+      targetRecords.forEach((rec) => {
+        if (rec.employeeId) statusMap.set(rec.employeeId, rec.status);
+        if (rec.id) statusMap.set(rec.id, rec.status);
+      });
+
+      return Object.entries(deptMap).map(([name, data]) => {
+        let present = 0;
+        let late = 0;
+        data.empIds.forEach((id) => {
+          const st = statusMap.get(id);
+          if (st === 'present' || st === 'half_day') present++;
+          else if (st === 'late') late++;
+        });
+        const absent = Math.max(0, data.total - (present + late));
+        const rate = data.total > 0 ? Math.round(((present + late) / data.total) * 100) : 0;
+        return {
+          name,
+          rate,
+          present,
+          late,
+          absent,
+          total: data.total,
+        };
+      });
+    }
+
+    return [];
+  }, [metrics?.departmentStats, employees, rawAttendance]);
 
   // Formatted Live Feed Stream Items
   const liveStreamRecords = useMemo<StreamRecord[]>(() => {
@@ -245,8 +351,8 @@ export const AdminDashboard: React.FC = () => {
         const formattedId = rawId.startsWith('EMP-')
           ? rawId
           : rawId.startsWith('GA-')
-          ? `EMP-${rawId}`
-          : `EMP-GA00${idx + 1}`;
+            ? `EMP-${rawId}`
+            : `EMP-GA00${idx + 1}`;
 
         let checkInTime = '09:00 AM';
         if (item.checkIn) {
@@ -258,14 +364,18 @@ export const AdminDashboard: React.FC = () => {
         }
 
         const isLate = item.status === 'late';
+        const isGps = Boolean((item as any).clockInLatitude || (item as any).locationVerified || (item as any).isGeofenceVerified);
+        const workspaceName = (item as any).workspaceName || (item as any).workspace || 'Main Office';
+
         return {
           id: item.id || `stream-${idx}`,
           name: item.employeeName || 'Staff Member',
           empId: formattedId,
-          workspace: idx % 2 === 0 ? 'Green Acres HQ' : 'North Branch',
+          workspace: workspaceName,
           time: checkInTime,
-          type: isLate ? 'Late (+14m)' : idx % 2 === 0 ? 'GPS (18m)' : 'On Time',
-          status: isLate ? 'late' : (idx % 2 === 0 ? 'gps' : 'present'),
+          type: isLate ? 'Late Arrival' : isGps ? 'GPS Verified' : 'On Time',
+          status: isLate ? 'late' : isGps ? 'gps' : 'present',
+          avatarUrl: (item as any).avatarUrl || item.selfieUrl || null,
         };
       });
     }
@@ -274,82 +384,110 @@ export const AdminDashboard: React.FC = () => {
     return [
       {
         id: 'stream-1',
-        name: 'Maria Davis',
+        name: 'Maria Rodriguez',
         empId: 'EMP-GA001',
-        workspace: 'Green Acres HQ',
+        workspace: 'Main Office',
         time: '08:58 AM',
-        type: 'GPS (18m)',
-        status: 'gps',
+        type: 'On Time',
+        status: 'present',
+        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
       },
       {
         id: 'stream-2',
-        name: 'Jennifer Adams',
+        name: 'Jennifer Chen',
         empId: 'EMP-GA002',
-        workspace: 'North Branch',
-        time: '09:02 AM',
+        workspace: 'Main Office',
+        time: '09:00 AM',
         type: 'On Time',
         status: 'present',
+        avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150',
       },
       {
         id: 'stream-3',
-        name: 'David Rodriguez',
-        empId: 'EMP-GA003',
-        workspace: 'North Branch',
-        time: '09:24 AM',
-        type: 'Late (+14m)',
-        status: 'late',
-      },
-      {
-        id: 'stream-4',
-        name: 'Sarah Connor',
-        empId: 'EMP-GA004',
-        workspace: 'Green Acres HQ',
-        time: '08:45 AM',
-        type: 'Biometric',
-        status: 'biometric',
-      },
-      {
-        id: 'stream-5',
-        name: 'John Miller',
+        name: 'Smit Patel',
         empId: 'EMP-GA005',
-        workspace: 'South Logistics',
-        time: '08:52 AM',
-        type: 'GPS (42m)',
-        status: 'gps',
+        workspace: 'Field Operations',
+        time: '09:22 AM',
+        type: 'Late (+7m)',
+        status: 'late',
+        avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
       },
     ];
   }, [rawAttendance]);
 
-  // Workspace branch health list
-  const branchHealthList = useMemo(() => [
+  // Leave & Time-Off Requests State (Pending Approvals & Adjustments)
+  const [leaveRequests, setLeaveRequests] = useState([
     {
-      name: 'Green Acres HQ (Austin, TX)',
-      rate: '93.3% Present',
-      percent: 93.3,
-      checkedIn: '14 of 15 Staff Checked-in',
-      radiusText: 'Radius: 100m · Optimal',
-      color: colors.present.main,
-      bgColor: colors.present.bg,
+      id: 'lr-1',
+      name: 'Maria Rodriguez',
+      empId: 'EMP-GA001',
+      avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+      department: 'Operations',
+      type: 'Casual Leave',
+      duration: 'Today · Full Day',
+      reason: 'Scheduled medical appointment & family emergency',
+      status: 'pending' as 'pending' | 'approved' | 'rejected',
     },
     {
-      name: 'North Branch & Operations (Round Rock, TX)',
-      rate: '80.0% Present',
-      percent: 80.0,
-      checkedIn: '8 of 10 Staff (2 Late Exceptions)',
-      radiusText: 'Radius: 120m · Alert',
-      color: colors.late.main,
-      bgColor: colors.late.bg,
+      id: 'lr-2',
+      name: 'David Park',
+      empId: 'EMP-GA003',
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150',
+      department: 'Field Operations',
+      type: 'Sick Leave',
+      duration: 'Oct 15 - Oct 16 (2 Days)',
+      reason: 'Viral fever & doctor-advised rest',
+      status: 'pending' as 'pending' | 'approved' | 'rejected',
     },
     {
-      name: 'South Logistics & Warehouse (San Marcos, TX)',
-      rate: '100% Present',
-      percent: 100,
-      checkedIn: '4 of 4 Staff Checked-in',
-      radiusText: 'Radius: 150m · Optimal',
-      color: colors.geofence.main,
-      bgColor: colors.geofence.bg,
+      id: 'lr-3',
+      name: 'Yash Solanki',
+      empId: 'EMP-GA004',
+      avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      department: 'Engineering',
+      type: 'Punch Adjustment',
+      duration: 'Yesterday · Shift End (17:05)',
+      reason: 'Workstation battery shutdown before checkout punch',
+      status: 'pending' as 'pending' | 'approved' | 'rejected',
     },
-  ], [colors]);
+  ]);
+
+  const handleApproveRequest = (id: string) => {
+    setLeaveRequests((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: 'approved' as const } : r))
+    );
+  };
+
+  const handleRejectRequest = (id: string) => {
+    setLeaveRequests((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: 'rejected' as const } : r))
+    );
+  };
+
+  const pendingLeavesCount = useMemo(
+    () => leaveRequests.filter((r) => r.status === 'pending').length,
+    [leaveRequests]
+  );
+
+  const totalStaffCount = useMemo(
+    () => metrics?.totalEmployees ?? (employees.length > 0 ? employees.length : 5),
+    [metrics?.totalEmployees, employees.length]
+  );
+
+  const presentStaffCount = useMemo(
+    () => metrics?.presentToday ?? (rawAttendance && rawAttendance.length > 0 ? rawAttendance.length : 3),
+    [metrics?.presentToday, rawAttendance]
+  );
+
+  const absentStaffCount = useMemo(
+    () => metrics?.absentCount ?? Math.max(0, totalStaffCount - presentStaffCount),
+    [metrics?.absentCount, totalStaffCount, presentStaffCount]
+  );
+
+  const shiftCoveragePercent = useMemo(
+    () => (totalStaffCount > 0 ? Math.round((presentStaffCount / totalStaffCount) * 100) : 100),
+    [totalStaffCount, presentStaffCount]
+  );
 
   return (
     <Box sx={{ pb: 4 }}>
@@ -526,7 +664,7 @@ export const AdminDashboard: React.FC = () => {
 
               <Grid container spacing={2}>
                 {adminActions.map((action) => (
-                  <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={action.title}>
+                  <Grid size={{ xs: 12, sm: 6, md: 3, lg: 3 }} key={action.title}>
                     <ButtonBase
                       onClick={action.onClick}
                       sx={{
@@ -662,13 +800,7 @@ export const AdminDashboard: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   {chartTab === 'weekly' ? (
                     <RechartsBarChart
-                      data={metrics?.weeklyStats || [
-                        { day: 'Mon', present: 22, late: 1, absent: 1 },
-                        { day: 'Tue', present: 21, late: 2, absent: 1 },
-                        { day: 'Wed', present: 23, late: 1, absent: 0 },
-                        { day: 'Thu', present: 20, late: 3, absent: 1 },
-                        { day: 'Fri', present: 18, late: 3, absent: 3 },
-                      ]}
+                      data={weeklyChartData}
                       margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
                     >
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme.palette.divider} />
@@ -688,6 +820,21 @@ export const AdminDashboard: React.FC = () => {
                       <Bar dataKey="late" name="Late Check-In" fill="#f59e0b" radius={[4, 4, 0, 0]} />
                       <Bar dataKey="absent" name="Absent" fill="#ef4444" radius={[4, 4, 0, 0]} />
                     </RechartsBarChart>
+                  ) : departmentStats.length === 0 ? (
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        height: '100%',
+                        p: 2,
+                      }}
+                    >
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+                        No department attendance records available yet.
+                      </Typography>
+                    </Box>
                   ) : (
                     <RechartsBarChart
                       data={departmentStats}
@@ -809,6 +956,8 @@ export const AdminDashboard: React.FC = () => {
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                         <Box sx={{ position: 'relative' }}>
                           <Avatar
+                            src={getAvatarUrl(stream.avatarUrl)}
+                            alt={stream.name}
                             sx={{
                               width: 36,
                               height: 36,
@@ -869,9 +1018,9 @@ export const AdminDashboard: React.FC = () => {
           </Grid>
 
           {/* ======================================================================
-              ROW 4: Cross-Branch Health & Shift Coverage (50% / 50% Split)
+              ROW 4: Operational Approvals & Shift Coverage (50% / 50% Split)
               ====================================================================== */}
-          {/* Widget A: Multi-Workspace Branch Health Scorecard */}
+          {/* Widget A: Leave & Time-Off Requests */}
           <Grid size={{ xs: 12, md: 6 }}>
             <Card
               sx={{
@@ -887,87 +1036,191 @@ export const AdminDashboard: React.FC = () => {
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
                 <Box>
                   <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Workspace Branch Health
+                    Leave & Time-Off Requests
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Cross-Branch Compliance Scorecard
+                    Pending Approvals & Adjustments
                   </Typography>
                 </Box>
-                <Button
+                <Chip
+                  label={pendingLeavesCount > 0 ? `${pendingLeavesCount} ACTION REQUIRED` : 'ALL RESOLVED'}
                   size="small"
-                  variant="outlined"
-                  onClick={() => navigate('/admin/workspaces')}
                   sx={{
+                    height: 22,
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    bgcolor: pendingLeavesCount > 0 ? colors.late.bg : colors.present.bg,
+                    color: pendingLeavesCount > 0 ? colors.late.main : colors.present.main,
                     borderRadius: 1.5,
-                    textTransform: 'none',
-                    fontWeight: 600,
-                    fontSize: '0.72rem',
-                    py: 0.4,
-                    px: 1.25,
                   }}
-                >
-                  Manage
-                </Button>
+                />
               </Box>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1 }}>
-                {branchHealthList.map((branch) => (
-                  <Paper
-                    key={branch.name}
-                    elevation={0}
-                    sx={{
-                      p: 1.75,
-                      borderRadius: 2,
-                      bgcolor: isDark ? 'background.default' : '#f8fafc',
-                      border: `1px solid ${theme.palette.divider}`,
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <DomainIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                          {branch.name}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, flexGrow: 1 }}>
+                {leaveRequests.map((req) => {
+                  const isPending = req.status === 'pending';
+                  const isApproved = req.status === 'approved';
+                  const isRejected = req.status === 'rejected';
+
+                  const typeStyle =
+                    req.type === 'Casual Leave'
+                      ? { bg: colors.late.bg, color: colors.late.main }
+                      : req.type === 'Sick Leave'
+                        ? { bg: colors.autoclosed.bg, color: colors.autoclosed.main }
+                        : { bg: colors.primary.bg, color: colors.primary.main };
+
+                  return (
+                    <Paper
+                      key={req.id}
+                      elevation={0}
+                      sx={{
+                        p: 1.75,
+                        borderRadius: 2,
+                        bgcolor: isDark ? 'background.default' : '#f8fafc',
+                        border: `1px solid ${theme.palette.divider}`,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 1.25,
+                        transition: 'background-color 0.2s ease',
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                          <Avatar
+                            src={req.avatarUrl}
+                            sx={{
+                              width: 38,
+                              height: 38,
+                              fontSize: '0.875rem',
+                              fontWeight: 700,
+                              bgcolor: colors.primary.main,
+                            }}
+                          >
+                            {req.name[0]}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                              {req.name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                              {req.empId} · {req.department}
+                            </Typography>
+                          </Box>
+                        </Box>
+
+                        <Chip
+                          label={req.type}
+                          size="small"
+                          sx={{
+                            height: 20,
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            bgcolor: typeStyle.bg,
+                            color: typeStyle.color,
+                            borderRadius: 1,
+                          }}
+                        />
+                      </Box>
+
+                      {/* Time / Duration & Reason */}
+                      <Box sx={{ pl: 0.25 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                          <EventNoteIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
+                          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                            {req.duration}
+                          </Typography>
+                        </Box>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{
+                            display: 'block',
+                            fontStyle: 'italic',
+                            lineHeight: 1.35,
+                            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
+                            p: 0.75,
+                            borderRadius: 1,
+                            border: `1px dashed ${theme.palette.divider}`,
+                          }}
+                        >
+                          "{req.reason}"
                         </Typography>
                       </Box>
-                      <Chip
-                        label={branch.rate}
-                        size="small"
-                        sx={{
-                          height: 20,
-                          fontSize: '0.68rem',
-                          fontWeight: 700,
-                          bgcolor: branch.bgColor,
-                          color: branch.color,
-                          borderRadius: 1.25,
-                        }}
-                      />
-                    </Box>
 
-                    <LinearProgress
-                      variant="determinate"
-                      value={branch.percent}
-                      sx={{
-                        height: 6,
-                        borderRadius: 3,
-                        mb: 1,
-                        bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-                        '& .MuiLinearProgress-bar': {
-                          bgcolor: branch.color,
-                          borderRadius: 3,
-                        },
-                      }}
-                    />
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                        {branch.checkedIn}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        {branch.radiusText}
-                      </Typography>
-                    </Box>
-                  </Paper>
-                ))}
+                      {/* Action Buttons or Resolved Status */}
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', pt: 0.25 }}>
+                        {isPending && (
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                              size="small"
+                              variant="text"
+                              color="error"
+                              onClick={() => handleRejectRequest(req.id)}
+                              startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
+                              sx={{
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                py: 0.3,
+                                px: 1,
+                                textTransform: 'none',
+                              }}
+                            >
+                              Decline
+                            </Button>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              color="success"
+                              onClick={() => handleApproveRequest(req.id)}
+                              startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
+                              sx={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                py: 0.3,
+                                px: 1.5,
+                                borderRadius: 1.5,
+                                textTransform: 'none',
+                                boxShadow: 'none',
+                              }}
+                            >
+                              Approve
+                            </Button>
+                          </Box>
+                        )}
+                        {isApproved && (
+                          <Chip
+                            icon={<CheckIcon sx={{ fontSize: '14px !important', color: `${colors.present.main} !important` }} />}
+                            label="Approved by Admin"
+                            size="small"
+                            sx={{
+                              height: 22,
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              bgcolor: colors.present.bg,
+                              color: colors.present.main,
+                              borderRadius: 1,
+                            }}
+                          />
+                        )}
+                        {isRejected && (
+                          <Chip
+                            icon={<CloseIcon sx={{ fontSize: '14px !important', color: `${colors.late.main} !important` }} />}
+                            label="Declined"
+                            size="small"
+                            sx={{
+                              height: 22,
+                              fontSize: '0.68rem',
+                              fontWeight: 700,
+                              bgcolor: colors.late.bg,
+                              color: colors.late.main,
+                              borderRadius: 1,
+                            }}
+                          />
+                        )}
+                      </Box>
+                    </Paper>
+                  );
+                })}
               </Box>
             </Card>
           </Grid>
@@ -991,42 +1244,42 @@ export const AdminDashboard: React.FC = () => {
                     Active Shift Coverage
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Roster Deployment Today
+                    Live Roster Deployment Today
                   </Typography>
                 </Box>
                 <Chip
-                  label="88% COVERAGE"
+                  label={`${shiftCoveragePercent}% COVERAGE`}
                   size="small"
                   sx={{
                     height: 22,
                     fontSize: '0.7rem',
                     fontWeight: 700,
-                    bgcolor: colors.primary.bg,
-                    color: colors.primary.main,
+                    bgcolor: shiftCoveragePercent >= 75 ? colors.present.bg : colors.primary.bg,
+                    color: shiftCoveragePercent >= 75 ? colors.present.main : colors.primary.main,
                     borderRadius: 1.5,
                   }}
                 />
               </Box>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, flexGrow: 1 }}>
-                {/* Shift 1: Morning */}
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, flexGrow: 1 }}>
+                {/* Shift 1: General Core Shift */}
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <ScheduleIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                       <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        Morning Shift (09:00 - 17:00)
+                        General Core Shift (09:00 - 17:00)
                       </Typography>
                     </Box>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: colors.present.main }}>
-                      16 / 18 on floor (88.8%)
+                      {presentStaffCount} / {totalStaffCount} on duty ({shiftCoveragePercent}%)
                     </Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
-                    value={88.8}
+                    value={shiftCoveragePercent}
                     sx={{
-                      height: 6,
+                      height: 7,
                       borderRadius: 3,
                       bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
                       '& .MuiLinearProgress-bar': {
@@ -1037,24 +1290,24 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </Box>
 
-                {/* Shift 2: Field & Remote */}
+                {/* Shift 2: Field & Remote Tracked */}
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <GeofenceIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                       <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        Field & Remote (GPS Tracked)
+                        Field Operations & Remote (GPS Tracked)
                       </Typography>
                     </Box>
                     <Typography variant="caption" sx={{ fontWeight: 700, color: colors.geofence.main }}>
-                      6 / 6 active (100%)
+                      {Math.min(presentStaffCount, 2)} / {Math.min(presentStaffCount, 2)} in-bounds (100%)
                     </Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
                     value={100}
                     sx={{
-                      height: 6,
+                      height: 7,
                       borderRadius: 3,
                       bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
                       '& .MuiLinearProgress-bar': {
@@ -1065,26 +1318,30 @@ export const AdminDashboard: React.FC = () => {
                   />
                 </Box>
 
-                {/* Shift 3: Night Shift */}
+                {/* Shift 3: Pending / Approved Absences */}
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <ScheduleIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                      <EventNoteIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                       <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        Night Shift (Rotational 19:00)
+                        Time-Off & Scheduled Leaves
                       </Typography>
                     </Box>
-                    <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 600 }}>
-                      Starts in 2h 45m
+                    <Typography variant="caption" sx={{ fontWeight: 700, color: colors.late.main }}>
+                      {absentStaffCount} on leave ({totalStaffCount > 0 ? Math.round((absentStaffCount / totalStaffCount) * 100) : 0}%)
                     </Typography>
                   </Box>
                   <LinearProgress
                     variant="determinate"
-                    value={0}
+                    value={totalStaffCount > 0 ? (absentStaffCount / totalStaffCount) * 100 : 0}
                     sx={{
-                      height: 6,
+                      height: 7,
                       borderRadius: 3,
                       bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
+                      '& .MuiLinearProgress-bar': {
+                        bgcolor: colors.late.main,
+                        borderRadius: 3,
+                      },
                     }}
                   />
                 </Box>
@@ -1108,7 +1365,7 @@ export const AdminDashboard: React.FC = () => {
                   }}
                 >
                   <Typography variant="caption" sx={{ display: 'block', fontWeight: 500, lineHeight: 1.4 }}>
-                    <strong>Roster Insight:</strong> All minimum station thresholds are satisfied across warehouse bays and admin desks for the current interval.
+                    <strong>Roster Insight:</strong> {presentStaffCount} of {totalStaffCount} personnel are clocked in today. {absentStaffCount} personnel have time-off requests pending review.
                   </Typography>
                 </Alert>
               </Box>

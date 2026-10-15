@@ -9,6 +9,7 @@ interface AuthContextType {
   currentTenant: Tenant | null;
   workspaces: Workspace[];
   currentWorkspace: Workspace | null;
+  isSuperAdmin: boolean;
   switchWorkspace: (workspaceId: string) => Promise<Workspace>;
   addWorkspace: (name: string, details?: Partial<Workspace>) => Promise<Workspace>;
   refreshWorkspaces: () => Promise<void>;
@@ -141,6 +142,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(updatedUser);
   };
 
+  const isSuperAdmin = Boolean(
+    currentTenant?.role === 'OWNER' ||
+    user?.role === 'super_admin' ||
+    user?.isSuperAdmin === true
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -150,6 +157,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         currentTenant,
         workspaces,
         currentWorkspace,
+        isSuperAdmin,
         switchWorkspace,
         addWorkspace,
         refreshWorkspaces,

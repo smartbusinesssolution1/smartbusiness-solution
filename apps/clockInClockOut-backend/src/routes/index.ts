@@ -11,11 +11,14 @@ import workspaceRouter  from '../modules/workspace/workspace.routes.js';
 import { rootRouter     } from '../modules/root/root.router';
 import { devTestRouter  } from '../modules/devtest/devtest.router';
 import adminGeofenceRouter from '../modules/admin/geofence/admin-geofence.routes.js';
+import adminEmployeeRouter from '../modules/admin/employee/admin-employee.routes.js';
+import adminAttendanceRouter from '../modules/admin/attendance/admin-attendance.routes.js';
 
 const apiV1 = express.Router();
 
 // ─── Unprotected Routes ───────────────────────────
 apiV1.use('/', rootRouter);
+apiV1.use('/uploads', express.static(UPLOADS_DIR));
 
 // Centralized Auth Proxy: Relay /auth requests to platform-api (Port 3001)
 apiV1.use('/auth', async (req, res) => {
@@ -72,10 +75,11 @@ apiV1.use('/employees',  employeeRouter);
 // Admin Routes (Gated by requireAdmin)
 apiV1.use('/admin/attendance/geofences', adminGeofenceRouter);
 apiV1.use('/admin/geofences',            adminGeofenceRouter);
+apiV1.use('/admin/employees',            adminEmployeeRouter);
+apiV1.use('/admin/attendance',           adminAttendanceRouter);
 
 // apiV1.use('/attendance', attendanceRouter);
 apiV1.use('/settings',   settingsRouter);
-apiV1.use('/uploads',    express.static(UPLOADS_DIR)); // Mutler: Serve uploaded selfies statically
 // apiV1.use('/users',      userRouter);
 
 export { apiV1 };

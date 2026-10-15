@@ -1,9 +1,9 @@
 import axios, { AxiosError } from 'axios';
 
 export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || 'http://localhost:3001';
-export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3006';
+export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
-// Central Axios instance for ClockInClockOut backend (Port 3006)
+// Central Axios instance for ClockInClockOut backend (Port 3000)
 export const clockInApi = axios.create({
   baseURL: CLOCKIN_API_URL,
   withCredentials: true, // Send access_token cookie automatically
@@ -28,11 +28,11 @@ clockInApi.interceptors.request.use((config) => {
     config.headers.set('Authorization', `Bearer ${token}`);
   }
   const tenantId = localStorage.getItem('active_tenant_id');
-  if (tenantId) {
+  if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }
   const workspaceId = localStorage.getItem('active_workspace_id');
-  if (workspaceId) {
+  if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
     config.headers.set('X-Workspace-Id', workspaceId);
   }
   return config;
@@ -45,7 +45,7 @@ platformAuthApi.interceptors.request.use((config) => {
     config.headers.set('Authorization', `Bearer ${token}`);
   }
   const tenantId = localStorage.getItem('active_tenant_id');
-  if (tenantId) {
+  if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }
   return config;

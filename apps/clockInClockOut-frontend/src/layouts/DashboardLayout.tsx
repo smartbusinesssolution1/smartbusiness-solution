@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
+import { getAvatarUrl } from '../utils/imageUrl';
 import {
   Box,
   Drawer,
@@ -44,7 +45,7 @@ const DRAWER_WIDTH = 270;
 const COLLAPSED_WIDTH = 76;
 
 export const DashboardLayout: React.FC = () => {
-  const { user, logout } = useAuth();
+  const { user, isSuperAdmin, logout } = useAuth();
   const { mode, toggleTheme } = useAppTheme();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -80,9 +81,11 @@ export const DashboardLayout: React.FC = () => {
     navigate('/login');
   };
 
+  const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin' || isSuperAdmin;
+
   const handleProfileNavigate = () => {
     handleProfileMenuClose();
-    if (user?.role === 'admin') {
+    if (isAdminOrSuperAdmin) {
       navigate('/admin/profile');
     } else {
       navigate('/employee/profile');
@@ -90,19 +93,19 @@ export const DashboardLayout: React.FC = () => {
   };
 
   // Define sidebar navigation items based on user role
-  const menuItems = user?.role === 'admin' 
+  const menuItems = isAdminOrSuperAdmin
     ? [
-        { text: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
-        { text: 'Employee Directory', icon: <PeopleIcon />, path: '/admin/employees' },
-        { text: 'Attendance Reports', icon: <AssessmentIcon />, path: '/admin/reports' },
-        { text: 'Organization Settings', icon: <SettingsIcon />, path: '/admin/settings' },
-        { text: 'My Profile', icon: <PersonIcon />, path: '/admin/profile' },
-      ]
+      { text: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
+      { text: 'Employee Directory', icon: <PeopleIcon />, path: '/admin/employees' },
+      { text: 'Attendance Reports', icon: <AssessmentIcon />, path: '/admin/reports' },
+      { text: 'Organization', icon: <SettingsIcon />, path: '/admin/settings' },
+      { text: 'My Profile', icon: <PersonIcon />, path: '/admin/profile' },
+    ]
     : [
-        { text: 'My Dashboard', icon: <DashboardIcon />, path: '/employee/dashboard' },
-        { text: 'Attendance History', icon: <HistoryIcon />, path: '/employee/history' },
-        { text: 'My Profile', icon: <PersonIcon />, path: '/employee/profile' },
-      ];
+      { text: 'My Dashboard', icon: <DashboardIcon />, path: '/employee/dashboard' },
+      { text: 'Attendance History', icon: <HistoryIcon />, path: '/employee/history' },
+      { text: 'My Profile', icon: <PersonIcon />, path: '/employee/profile' },
+    ];
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflowX: 'hidden' }}>
@@ -117,7 +120,7 @@ export const DashboardLayout: React.FC = () => {
         }}
       >
         <Box
-          onClick={() => navigate(user?.role === 'admin' ? '/admin/dashboard' : '/employee/dashboard')}
+          onClick={() => navigate(isAdminOrSuperAdmin ? '/admin/dashboard' : '/employee/dashboard')}
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -170,7 +173,7 @@ export const DashboardLayout: React.FC = () => {
         )}
       </Toolbar>
       <Divider />
-      
+
       {/* Current User Quick Info */}
       <Box
         sx={{
@@ -183,7 +186,7 @@ export const DashboardLayout: React.FC = () => {
       >
         <Tooltip title={collapsed ? (user?.name || '') : ''} placement="right">
           <Avatar
-            src={user?.avatarUrl}
+            src={getAvatarUrl(user?.avatarUrl)}
             alt={user?.name}
             sx={{
               width: collapsed ? 40 : 48,
@@ -198,17 +201,17 @@ export const DashboardLayout: React.FC = () => {
               {user?.name}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {user?.role === 'admin' ? (
+              {isAdminOrSuperAdmin ? (
                 <AdminIcon sx={{ fontSize: 14, color: theme.palette.secondary.main }} />
               ) : null}
               <Typography variant="caption" sx={{ color: theme.palette.text.secondary, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-                {user?.role === 'admin' ? 'Administrator' : user?.designation || 'Employee'}
+                {isSuperAdmin ? 'Super Administrator' : user?.role === 'admin' ? 'Administrator' : user?.designation || 'Employee'}
               </Typography>
             </Box>
           </Box>
         )}
       </Box>
-      
+
       <Divider />
 
       <List sx={{ px: collapsed ? 1 : 1.5, py: 2, flexGrow: 1 }}>
@@ -228,14 +231,14 @@ export const DashboardLayout: React.FC = () => {
                     px: collapsed ? 1.25 : 2,
                     justifyContent: collapsed ? 'center' : 'flex-start',
                     transition: 'all 0.15s ease-in-out',
-                    backgroundColor: isActive 
+                    backgroundColor: isActive
                       ? (theme.palette.mode === 'light' ? '#EEF2FF' : 'rgba(99, 102, 241, 0.16)')
                       : 'transparent',
-                    color: isActive 
+                    color: isActive
                       ? (theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE')
                       : theme.palette.text.primary,
                     '&:hover': {
-                      backgroundColor: isActive 
+                      backgroundColor: isActive
                         ? (theme.palette.mode === 'light' ? '#E0E7FF' : 'rgba(99, 102, 241, 0.24)')
                         : (theme.palette.mode === 'light' ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
                     },
@@ -245,7 +248,7 @@ export const DashboardLayout: React.FC = () => {
                     sx={{
                       minWidth: collapsed ? 'auto' : 40,
                       justifyContent: 'center',
-                      color: isActive 
+                      color: isActive
                         ? (theme.palette.mode === 'light' ? '#4F46E5' : '#818CF8')
                         : theme.palette.text.secondary,
                       transition: 'color 0.15s ease',
@@ -278,7 +281,7 @@ export const DashboardLayout: React.FC = () => {
       </List>
 
       <Divider />
-      
+
       <Box sx={{ p: collapsed ? 1 : 2 }}>
         <Tooltip title={collapsed ? 'Sign Out' : ''} placement="right">
           <Button
@@ -343,8 +346,8 @@ export const DashboardLayout: React.FC = () => {
               alt="Clock In Clock Out"
               sx={{ height: 32, width: 32, objectFit: 'contain', display: { xs: 'none', sm: 'block', md: 'none' } }}
             />
-            {/* Workspace / Tenant Switcher */}
-            <WorkspaceSwitcher />
+            {/* Workspace / Tenant Switcher - Strictly restricted to Super Admin / Organization Owner */}
+            {isSuperAdmin && <WorkspaceSwitcher />}
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -358,7 +361,7 @@ export const DashboardLayout: React.FC = () => {
             {/* User Dropdown */}
             <Tooltip title="Account settings">
               <IconButton onClick={handleProfileMenuOpen} size="small" sx={{ p: 0.5 }}>
-                <Avatar src={user?.avatarUrl} alt={user?.name} sx={{ width: 36, height: 36 }} />
+                <Avatar src={getAvatarUrl(user?.avatarUrl)} alt={user?.name} sx={{ width: 36, height: 36 }} />
               </IconButton>
             </Tooltip>
 
@@ -423,7 +426,7 @@ export const DashboardLayout: React.FC = () => {
         >
           {drawerContent}
         </Drawer>
-        
+
         {/* Desktop Drawer */}
         <Drawer
           variant="permanent"

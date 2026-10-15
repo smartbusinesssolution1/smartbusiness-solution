@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
+import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
 import {
   Box,
   Card,
@@ -25,6 +27,7 @@ import {
   Skeleton,
   useTheme,
   Avatar,
+  Alert,
 } from '@mui/material';
 import {
   FilterList as FilterIcon,
@@ -35,28 +38,56 @@ import {
   Search as SearchIcon,
   FileDownload as PrintIcon,
   EventNote as ReportIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
+import { getAvatarUrl } from '../../utils/imageUrl';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState('');
+  const [dateFilter, setDateFilter] = useState(() => dayjs().format('YYYY-MM-DD'));
 
-  // Pagination State
+  // Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  // Pagination State (0-indexed for MUI TablePagination)
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Fetch all attendance logs
-  const { data: allAttendance = [], isLoading } = useQuery({
-    queryKey: ['adminAttendanceReports'],
-    queryFn: () => attendanceService.getAllAttendance(),
+  // Fetch attendance report with dynamic server-side filters & pagination
+  const {
+    data: reportData,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: ['adminAttendanceReports', page, rowsPerPage, searchTerm, statusFilter, dateFilter],
+    queryFn: () =>
+      attendanceService.getAdminAttendanceReport({
+        page: page + 1,
+        limit: rowsPerPage,
+        search: searchTerm.trim() || undefined,
+        status: statusFilter,
+        date: dateFilter || undefined,
+      }),
   });
 
-  const handlePageChange = (event: unknown, newPage: number) => {
+  const records = reportData?.items || [];
+  const totalCount = reportData?.pagination?.total || 0;
+  const summary = reportData?.summary || {
+    totalShifts: 0,
+    lateCount: 0,
+    latePercentage: 0,
+    averageWorkingHours: 0,
+    absentCount: 0,
+  };
+
+  const handlePageChange = (_event: unknown, newPage: number) => {
     setPage(newPage);
   };
 
@@ -64,32 +95,6 @@ export const AttendanceReport: React.FC = () => {
     setRowsPerPage(parseInt(event.target.value, 10));
     setPage(0);
   };
-
-  // Filter logs
-  const filteredRecords = allAttendance.filter((record) => {
-    const matchesSearch =
-      record.employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      record.employeeId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
-    const matchesDate = !dateFilter || record.date === dateFilter;
-
-    return matchesSearch && matchesStatus && matchesDate;
-  });
-
-  const paginatedRecords = filteredRecords.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
-  );
-
-  // High-level Calculations for Report Panel
-  const totalShifts = filteredRecords.filter((r) => r.status !== 'absent').length;
-  const lateCount = filteredRecords.filter((r) => r.status === 'late').length;
-  const latePercentage = totalShifts > 0 ? Math.round((lateCount / totalShifts) * 100) : 0;
-  
-  const presentRecords = filteredRecords.filter((r) => r.status === 'present' || r.status === 'late');
-  const averageHours = presentRecords.length > 0 
-    ? parseFloat((presentRecords.reduce((sum, r) => sum + r.workingHours, 0) / presentRecords.length).toFixed(1))
-    : 0;
 
   const getStatusChip = (status: string) => {
     switch (status) {
@@ -99,6 +104,8 @@ export const AttendanceReport: React.FC = () => {
         return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
       case 'absent':
         return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+      case 'half_day':
+        return <Chip label="Half Day" color="info" size="small" />;
       case 'auto_closed':
         return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
       default:
@@ -106,8 +113,8 @@ export const AttendanceReport: React.FC = () => {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleOpenExport = () => {
+    setIsExportModalOpen(true);
   };
 
   return (
@@ -115,58 +122,194 @@ export const AttendanceReport: React.FC = () => {
       {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Attendance Report
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+            <Typography variant="h4" sx={{ fontWeight: 800 }}>
+              Attendance Report
+            </Typography>
+            {reportData && (
+              <Chip
+                label={reportData.isLive ? '🟢 Live Database' : '🟡 Demo Mode'}
+                color={reportData.isLive ? 'success' : 'default'}
+                size="small"
+                variant="outlined"
+                sx={{ fontWeight: 700, fontSize: '0.72rem' }}
+              />
+            )}
+          </Box>
           <Typography variant="body2" color="text.secondary">
             Perform enterprise logs auditing, run compliance filters, and print reports.
           </Typography>
         </Box>
-        <Button variant="outlined" startIcon={<PrintIcon />} onClick={handlePrint}>
-          Print Audit Report
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => refetch()}>
+            Refresh
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<PrintIcon />}
+            onClick={handleOpenExport}
+            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
+          >
+            Print / Export Audit Report
+          </Button>
+        </Box>
       </Box>
 
+      {/* Fallback / Demo Mode Notice */}
+      {!isLoading && reportData && !reportData.isLive && (
+        <Alert
+          severity="info"
+          sx={{ mb: 3, borderRadius: 2 }}
+          action={
+            <Button
+              color="primary"
+              size="small"
+              variant="contained"
+              onClick={() => navigate('/login')}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              Log In as Maria (Admin)
+            </Button>
+          }
+        >
+          Currently displaying local fallback records ({reportData.errorMessage || 'Admin session required'}).
+          Sign in with <strong>maria@greenacres.com</strong> to query real-time attendance directly from PostgreSQL.
+        </Alert>
+      )}
+
+      {/* Critical Server Error Alert */}
+      {isError && (
+        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
+          Failed to communicate with attendance services. Please verify backend server is online at port 3000.
+        </Alert>
+      )}
+
       {/* Metrics Summary row */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper
+            variant="outlined"
+            onClick={() => {
+              setStatusFilter('all');
+              setPage(0);
+            }}
+            sx={{
+              p: 2.25,
+              borderRadius: 3,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.5,
+              cursor: 'pointer',
+              borderColor: statusFilter === 'all' ? 'primary.main' : undefined,
+              bgcolor: statusFilter === 'all' ? 'rgba(59, 130, 246, 0.04)' : 'background.paper',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                borderColor: 'primary.main',
+                boxShadow: 2,
+              },
+            }}
+          >
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
               Logged Shifts
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>
-              {totalShifts} Shifts
+              {summary.totalShifts} Shifts
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Count of non-absent reports matching active criteria
+              Total active clock-ins
             </Typography>
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper
+            variant="outlined"
+            onClick={() => {
+              setStatusFilter(statusFilter === 'late' ? 'all' : 'late');
+              setPage(0);
+            }}
+            sx={{
+              p: 2.25,
+              borderRadius: 3,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.5,
+              cursor: 'pointer',
+              borderColor: statusFilter === 'late' ? 'warning.main' : undefined,
+              bgcolor: statusFilter === 'late' ? 'rgba(245, 158, 11, 0.08)' : 'background.paper',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                borderColor: 'warning.main',
+                boxShadow: 2,
+              },
+            }}
+          >
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
-              Late Exception Rate
+              Late Arrivals
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'warning.main' }}>
-              {latePercentage}%
+              {summary.lateCount} ({summary.latePercentage}%)
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Ratio of late arrivals to total logs
+              {statusFilter === 'late' ? 'Click to show all logs' : 'Click to filter late check-ins'}
             </Typography>
           </Paper>
         </Grid>
 
-        <Grid size={{ xs: 12, sm: 4 }}>
-          <Paper variant="outlined" sx={{ p: 2.5, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper
+            variant="outlined"
+            onClick={() => {
+              setStatusFilter(statusFilter === 'absent' ? 'all' : 'absent');
+              setPage(0);
+            }}
+            sx={{
+              p: 2.25,
+              borderRadius: 3,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.5,
+              cursor: 'pointer',
+              borderColor: statusFilter === 'absent' ? 'error.main' : undefined,
+              bgcolor: statusFilter === 'absent' ? 'rgba(239, 68, 68, 0.08)' : 'background.paper',
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': {
+                borderColor: 'error.main',
+                boxShadow: 2,
+              },
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+                Absent Personnel
+              </Typography>
+              <Chip
+                label={statusFilter === 'absent' ? 'Filtering' : 'View Absences'}
+                size="small"
+                color="error"
+                variant={statusFilter === 'absent' ? 'filled' : 'outlined'}
+                sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
+              />
+            </Box>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'error.main' }}>
+              {summary.absentCount ?? 0} Absent
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {statusFilter === 'absent' ? 'Click to show all logs' : 'Click to filter absent records'}
+            </Typography>
+          </Paper>
+        </Grid>
+
+        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+          <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
             <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
               Average Shift Length
             </Typography>
             <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.main' }}>
-              {averageHours} hrs/day
+              {summary.averageWorkingHours} hrs/day
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Averaged across standard clocked-in logs
+              Averaged across completed logs
             </Typography>
           </Paper>
         </Grid>
@@ -219,24 +362,53 @@ export const AttendanceReport: React.FC = () => {
                   <MenuItem value="present">On Time</MenuItem>
                   <MenuItem value="late">Late Arrival</MenuItem>
                   <MenuItem value="absent">Absent</MenuItem>
+                  <MenuItem value="half_day">Half Day</MenuItem>
                   <MenuItem value="auto_closed">Auto-Closed</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
 
-            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                type="date"
-                label="Specific Date"
-                value={dateFilter}
-                onChange={(e) => {
-                  setDateFilter(e.target.value);
-                  setPage(0);
-                }}
-                slotProps={{ inputLabel: { shrink: true } }}
-              />
+            <Grid size={{ xs: 12, sm: 4, md: 4 }}>
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                <TextField
+                  fullWidth
+                  size="small"
+                  type="date"
+                  label="Specific Date"
+                  value={dateFilter}
+                  onChange={(e) => {
+                    setDateFilter(e.target.value);
+                    setPage(0);
+                  }}
+                  slotProps={{ inputLabel: { shrink: true } }}
+                />
+                {dateFilter ? (
+                  <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    onClick={() => {
+                      setDateFilter('');
+                      setPage(0);
+                    }}
+                    sx={{ minWidth: 'auto', px: 1, textTransform: 'none', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                  >
+                    Clear
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => {
+                      setDateFilter(dayjs().format('YYYY-MM-DD'));
+                      setPage(0);
+                    }}
+                    sx={{ whiteSpace: 'nowrap', textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', py: 0.8 }}
+                  >
+                    Today
+                  </Button>
+                )}
+              </Box>
             </Grid>
           </Grid>
         </CardContent>
@@ -268,58 +440,114 @@ export const AttendanceReport: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredRecords.length > 0 ? (
-                    paginatedRecords.map((record) => (
-                      <TableRow
-                        key={record.id}
-                        sx={{
-                          '&:last-child td, &:last-child th': { border: 0 },
-                          '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                      >
-                        <TableCell sx={{ fontWeight: 700 }}>{record.date}</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: 'primary.main' }}>
-                          {record.employeeId}
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            {record.selfieUrl ? (
-                              <Avatar 
-                                src={record.selfieUrl} 
-                                variant="rounded"
-                                sx={{ width: 36, height: 36, cursor: 'pointer', border: '1px solid', borderColor: 'divider' }}
-                                onClick={() => window.open(record.selfieUrl, '_blank')}
-                                title="Click to view full-size selfie"
-                              />
-                            ) : (
-                              <Avatar sx={{ width: 36, height: 36, fontSize: '0.875rem', fontWeight: 600 }}>
-                                {record.employeeName.charAt(0)}
+                  {records.length > 0 ? (
+                    records.map((record) => {
+                      const isAbsent = record.status === 'absent';
+                      return (
+                        <TableRow
+                          key={record.id}
+                          sx={{
+                            bgcolor: isAbsent ? 'rgba(239, 68, 68, 0.04)' : 'inherit',
+                            '&:last-child td, &:last-child th': { border: 0 },
+                            '&:hover': {
+                              bgcolor: isAbsent ? 'rgba(239, 68, 68, 0.09)' : 'action.hover',
+                            },
+                          }}
+                        >
+                          <TableCell sx={{ fontWeight: 700 }}>{record.date}</TableCell>
+                          <TableCell sx={{ fontWeight: 700, color: isAbsent ? 'error.main' : 'primary.main' }}>
+                            {record.employeeId}
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                              <Avatar
+                                src={getAvatarUrl(record.avatarUrl)}
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  fontSize: '0.875rem',
+                                  fontWeight: 700,
+                                  bgcolor: isAbsent ? theme.palette.error.main : theme.palette.primary.main,
+                                }}
+                              >
+                                {record.employeeName ? record.employeeName.charAt(0).toUpperCase() : 'E'}
                               </Avatar>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {record.employeeName}
+                                </Typography>
+                                {isAbsent && (
+                                  <Typography
+                                    variant="caption"
+                                    sx={{ color: 'error.main', fontWeight: 600, display: 'block', lineHeight: 1 }}
+                                  >
+                                    Absent Log
+                                  </Typography>
+                                )}
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>
+                            {isAbsent ? (
+                              <Typography
+                                variant="body2"
+                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
+                              >
+                                No Check-In
+                              </Typography>
+                            ) : record.checkIn ? (
+                              dayjs(`${record.date}T${record.checkIn}`).isValid()
+                                ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
+                                : record.checkIn
+                            ) : (
+                              '--'
                             )}
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                              {record.employeeName}
-                            </Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>
-                          {record.checkIn 
-                            ? dayjs(`${record.date} ${record.checkIn}`).format('hh:mm A') 
-                            : '--'}
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 600 }}>
-                          {record.checkOut 
-                            ? dayjs(`${record.date} ${record.checkOut}`).format('hh:mm A') 
-                            : record.checkIn ? <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>Active Shift</span> : '--'}
-                        </TableCell>
-                        <TableCell>{getStatusChip(record.status)}</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 700 }}>
-                          {record.workingHours ? `${record.workingHours} hrs` : '--'}
-                        </TableCell>
-                        <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem', fontWeight: 500, maxWidth: 220 }}>
-                          {record.notes || '--'}
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 600 }}>
+                            {isAbsent ? (
+                              <Typography
+                                variant="body2"
+                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
+                              >
+                                No Check-Out
+                              </Typography>
+                            ) : record.checkOut ? (
+                              dayjs(`${record.date}T${record.checkOut}`).isValid()
+                                ? dayjs(`${record.date}T${record.checkOut}`).format('hh:mm A')
+                                : record.checkOut
+                            ) : record.checkIn ? (
+                              <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>
+                                Active Shift
+                              </span>
+                            ) : (
+                              '--'
+                            )}
+                          </TableCell>
+                          <TableCell>{getStatusChip(record.status)}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>
+                            {isAbsent ? (
+                              <Typography variant="body2" sx={{ color: 'text.disabled', fontWeight: 600 }}>
+                                0 hrs
+                              </Typography>
+                            ) : record.workingHours ? (
+                              `${record.workingHours} hrs`
+                            ) : (
+                              '--'
+                            )}
+                          </TableCell>
+                          <TableCell
+                            sx={{
+                              color: isAbsent ? 'error.dark' : 'text.secondary',
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              maxWidth: 220,
+                            }}
+                          >
+                            {record.notes || '--'}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
@@ -343,7 +571,7 @@ export const AttendanceReport: React.FC = () => {
             <TablePagination
               rowsPerPageOptions={[5, 10, 25, 50]}
               component="div"
-              count={filteredRecords.length}
+              count={totalCount}
               rowsPerPage={rowsPerPage}
               page={page}
               onPageChange={handlePageChange}
@@ -353,6 +581,18 @@ export const AttendanceReport: React.FC = () => {
           </Box>
         )}
       </Card>
+
+      {/* Export / Print Audit Report Modal */}
+      <ExportAuditReportModal
+        open={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        currentFilters={{
+          search: searchTerm.trim() || undefined,
+          status: statusFilter !== 'all' ? statusFilter : undefined,
+          date: dateFilter || undefined,
+        }}
+        totalCount={totalCount}
+      />
     </Box>
   );
 };

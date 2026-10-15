@@ -622,14 +622,22 @@ model AttendanceEmployeeDetails {
   employeeCode      String   @map("employee_code") // was `employeeId`, e.g. "EMP-001"
   designation       String?
   department        String?
+  phone             String?  @map("phone")
+  role              String   @default("employee") @map("role") // "admin" | "employee"
+  shiftType         String   @default("general") @map("shift_type") // "general" | "custom"
+  weeklySchedule    Json?    @map("weekly_schedule") // Day-wise shift config: { "MON": { "isWorkDay": true, "startTime": "09:00", "endTime": "18:00" }, ... }
   biometricPhotoUrl String   @map("biometric_photo_url") // was `avatarUrl` — mandatory face-match reference
   isActive          Boolean  @default(true) @map("is_active")
 
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime? @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
+
   workspaceMember    WorkspaceMember      @relation(fields: [workspaceMemberId], references: [id])
   attendanceRecords  AttendanceRecord[]
-  schedule           AttendanceSchedule[]
 
   @@index([workspaceMemberId])
+  @@index([deletedAt])
   @@map("employees")
 }
 
@@ -649,36 +657,18 @@ model AttendanceRecord {
   clockInFaceMatchConfidence  Decimal   @map("clock_in_face_match_confidence") @db.Decimal(5, 2)
 
   // Clock Out
-  clockOutDate                 DateTime  @db.Date
-  clockOutTime                 DateTime  @map("clock_out_time")
-  clockOutLatitude             Decimal   @map("clock_out_latitude") @db.Decimal(9, 6)
-  clockOutLongitude            Decimal   @map("clock_out_longitude") @db.Decimal(9, 6)
-  clockOutFaceMatchConfidence  Decimal   @map("check_out_face_match_confidence") @db.Decimal(5, 2)
+  clockOutDate                 DateTime? @db.Date
+  clockOutTime                 DateTime? @map("clock_out_time")
+  clockOutLatitude             Decimal?  @map("clock_out_latitude") @db.Decimal(9, 6)
+  clockOutLongitude            Decimal?  @map("clock_out_longitude") @db.Decimal(9, 6)
+  clockOutFaceMatchConfidence  Decimal?  @map("check_out_face_match_confidence") @db.Decimal(5, 2)
+
+  workingHours                 Decimal?  @map("working_hours") @db.Decimal(4, 2)
+  notes                        String?   @map("notes")
 
   employee  AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
 
+  @@index([employeeId])
+  @@index([clockInDate])
   @@map("attendance_records")
-}
-
-enum Days {
-  SUN
-  MON
-  TUE
-  WED
-  THU
-  FRI
-  SAT
-}
-
-model AttendanceSchedule {
-  id              String    @id @default(uuid())
-  employeeId      String    @map("employee_id")
-  shiftStartDay   Days
-  shiftStartTime  DateTime
-  shiftEndDay     DateTime
-  shiftEndTime    Days
-
-  employee  AttendanceEmployeeDetails  @relation(fields: [employeeId], references: [id])
-
-  @@map("schedule")
 }
