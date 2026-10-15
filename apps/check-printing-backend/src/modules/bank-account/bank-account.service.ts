@@ -204,7 +204,8 @@ export class BankAccountService {
       accountType: data.accountType,
       nextCheckNumber: data.nextCheckNumber,
       checkNumberPadding: data.checkNumberPadding,
-      signatureImageUrl: data.signatureImageUrl,
+      // Never the storage path itself: more roles can view accounts than manage them.
+      hasSignature: Boolean(data.signatureImageUrl),
       isActive: data.isActive,
       createdAt: data.createdAt,
     };

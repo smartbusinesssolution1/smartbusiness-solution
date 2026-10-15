@@ -100,12 +100,9 @@ router.delete(
   workspaceController.removeMember,
 );
 
-router.use(
-  "/:wid/bank-accounts",
-  workspaceMiddleware,
-  requirePermission(P.BANK_ACCOUNT_MANAGE),
-  bankAccountRouter,
-);
+// Permissions are checked per route inside bankAccountRouter: viewing and
+// changing bank accounts need different permissions.
+router.use("/:wid/bank-accounts", workspaceMiddleware, bankAccountRouter);
 
 router.use("/:wid/payees", workspaceMiddleware, payeeRouter);
 
