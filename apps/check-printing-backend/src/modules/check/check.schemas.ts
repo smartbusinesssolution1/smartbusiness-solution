@@ -126,6 +126,22 @@ export const printCheckSchema = z
 
 export type PrintCheckInput = z.infer<typeof printCheckSchema>;
 
+// What came out of the printer. SPOILED needs a reason: auditors will ask what
+// happened to check #1005, and "Paper jam" answers it.
+export const printOutcomeSchema = z.discriminatedUnion("outcome", [
+  z.object({ outcome: z.literal("OK") }),
+  z.object({
+    outcome: z.literal("SPOILED"),
+    reason: z
+      .string({ error: "Describe what went wrong, for example \"Paper jam\"" })
+      .trim()
+      .min(1, "Describe what went wrong, for example \"Paper jam\"")
+      .max(500),
+  }),
+]);
+
+export type PrintOutcomeInput = z.infer<typeof printOutcomeSchema>;
+
 export const clearCheckSchema = z.object({
   clearedDate: z.coerce.date().optional(),
   clearedAmount: moneySchema("Cleared amount").optional(),
@@ -163,6 +179,11 @@ export const listChecksQuerySchema = z.object({
   bankAccountId: z.string().uuid().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
+  // Printed checks whose outcome (OK / spoiled) nobody has reported yet
+  printUnconfirmed: z
+    .enum(["true", "false"])
+    .transform((v) => v === "true")
+    .optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
   sortBy: z

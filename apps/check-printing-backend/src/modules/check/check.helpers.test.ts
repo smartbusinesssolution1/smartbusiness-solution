@@ -106,8 +106,11 @@ describe("status transitions", () => {
     ["NEW", "APPROVED"],
     ["PENDING_APPROVAL", "APPROVED"],
     ["PENDING_APPROVAL", "REJECTED"],
+    ["PENDING_APPROVAL", "VOID"],
     ["APPROVED", "PRINTED"],
+    ["APPROVED", "VOID"],
     ["REJECTED", "PENDING_APPROVAL"],
+    ["REJECTED", "VOID"],
     ["PRINTED", "CLEARED"],
     ["PRINTED", "VOID"],
   ];
@@ -130,6 +133,12 @@ describe("status transitions", () => {
     expect(() => assertTransition("PRINTED", "PRINTED")).toThrow();
     expect(() => assertTransition("VOID", "PRINTED")).toThrow();
     expect(() => assertTransition("VOID", "APPROVED")).toThrow();
+  });
+
+  it("never voids a NEW draft (drafts are deleted) and never reopens a finished check", () => {
+    expect(() => assertTransition("NEW", "VOID")).toThrow();
+    expect(() => assertTransition("CLEARED", "VOID")).toThrow();
+    expect(() => assertTransition("VOID", "VOID")).toThrow();
   });
 
   it("treats CLEARED and VOID as terminal", () => {

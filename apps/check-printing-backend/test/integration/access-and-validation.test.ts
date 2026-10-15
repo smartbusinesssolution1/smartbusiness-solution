@@ -121,7 +121,9 @@ describe("authentication and permissions", () => {
     ["approver", "prints a check", "post", "/print", 403],
     ["printer", "voids a check", "post", "/void", 403],
     ["viewer", "downloads a check PDF", "get", "/pdf", 403],
-    ["editor", "voids a check", "post", "/void", 403],
+    // Editors may withdraw their OWN unprinted checks (void-and-print-outcome.test.ts);
+    // someone who can neither void nor create checks is stopped at the door.
+    ["approver", "voids a check", "post", "/void", 403],
   ] as const)("refuses when the %s %s", async (role, _action, method, suffix, status) => {
     const user = {
       viewer: world.viewer,

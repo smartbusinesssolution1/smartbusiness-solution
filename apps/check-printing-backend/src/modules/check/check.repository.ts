@@ -48,6 +48,7 @@ const CHECK_INCLUDE = {
   createdBy: { select: USER_SELECT },
   printedBy: { select: USER_SELECT },
   voidedBy: { select: USER_SELECT },
+  printConfirmedBy: { select: USER_SELECT },
   clearedBy: { select: USER_SELECT },
   bankAccount: {
     select: {
@@ -140,6 +141,7 @@ interface ListChecksParams {
   bankAccountId?: string;
   dateFrom?: Date;
   dateTo?: Date;
+  printUnconfirmed?: boolean;
   page: number;
   limit: number;
   sortBy: string;
@@ -299,6 +301,11 @@ export class CheckRepository {
       if (params.dateTo) where.checkDate.lte = params.dateTo;
     }
 
+    if (params.printUnconfirmed) {
+      where.status = "PRINTED";
+      where.printConfirmedAt = null;
+    }
+
     const skip = (params.page - 1) * params.limit;
 
     const [items, total] = await Promise.all([
@@ -365,6 +372,9 @@ export class CheckRepository {
     toStatus: string,
     statusChange: StatusChangeData,
     extraData?: Record<string, unknown>,
+    // Further conditions the row must still meet, checked in the same UPDATE
+    // (e.g. "the print has not been confirmed OK").
+    extraWhere: Prisma.CheckWhereInput = {},
   ) {
     return prisma.$transaction(async (tx) => {
       // The expected status is part of the WHERE clause, so PostgreSQL decides
@@ -378,6 +388,7 @@ export class CheckRepository {
           workspaceId,
           deletedAt: null,
           status: statusChange.fromStatus as Prisma.CheckWhereInput["status"],
+          ...extraWhere,
         },
         data: {
           status: toStatus,
@@ -409,6 +420,29 @@ export class CheckRepository {
       });
 
       return check;
+    }, TX_OPTIONS);
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // CONFIRM A PRINT (the paper came out fine)
+  //
+  // Conditional, like every state change: only a PRINTED check whose outcome was
+  // not reported yet. If someone reported SPOILED (or OK) a moment earlier, this
+  // matches no row and the caller gets a 409.
+  // ═════════════════════════════════════════════════════════════
+
+  async confirmPrint(checkId: string, workspaceId: string, userId: string) {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.check.updateMany({
+        where: { id: checkId, workspaceId, deletedAt: null, status: "PRINTED", printConfirmedAt: null },
+        data: { printConfirmedAt: new Date(), printConfirmedById: userId },
+      });
+      if (count !== 1) {
+        throw new ConflictError(
+          "The outcome of this print was already reported by another request. Refresh and try again.",
+        );
+      }
+      return tx.check.findFirstOrThrow({ where: { id: checkId, workspaceId }, include: CHECK_INCLUDE });
     }, TX_OPTIONS);
   }
 

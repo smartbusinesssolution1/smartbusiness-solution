@@ -34,11 +34,13 @@ type CheckStatus =
   | "CLEARED"
   | "VOID";
 
+// Any check that has a number but is not finished can be voided, so none gets stuck.
+// NEW drafts are deleted instead; CLEARED and VOID are final.
 const ALLOWED_TRANSITIONS: Record<CheckStatus, CheckStatus[]> = {
   NEW: ["PENDING_APPROVAL", "APPROVED"],
-  PENDING_APPROVAL: ["APPROVED", "REJECTED"],
-  APPROVED: ["PRINTED"],
-  REJECTED: ["PENDING_APPROVAL"],
+  PENDING_APPROVAL: ["APPROVED", "REJECTED", "VOID"],
+  APPROVED: ["PRINTED", "VOID"],
+  REJECTED: ["PENDING_APPROVAL", "VOID"],
   PRINTED: ["CLEARED", "VOID"],
   CLEARED: [],
   VOID: [],

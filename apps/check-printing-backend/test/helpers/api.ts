@@ -41,6 +41,9 @@ export function checksApi(world: TestWorld, user: TestUser) {
     void: (id: string, reason = "Printed with the wrong payee") =>
       http().post(`${base}/${id}/void`).set(headers).send({ reason }),
     reissue: (id: string) => http().post(`${base}/${id}/reissue`).set(headers).send({}),
+    printOutcome: (id: string, body: Record<string, unknown>) =>
+      http().post(`${base}/${id}/print-outcome`).set(headers).send(body),
+    list: (query: Record<string, string> = {}) => http().get(base).query(query).set(headers),
     approvalQueue: () => http().get(`${base}/approval-queue`).set(headers),
   };
 }

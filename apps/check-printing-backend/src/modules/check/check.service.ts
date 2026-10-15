@@ -2,6 +2,7 @@ import { CheckRepository } from "./check.repository.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import {
   AppError,
+  ForbiddenError,
   ValidationError,
   NotFoundError,
   ConflictError,
@@ -18,6 +19,7 @@ import type {
   ClearCheckInput,
   ListChecksQuery,
   PrintCheckInput,
+  PrintOutcomeInput,
 } from "./check.schemas.js";
 import type { AuditContext } from "./check.types.js";
 import type { PdfService } from "../pdf/pdf.service.js";
@@ -27,7 +29,17 @@ import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData } from "../pdf/pdf.types.js";
 import { Prisma } from "@smartbusiness/database";
-import type { CheckStatus } from "@smartbusiness/database";
+import type { CheckStatus, VoidType } from "@smartbusiness/database";
+
+// Shown when a printed check is voided: our records change, the bank's do not.
+function stopPaymentNotice(checkNumber: number): string {
+  return `Check #${checkNumber} was printed. If it was sent or may be cashed, contact your bank to place a stop payment on it.`;
+}
+
+// Shown when a print is reported spoiled: one number, one paper, always.
+function spoiledNotice(checkNumber: number): string {
+  return `Destroy the spoiled paper for check #${checkNumber}. To pay this payee, reissue the check: it gets a new number.`;
+}
 
 // A check can be edited only before it enters approval, or after a rejection.
 const EDITABLE_STATUSES: CheckStatus[] = ["NEW", "REJECTED"];
@@ -806,6 +818,94 @@ export class CheckService {
   }
 
   // ═════════════════════════════════════════════════════════════
+  // PRINT OUTCOME: what came out of the printer
+  //
+  // OK       → the print is confirmed (who and when); the check stays PRINTED.
+  // SPOILED  → the check is voided as SPOILED. The torn or smudged paper is
+  //            destroyed and the check is REISSUED under a new number; the same
+  //            number is never printed twice.
+  //
+  // Reported once, only while the check is PRINTED and unconfirmed. A print that
+  // was confirmed OK and later turns out wrong is voided normally (void after print).
+  // ═════════════════════════════════════════════════════════════
+
+  async recordPrintOutcome(
+    checkId: string,
+    workspaceId: string,
+    input: PrintOutcomeInput,
+    ctx: AuditContext,
+  ) {
+    const check = await this.checkRepository.findById(checkId, workspaceId);
+    if (!check) {
+      throw new NotFoundError("Check");
+    }
+
+    if (check.status !== "PRINTED") {
+      throw new ConflictError(
+        check.status === "VOID"
+          ? `Check #${check.checkNumber} is void, so its print outcome can no longer be reported.`
+          : `Check #${check.checkNumber} has not been printed, so there is no print outcome to report.`,
+      );
+    }
+    if (check.printConfirmedAt) {
+      throw new ConflictError(
+        `The print of check #${check.checkNumber} was already confirmed. If something is wrong with it, void the check.`,
+      );
+    }
+
+    if (input.outcome === "OK") {
+      const updated = await this.checkRepository.confirmPrint(checkId, workspaceId, ctx.userId);
+      await this.auditService.log({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        workspaceId,
+        action: "CHECK_PRINT_CONFIRMED",
+        entityType: "Check",
+        entityId: checkId,
+        details: { checkNumber: check.checkNumber },
+        ipAddress: ctx.ipAddress,
+      });
+      return { ...this.formatCheck(updated), notice: null };
+    }
+
+    const voidReason = `Spoiled during printing: ${input.reason}`;
+    const updated = await this.checkRepository.updateStatus(
+      checkId,
+      workspaceId,
+      "VOID",
+      {
+        checkId,
+        fromStatus: "PRINTED",
+        toStatus: "VOID",
+        changedById: ctx.userId,
+        reason: voidReason,
+        ipAddress: ctx.ipAddress,
+      },
+      {
+        voidReason,
+        voidedAt: new Date(),
+        voidedById: ctx.userId,
+        voidType: "SPOILED",
+      },
+      // Not if someone confirmed it OK a moment ago.
+      { printConfirmedAt: null },
+    );
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "CHECK_SPOILED",
+      entityType: "Check",
+      entityId: checkId,
+      details: { checkNumber: check.checkNumber, reason: input.reason },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return { ...this.formatCheck(updated), notice: spoiledNotice(check.checkNumber) };
+  }
+
+  // ═════════════════════════════════════════════════════════════
   // VOID CHECK
   //
   // Voiding is a permanent, irreversible action. The check
@@ -823,6 +923,7 @@ export class CheckService {
     workspaceId: string,
     reason: string,
     ctx: AuditContext,
+    access: { canVoidAnyCheck: boolean },
   ) {
     const check = await this.checkRepository.findById(checkId, workspaceId);
     if (!check) {
@@ -830,6 +931,20 @@ export class CheckService {
     }
 
     assertTransition(check.status, "VOID");
+
+    // Paper may exist once a check is printed, so only void permission can void it then.
+    // Before printing, the creator may also withdraw their own check.
+    const isPrinted = check.status === "PRINTED";
+    if (!access.canVoidAnyCheck) {
+      if (isPrinted) {
+        throw new ForbiddenError("Only someone with void permission can void a printed check.");
+      }
+      if (check.createdById !== ctx.userId) {
+        throw new ForbiddenError("You can only withdraw checks you created.");
+      }
+    }
+
+    const voidType: VoidType = isPrinted ? "VOIDED_AFTER_PRINT" : "CANCELLED";
 
     const updated = await this.checkRepository.updateStatus(
       checkId,
@@ -847,6 +962,7 @@ export class CheckService {
         voidReason: reason,
         voidedAt: new Date(),
         voidedById: ctx.userId,
+        voidType,
       },
     );
 
@@ -857,11 +973,21 @@ export class CheckService {
       action: "CHECK_VOIDED",
       entityType: "Check",
       entityId: checkId,
-      details: { checkNumber: check.checkNumber, reason },
+      details: {
+        checkNumber: check.checkNumber,
+        reason,
+        fromStatus: check.status,
+        voidType,
+        stopPaymentAdvised: isPrinted,
+      },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatCheck(updated);
+    return {
+      ...this.formatCheck(updated),
+      // Voiding here does not stop a bank paying a check that left the office.
+      notice: isPrinted ? stopPaymentNotice(check.checkNumber) : null,
+    };
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1259,8 +1385,13 @@ export class CheckService {
       // Never expose the storage location; clients download through /pdf.
       hasPdf: Boolean(check.pdfStorageUrl),
       voidReason: check.voidReason,
+      voidType: check.voidType ?? null,
       voidedAt: check.voidedAt,
       printedAt: check.printedAt,
+      printConfirmedAt: check.printConfirmedAt ?? null,
+      printConfirmedBy: check.printConfirmedBy
+        ? { id: check.printConfirmedBy.id, fullName: check.printConfirmedBy.fullName }
+        : null,
       printSnapshot: check.printedAt
         ? {
             calibrationProfileId: check.calibrationProfileId,

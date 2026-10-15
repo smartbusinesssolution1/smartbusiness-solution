@@ -4,7 +4,7 @@ import { CheckService } from "./check.service.js";
 import { CheckController } from "./check.controller.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { validate } from "../../middleware/validate.js";
-import { requirePermission } from "../../middleware/permission.guard.js";
+import { requireAnyPermission, requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { idempotency } from "../../middleware/idempotency.js";
 import { pdfService } from "../pdf/index.js";
@@ -15,6 +15,7 @@ import {
   updateCheckSchema,
   rejectCheckSchema,
   voidCheckSchema,
+  printOutcomeSchema,
   clearCheckSchema,
   listChecksQuerySchema,
   printCheckSchema,
@@ -137,10 +138,20 @@ router.get(
   checkController.downloadPdf,
 );
 
+// ── Report what came out of the printer (OK / SPOILED) ──
+router.post(
+  "/:checkId/print-outcome",
+  requirePermission(P.CHECK_PRINT),
+  validate(printOutcomeSchema),
+  checkController.printOutcome,
+);
+
 // ── Void Check ──
+// Admins (void permission) can void any check. Creators may withdraw their own
+// UNPRINTED check; the service decides, because it knows the status and the creator.
 router.post(
   "/:checkId/void",
-  requirePermission(P.CHECK_VOID),
+  requireAnyPermission(P.CHECK_VOID, P.CHECK_CREATE),
   validate(voidCheckSchema),
   checkController.voidCheck,
 );

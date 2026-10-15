@@ -1,4 +1,5 @@
 import type { Request, Response } from "express";
+import { PERMISSIONS } from "../../shared/constants/rbac.js";
 import { CheckService } from "./check.service.js";
 import {
   sendSuccess,
@@ -126,12 +127,23 @@ export class CheckController {
     res.send(buffer);
   };
 
+  printOutcome = async (req: Request, res: Response) => {
+    const check = await this.checkService.recordPrintOutcome(
+      req.params.checkId as string,
+      req.params.wid as string,
+      req.body,
+      this.auditCtx(req),
+    );
+    sendSuccess(res, check);
+  };
+
   voidCheck = async (req: Request, res: Response) => {
     const check = await this.checkService.voidCheck(
       req.params.checkId as string,
       req.params.wid as string,
       req.body.reason,
       this.auditCtx(req),
+      { canVoidAnyCheck: (req.permissions ?? []).includes(PERMISSIONS.CHECK_VOID) },
     );
     sendSuccess(res, check);
   };
