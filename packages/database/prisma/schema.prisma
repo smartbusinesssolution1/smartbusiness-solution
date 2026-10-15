@@ -469,7 +469,11 @@ model CheckAttachment {
   fileName      String   @map("file_name")
   fileType      String   @map("file_type")
   fileSizeBytes BigInt   @map("file_size_bytes")
-  storageUrl    String   @map("storage_url")
+  // Key in encrypted file storage (not a URL). Several rows may share one key: a
+  // reissued check carries its original's attachments, and stored files never change.
+  storageKey    String   @map("storage_key")
+  // SHA-256 of the file as stored for the user (verified on every download)
+  sha256        String   @db.Char(64)
   uploadedById  String   @map("uploaded_by_id")
   createdAt     DateTime @default(now()) @map("created_at")
 
@@ -478,6 +482,8 @@ model CheckAttachment {
   uploadedBy User  @relation(fields: [uploadedById], references: [id])
 
   @@index([checkId])
+  // Before deleting a stored file: is any other attachment still using it?
+  @@index([storageKey])
   @@map("check_attachments")
 }
 
