@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { notify } from '../../context/NotificationContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -65,7 +66,9 @@ export const LoginPage: React.FC = () => {
         navigate('/admin/dashboard', { replace: true });
       }
     } catch (err: any) {
-      setError(err?.message || 'Login failed. Please verify your credentials.');
+      const msg = err?.message || 'Login failed. Please verify your credentials.';
+      setError(msg);
+      notify(msg, 'error');
     } finally {
       setIsSubmitting(false);
     }

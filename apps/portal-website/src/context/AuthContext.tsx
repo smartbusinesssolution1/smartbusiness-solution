@@ -29,10 +29,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [tenants, setTenants] = useState<TenantInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const isPrivilegedTenant = (tenantsList?: TenantInfo[]) => {
+    if (!tenantsList || tenantsList.length === 0) return false;
+    return tenantsList.some(
+      (t) => t.role?.toUpperCase() === "OWNER" || t.role?.toUpperCase() === "ADMIN"
+    );
+  };
+
   const fetchCurrentUser = useCallback(async () => {
     try {
       const data = await apiFetch<{ user: User; tenants: TenantInfo[] }>("/api/v1/auth/me");
-      if (data?.user) {
+      if (data?.user && isPrivilegedTenant(data.tenants)) {
         setUser(data.user);
         setTenants(data.tenants || []);
       } else {
@@ -58,6 +65,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (data?.user) {
+      const isPrivileged = isPrivilegedTenant(data.tenants);
+      if (!isPrivileged) {
+        await apiFetch("/api/v1/auth/logout", { method: "POST" }).catch(() => {});
+        setUser(null);
+        setTenants([]);
+        throw new Error(
+          "Access Restricted: The Web Portal is exclusively for Administrators and Managers. Members must use the SmartBusiness Mobile App."
+        );
+      }
+
       setUser(data.user);
       setTenants(data.tenants || []);
     }
