@@ -315,8 +315,8 @@ model BankAccount {
   deletedAt              DateTime?   @map("deleted_at")
 
   // Relations
-  workspace Workspace @relation(fields: [workspaceId], references: [id])
-  signatureUpdatedBy User? @relation("BankAccountSignatureUpdatedBy", fields: [signatureUpdatedById], references: [id])
+  workspace          Workspace @relation(fields: [workspaceId], references: [id])
+  signatureUpdatedBy User?     @relation("BankAccountSignatureUpdatedBy", fields: [signatureUpdatedById], references: [id])
 
   checks Check[]
 
@@ -399,10 +399,13 @@ model Check {
   printConfirmedById String?   @map("print_confirmed_by_id")
 
   // Print snapshot: the printer profile and exact offsets used, kept even if the profile later changes
-  calibrationProfileId String?    @map("calibration_profile_id")
-  printOffsetXPts      Decimal?   @map("print_offset_x_pts") @db.Decimal(6, 2)
-  printOffsetYPts      Decimal?   @map("print_offset_y_pts") @db.Decimal(6, 2)
-  printPaperSize       PaperSize? @map("print_paper_size")
+  calibrationProfileId String?      @map("calibration_profile_id")
+  printOffsetXPts      Decimal?     @map("print_offset_x_pts") @db.Decimal(6, 2)
+  printOffsetYPts      Decimal?     @map("print_offset_y_pts") @db.Decimal(6, 2)
+  printPaperSize       PaperSize?   @map("print_paper_size")
+  printLayout          CheckLayout? @map("print_layout")
+  // Slot 1-3 on three-per-page paper; null for other layouts
+  printPosition        Int?         @map("print_position")
 
   // Cleared fields
   clearedAt     DateTime? @map("cleared_at")
@@ -553,6 +556,14 @@ enum PaperSize {
 
 // PLAIN_PAPER prints dashed tear lines between check and stubs; PERFORATED_STOCK
 // (real voucher check stock) already has perforations, so nothing is printed there.
+// Where the check sits on the sheet. Must match the paper in the printer's tray.
+enum CheckLayout {
+  CHECK_TOP
+  CHECK_MIDDLE
+  CHECK_BOTTOM
+  THREE_PER_PAGE // three checks per sheet, no stubs
+}
+
 enum StockType {
   PLAIN_PAPER
   PERFORATED_STOCK
@@ -561,27 +572,28 @@ enum StockType {
 // One physical printer setup (printer + driver + tray + paper size), shared by the whole workspace.
 // Offsets describe the machine, so they belong to the workspace, not to the person who measured them.
 model CalibrationProfile {
-  id                  String    @id @default(uuid())
-  workspaceId         String    @map("workspace_id")
-  calibratedById      String?   @map("calibrated_by_id")
-  profileName         String    @map("profile_name")
-  paperSize           PaperSize @default(LETTER) @map("paper_size")
-  stockType           StockType @default(PLAIN_PAPER) @map("stock_type")
-  tray                String?   @db.VarChar(50)
-  horizontalOffsetPts Decimal   @default(0) @map("horizontal_offset_pts") @db.Decimal(6, 2)
-  verticalOffsetPts   Decimal   @default(0) @map("vertical_offset_pts") @db.Decimal(6, 2)
-  scaleX              Decimal?  @map("scale_x") @db.Decimal(6, 4)
-  scaleY              Decimal?  @map("scale_y") @db.Decimal(6, 4)
-  measurementsJson    Json?     @map("measurements_json")
-  refVersion          Int       @default(1) @map("ref_version")
-  calibratedAt        DateTime  @default(now()) @map("calibrated_at")
+  id                  String      @id @default(uuid())
+  workspaceId         String      @map("workspace_id")
+  calibratedById      String?     @map("calibrated_by_id")
+  profileName         String      @map("profile_name")
+  paperSize           PaperSize   @default(LETTER) @map("paper_size")
+  stockType           StockType   @default(PLAIN_PAPER) @map("stock_type")
+  layout              CheckLayout @default(CHECK_MIDDLE)
+  tray                String?     @db.VarChar(50)
+  horizontalOffsetPts Decimal     @default(0) @map("horizontal_offset_pts") @db.Decimal(6, 2)
+  verticalOffsetPts   Decimal     @default(0) @map("vertical_offset_pts") @db.Decimal(6, 2)
+  scaleX              Decimal?    @map("scale_x") @db.Decimal(6, 4)
+  scaleY              Decimal?    @map("scale_y") @db.Decimal(6, 4)
+  measurementsJson    Json?       @map("measurements_json")
+  refVersion          Int         @default(1) @map("ref_version")
+  calibratedAt        DateTime    @default(now()) @map("calibrated_at")
   // Set when a printed sample check measured within tolerance; cleared whenever offsets change.
-  verifiedAt          DateTime? @map("verified_at")
-  verifiedById        String?   @map("verified_by_id")
-  verificationJson    Json?     @map("verification_json")
-  isDefault           Boolean   @default(false) @map("is_default")
-  createdAt           DateTime  @default(now()) @map("created_at")
-  updatedAt           DateTime  @updatedAt @map("updated_at")
+  verifiedAt          DateTime?   @map("verified_at")
+  verifiedById        String?     @map("verified_by_id")
+  verificationJson    Json?       @map("verification_json")
+  isDefault           Boolean     @default(false) @map("is_default")
+  createdAt           DateTime    @default(now()) @map("created_at")
+  updatedAt           DateTime    @updatedAt @map("updated_at")
 
   // Relations
   workspace    Workspace @relation(fields: [workspaceId], references: [id])
