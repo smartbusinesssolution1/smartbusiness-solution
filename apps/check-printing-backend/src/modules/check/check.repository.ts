@@ -597,12 +597,13 @@ export class CheckRepository {
   // LOOKUP HELPERS
   // ═════════════════════════════════════════════════════════════
 
+  // Returns inactive accounts too, so the service can tell "inactive" apart from
+  // "does not exist". Deleted accounts are never returned.
   async findBankAccount(bankAccountId: string, workspaceId: string) {
     return prisma.bankAccount.findFirst({
       where: {
         id: bankAccountId,
         workspaceId,
-        isActive: true,
         deletedAt: null,
       },
     });

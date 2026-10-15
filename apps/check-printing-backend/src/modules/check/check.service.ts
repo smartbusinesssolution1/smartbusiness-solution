@@ -74,13 +74,7 @@ export class CheckService {
     input: CreateCheckInput,
     ctx: AuditContext,
   ) {
-    const bankAccount = await this.checkRepository.findBankAccount(
-      input.bankAccountId,
-      workspaceId,
-    );
-    if (!bankAccount) {
-      throw new NotFoundError("Bank account");
-    }
+    await this.requireActiveBankAccount(input.bankAccountId, workspaceId, "write checks from it");
 
     const settings = await this.requireSettings(workspaceId);
     this.assertAmountWithinLimit(input.amount, settings);
@@ -626,13 +620,11 @@ export class CheckService {
 
     assertTransition(check.status, "PRINTED");
 
-    const bankAccount = await this.checkRepository.findBankAccount(
+    const bankAccount = await this.requireActiveBankAccount(
       check.bankAccountId,
       workspaceId,
+      `print check #${check.checkNumber}`,
     );
-    if (!bankAccount) {
-      throw new NotFoundError("Bank account");
-    }
 
     const routingNumber = this.encryptionService.decrypt(
       bankAccount.routingNumberEncrypted,
@@ -1080,6 +1072,23 @@ export class CheckService {
   // the same rule-matching logic, and duplicating it would
   // mean bugs could diverge between the two paths.
   // ═════════════════════════════════════════════════════════════
+
+  // R-11: checks can only be written and printed from an active bank account.
+  // "Inactive" (400) and "does not exist" (404) are different answers: an admin
+  // can fix the first by reactivating the account.
+  private async requireActiveBankAccount(bankAccountId: string, workspaceId: string, purpose: string) {
+    const bankAccount = await this.checkRepository.findBankAccount(bankAccountId, workspaceId);
+    if (!bankAccount) {
+      throw new NotFoundError("Bank account");
+    }
+    if (!bankAccount.isActive) {
+      throw new ValidationError(
+        `The bank account ${bankAccount.bankName} ****${bankAccount.accountNumberLast4} is inactive, so you can't ${purpose}. An admin can reactivate it.`,
+        { bankAccountId: ["Bank account is inactive"] },
+      );
+    }
+    return bankAccount;
+  }
 
   private async requireSettings(workspaceId: string) {
     const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);

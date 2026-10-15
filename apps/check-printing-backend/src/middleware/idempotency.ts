@@ -150,40 +150,45 @@ export function idempotency() {
 
 // Stores a 2xx JSON response on the reservation; releases it on any other outcome.
 function captureOutcome(req: Request, res: Response, key: string, userId: string): void {
-  let stored = false;
+  let settled = false;
   const where = { key_userId: { key, userId } };
 
-  const originalJson = res.json.bind(res);
-  res.json = function captureResponse(body: unknown) {
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      stored = true;
-      // Stored before the response is sent, so a retry that follows the response
-      // always finds it and replays it.
-      prisma.idempotencyRecord
-        .update({
-          where,
-          data: { statusCode: res.statusCode, responseBody: (body ?? {}) as Prisma.InputJsonValue },
-        })
-        .catch((err: unknown) => {
-          logger.error({ err, path: req.originalUrl }, "Failed to store idempotency response");
-        })
-        .finally(() => originalJson(body));
-      return res;
-    }
-    return originalJson(body);
-  } as typeof res.json;
-
-  const release = () => {
-    if (stored) return;
-    stored = true;
+  const release = () =>
     prisma.idempotencyRecord
       .deleteMany({ where: { key, userId, statusCode: IN_PROGRESS } })
       .catch((err: unknown) => {
         logger.error({ err, path: req.originalUrl }, "Failed to release idempotency reservation");
       });
-  };
-  // Only after a response was sent. If the client disconnects mid-request, the
-  // handler is still running: releasing then would let a retry run it a second time.
+
+  // Both outcomes are written BEFORE the response leaves the server: a client that
+  // retries the instant it gets an answer must find either the stored response
+  // (success) or a free key (failure), never a reservation that is still "in progress".
+  const originalJson = res.json.bind(res);
+  res.json = function captureResponse(body: unknown) {
+    settled = true;
+    const succeeded = res.statusCode >= 200 && res.statusCode < 300;
+    const write = succeeded
+      ? prisma.idempotencyRecord
+          .update({
+            where,
+            data: { statusCode: res.statusCode, responseBody: (body ?? {}) as Prisma.InputJsonValue },
+          })
+          .catch((err: unknown) => {
+            logger.error({ err, path: req.originalUrl }, "Failed to store idempotency response");
+          })
+      : release();
+    void write.finally(() => originalJson(body));
+    return res;
+  } as typeof res.json;
+
+  // Fallback for an answer that was not sent through res.json (e.g. a raw PDF error).
+  // Only after a response was sent: if the client disconnects mid-request the handler
+  // is still running, and releasing then would let a retry run it a second time.
   // A request that dies without answering leaves a reservation that goes stale.
-  res.on("finish", release);
+  res.on("finish", () => {
+    if (!settled) {
+      settled = true;
+      void release();
+    }
+  });
 }

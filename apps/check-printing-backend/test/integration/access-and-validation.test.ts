@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import request from "supertest";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma, resetDatabase } from "../helpers/db.js";
 import { authHeaders, createPrinterProfile, createWorld, today, type TestWorld } from "../helpers/fixtures.js";
 import { checksApi, getApp } from "../helpers/api.js";
@@ -233,6 +233,28 @@ describe("idempotent check creation", () => {
     const fixed = await createWithKey(key);
     expect(fixed.status).toBe(201);
     expect(fixed.headers["idempotent-replayed"]).toBeUndefined();
+  });
+
+  it("frees the key before answering a failed request, even when the database is slow", async () => {
+    // Slow the release down. The old code answered first and released afterwards, so a
+    // client retrying immediately found the key still "in progress" (a flaky 409).
+    const delegate = prisma.idempotencyRecord as unknown as { deleteMany: (...a: unknown[]) => Promise<unknown> };
+    const original = delegate.deleteMany.bind(delegate);
+    const spy = vi.spyOn(delegate, "deleteMany").mockImplementation(async (...args: unknown[]) => {
+      await new Promise((r) => setTimeout(r, 300));
+      return original(...args);
+    });
+
+    try {
+      const key = randomUUID();
+      const failed = await createWithKey(key, { amount: 10.999 });
+      expect(failed.status).toBe(400);
+      // At the moment the client has the answer, the key must already be free.
+      expect(await prisma.idempotencyRecord.count({ where: { key } })).toBe(0);
+      expect((await createWithKey(key)).status).toBe(201);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("refuses a key reused by the same user for a different request", async () => {

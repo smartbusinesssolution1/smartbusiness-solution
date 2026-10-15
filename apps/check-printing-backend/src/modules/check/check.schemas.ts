@@ -12,6 +12,13 @@ const moneySchema = (label: string) =>
     .max(MAX_CHECK_AMOUNT, `${label} cannot exceed $999,999.99`)
     .refine(hasAtMostTwoDecimals, { message: `${label} must be in whole cents (at most 2 decimal places)` });
 
+// R-12: the memo is at most 255 characters. One constant, so create and edit can't drift apart.
+export const MEMO_MAX_LENGTH = 255;
+const memoSchema = z
+  .string()
+  .trim()
+  .max(MEMO_MAX_LENGTH, `Memo cannot be longer than ${MEMO_MAX_LENGTH} characters`);
+
 // The payee is a legal name on a negotiable instrument, so it is never truncated on the
 // check. A name that does not fit even at the minimum font size is rejected here, early,
 // so the user can abbreviate it consciously.
@@ -61,7 +68,7 @@ export const createCheckSchema = z.object({
   payeeName: payeeNameSchema,
   amount: moneySchema("Amount"),
   checkDate: z.coerce.date(),
-  memo: z.string().trim().max(500).optional(),
+  memo: memoSchema.optional(),
   invoiceItems: z.array(invoiceItemSchema).max(50).optional(),
   idempotencyKey: z.string().uuid().optional(),
 });
@@ -81,7 +88,7 @@ export const updateCheckSchema = z.object({
   payeeName: payeeNameSchema.optional(),
   amount: moneySchema("Amount").optional(),
   checkDate: z.coerce.date().optional(),
-  memo: z.string().trim().max(500).nullable().optional(),
+  memo: memoSchema.nullable().optional(),
   invoiceItems: z.array(invoiceItemSchema).max(50).nullable().optional(),
 });
 

@@ -7,7 +7,12 @@ const auditService = new AuditService();
 
 // Records the refusal and stops the request. Shared by both guards so a refusal
 // looks the same in the audit log whichever rule refused it.
-function deny(req: Request, required: PermissionAction[], missing: PermissionAction[], rule: "all" | "any"): never {
+function deny(
+  req: Request,
+  required: PermissionAction[],
+  missing: PermissionAction[],
+  rule: "all" | "any",
+): never {
   auditService.log({
     tenantId: req.tenant!.tenantId,
     userId: req.user!.userId,
@@ -28,7 +33,7 @@ function deny(req: Request, required: PermissionAction[], missing: PermissionAct
   throw new ForbiddenError("You do not have permission to perform this action");
 }
 
-/** Allows the request only if the user holds EVERY listed permission. */
+// Allows the request only if the user holds EVERY listed permission.
 export function requirePermission(...actions: PermissionAction[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const userPermissions = req.permissions ?? [];
@@ -49,7 +54,8 @@ export function requireAnyPermission(...actions: PermissionAction[]) {
   return (req: Request, _res: Response, next: NextFunction) => {
     const userPermissions = req.permissions ?? [];
 
-    if (!actions.some((a) => userPermissions.includes(a))) deny(req, actions, actions, "any");
+    if (!actions.some((a) => userPermissions.includes(a)))
+      deny(req, actions, actions, "any");
 
     next();
   };
