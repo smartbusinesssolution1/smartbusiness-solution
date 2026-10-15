@@ -24,5 +24,17 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" })),
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, "The reset link is missing its token").max(200),
+  // The same strength rules as sign-up: checked before the link is used up.
+  password: passwordSchema,
+});
+
 export type RegisterInputType = z.infer<typeof registerSchema>;
 export type LoginInputType = z.infer<typeof loginSchema>;
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

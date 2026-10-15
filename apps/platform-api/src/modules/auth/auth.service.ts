@@ -5,8 +5,9 @@ import {
 } from "./auth.repository.js";
 import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
-import { ConflictError } from "../../shared/errors/index.js";
-import { TokenService, PasswordService } from "@smartbusiness/auth";
+import { AppError, ConflictError } from "../../shared/errors/index.js";
+import { TokenService, PasswordService, UserTokenService, type TokenProblem } from "@smartbusiness/auth";
+import { passwordChangedEmail, passwordResetEmail, type EmailSender } from "@smartbusiness/email";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { refreshToken as refreshTokenConfig } from "../../config/index.js";
 import { logger } from "../../shared/services/logger.js";
@@ -33,13 +34,122 @@ interface SessionContext {
   userAgent?: string;
 }
 
+export interface PasswordResetSettings {
+  appUrl: string;
+  ttlMinutes: number;
+}
+
+// At most one reset email per account per minute, whatever the request rate
+// (stops "email bombing" a victim's inbox through our form).
+const RESET_EMAIL_COOLDOWN_MS = 60 * 1000;
+
+// Someone holding a reset link already has the email, so the reason a link fails
+// reveals nothing to an attacker; it tells the owner what to do next.
+const RESET_LINK_ERRORS: Record<TokenProblem, { code: string; message: string }> = {
+  NOT_FOUND: { code: "INVALID_RESET_LINK", message: "This reset link is invalid. Request a new one." },
+  EXPIRED: { code: "RESET_LINK_EXPIRED", message: "This link has expired. Request a new one." },
+  USED: {
+    code: "RESET_LINK_USED",
+    message: "This link was already used. Request a new one if you still need to reset your password.",
+  },
+  REVOKED: { code: "RESET_LINK_REPLACED", message: "A newer reset link was sent. Use the link in the most recent email." },
+};
+
+function resetLinkError(problem: TokenProblem): AppError {
+  const e = RESET_LINK_ERRORS[problem];
+  return new AppError(e.message, 400, e.code);
+}
+
 export class AuthService {
   constructor(
     private authRepository: AuthRepository,
     private passwordService: PasswordService,
     private tokenService: TokenService,
     private auditService: AuditService,
+    private userTokens: UserTokenService,
+    private emailSender: EmailSender,
+    private resetSettings: PasswordResetSettings,
   ) {}
+
+  // ═════════════════════════════════════════════════════════════
+  // FORGOT PASSWORD
+  //
+  // Called AFTER the HTTP reply was sent, so real and unknown emails answer
+  // equally fast. Never reveals whether the account exists: every "no" is silent.
+  // ═════════════════════════════════════════════════════════════
+
+  async requestPasswordReset(email: string, ctx: SessionContext): Promise<void> {
+    const user = await this.authRepository.findUserByEmail(email);
+    if (!user || !user.isActive) return;
+
+    // "Was a link sent in the last minute? If not, issue one" must be atomic: as two
+    // separate steps, simultaneous requests would all see "no" and all send an email.
+    // Locking the user's row makes them take turns.
+    const token = await this.authRepository.transaction(async (tx) => {
+      await this.authRepository.lockUser(user.id, tx);
+      const since = new Date(Date.now() - RESET_EMAIL_COOLDOWN_MS);
+      if (await this.authRepository.hasTokenIssuedSince(user.id, "PASSWORD_RESET", since, tx)) return null;
+
+      const issued = await this.userTokens.issue(
+        { userId: user.id, purpose: "PASSWORD_RESET", ttlMs: this.resetSettings.ttlMinutes * 60 * 1000 },
+        tx,
+      );
+      return issued.token;
+    });
+
+    if (!token) {
+      logger.info({ userId: user.id, action: "PASSWORD_RESET_THROTTLED" }, "Reset email already sent in the last minute");
+      return;
+    }
+
+    // Built from configuration only: never from the request's Host header.
+    const resetUrl = `${this.resetSettings.appUrl}/reset-password?token=${token}`;
+    await this.emailSender.send({
+      to: user.email,
+      ...passwordResetEmail({ name: user.fullName, resetUrl, expiresInMinutes: this.resetSettings.ttlMinutes }),
+    });
+
+    await this.auditForUser(user, "PASSWORD_RESET_REQUESTED", ctx.ipAddress);
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // RESET PASSWORD
+  //
+  // One transaction: the link is used up, the password replaced, every session
+  // ended and other links cancelled, together or not at all. If anything fails,
+  // the link still works for a retry.
+  // ═════════════════════════════════════════════════════════════
+
+  async resetPassword(token: string, newPassword: string, ctx: SessionContext): Promise<void> {
+    // Argon2 is deliberately slow; hashing before the transaction keeps the
+    // transaction (and its row locks) short.
+    const passwordHash = await this.passwordService.hash(newPassword);
+
+    const user = await this.authRepository.transaction(async (tx) => {
+      const check = await this.userTokens.consume(token, "PASSWORD_RESET", tx);
+      if (!check.ok) throw resetLinkError(check.problem);
+
+      // Deactivated or deleted since the link was sent: refuse (and roll back the consume).
+      const user = await this.authRepository.findActiveUserById(check.record.userId, tx);
+      if (!user) throw resetLinkError("NOT_FOUND");
+
+      await this.authRepository.completePasswordReset(user.id, passwordHash, tx);
+      return user;
+    });
+
+    const full = await this.authRepository.findUserById(user.id);
+    if (full) await this.auditForUser(full, "PASSWORD_RESET", ctx.ipAddress);
+
+    // The change is done; a failed notification must not undo or hide it.
+    try {
+      await this.emailSender.send({
+        to: user.email,
+        ...passwordChangedEmail({ name: user.fullName, changedAt: new Date() }),
+      });
+    } catch (err) {
+      logger.error({ err, userId: user.id }, "Failed to send password-changed email");
+    }
+  }
 
   async register(
     data: RegisterInputType,
@@ -258,6 +368,16 @@ export class AuthService {
   }
 
   // ─── Private Helpers ─────────────────────────────────────────
+
+  // Audit rows belong to a tenant; a user with no membership at all is logged instead.
+  private async auditForUser(user: UserWithTenants, action: string, ipAddress?: string): Promise<void> {
+    const tenantId = user.tenantMembers[0]?.tenant.id;
+    if (!tenantId) {
+      logger.info({ userId: user.id, action }, "Audit event for a user without a tenant");
+      return;
+    }
+    await this.auditService.log({ tenantId, userId: user.id, action, entityType: "User", entityId: user.id, ipAddress });
+  }
 
   // An invited user who has not accepted yet has no password (null). Refuse them exactly
   // like a wrong password, after the same hashing work, so neither the answer nor the

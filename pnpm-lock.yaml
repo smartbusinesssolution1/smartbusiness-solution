@@ -132,6 +132,9 @@ importers:
       '@smartbusiness/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@smartbusiness/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7

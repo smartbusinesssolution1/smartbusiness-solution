@@ -43,4 +43,9 @@ export function applyTestEnv(): void {
   process.env.RATE_LIMIT_MAX = "1000000";
   process.env.AUTH_RATE_LIMIT_MAX = "1000000";
   delete process.env.COOKIE_DOMAIN;
+  // Emails are kept in memory; tests read them (and the links in them) from there.
+  process.env.EMAIL_TRANSPORT = "memory";
+  process.env.EMAIL_FROM = "SmartBusiness <no-reply@smartbusiness.test>";
+  process.env.APP_URL = "https://app.smartbusiness.test";
+  process.env.PASSWORD_RESET_TTL_MINUTES = "60";
 }

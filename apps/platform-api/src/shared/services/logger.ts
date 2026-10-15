@@ -20,7 +20,12 @@ export const logger = pino({
     },
   },
   redact: {
-    paths: ["req.headers.cookie", "req.headers.authorization"],
+    paths: [
+      "req.headers.cookie",
+      "req.headers.authorization",
+      // Defense in depth: request bodies are not logged, but these must never appear anywhere.
+      ...["password", "newPassword", "token", "refreshToken", "passwordHash"].flatMap((k) => [k, `*.${k}`, `*.*.${k}`]),
+    ],
     censor: "[REDACTED]",
   },
 });

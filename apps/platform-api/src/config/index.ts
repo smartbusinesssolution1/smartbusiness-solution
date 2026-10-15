@@ -35,6 +35,20 @@ export const server = {
   isTest: config.NODE_ENV === "test",
 } as const;
 
+export const app = {
+  url: config.APP_URL.replace(/\/+$/, ""),
+} as const;
+
+export const email = {
+  transport: config.EMAIL_TRANSPORT,
+  from: config.EMAIL_FROM,
+  fileDirectory: config.EMAIL_FILE_DIRECTORY,
+} as const;
+
+export const passwordReset = {
+  ttlMinutes: config.PASSWORD_RESET_TTL_MINUTES,
+} as const;
+
 export const rateLimits = {
   globalPerMinute: config.RATE_LIMIT_MAX,
   authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,

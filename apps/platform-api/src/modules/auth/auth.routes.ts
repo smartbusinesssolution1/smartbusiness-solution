@@ -1,13 +1,14 @@
 import { Router } from "express";
 import { authRateLimiter } from "../../middleware/rate-limiter.js";
 import { validate } from "../../middleware/validate.js";
-import { loginSchema, registerSchema } from "./auth.schema.js";
+import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "./auth.schema.js";
 import { AuthRepository } from "./auth.repository.js";
 import { AuthService } from "./auth.service.js";
 import { AuthController } from "./auth.controller.js";
-import { createAuthMiddleware, TokenService, PasswordService } from "@smartbusiness/auth";
+import { createAuthMiddleware, TokenService, PasswordService, UserTokenService } from "@smartbusiness/auth";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { accessToken } from "../../config/index.js";
+import { accessToken, app, passwordReset } from "../../config/index.js";
+import { emailSender } from "../../shared/services/email.js";
 
 // ─── Composition Root ──────────────────────────────────────────
 
@@ -20,6 +21,9 @@ const authService = new AuthService(
   passwordService,
   tokenService,
   auditService,
+  new UserTokenService(),
+  emailSender,
+  { appUrl: app.url, ttlMinutes: passwordReset.ttlMinutes },
 );
 const authController = new AuthController(authService);
 const authMiddleware = createAuthMiddleware(tokenService);
@@ -42,6 +46,8 @@ router.post(
   authController.login,
 );
 router.post("/refresh", authRateLimiter, authController.refresh);
+router.post("/forgot-password", authRateLimiter, validate(forgotPasswordSchema), authController.forgotPassword);
+router.post("/reset-password", authRateLimiter, validate(resetPasswordSchema), authController.resetPassword);
 
 // Protected — auth required
 // Logout is identified by the refresh-token cookie alone: the access token lasts only

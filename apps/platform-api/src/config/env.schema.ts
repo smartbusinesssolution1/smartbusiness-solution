@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-export const envSchema = z.object({
+export const envSchema = z
+  .object({
   NODE_ENV: z
     .enum(["development", "test", "staging", "production"])
     .default("development"),
@@ -46,6 +47,28 @@ export const envSchema = z.object({
     .default("10")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(1)),
-});
+
+  // The web app's address. Every link in an email is built from this, never from the
+  // request, so a forged Host header cannot put someone else's site into our emails.
+  APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5173"),
+
+  // How emails are delivered: "file" writes them to EMAIL_FILE_DIRECTORY (development),
+  // "memory" keeps them in a list (tests). A real provider is added once chosen.
+  EMAIL_TRANSPORT: z.enum(["file", "memory"]).default("file"),
+  EMAIL_FROM: z.string().min(3).default("SmartBusiness <no-reply@smartbusiness.local>"),
+  EMAIL_FILE_DIRECTORY: z.string().default("./tmp/emails"),
+
+  PASSWORD_RESET_TTL_MINUTES: z
+    .string()
+    .default("60")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(5).max(24 * 60)),
+  })
+  // Emails written to a folder or kept in memory on a production server would never
+  // reach anyone. Refuse to start rather than fail silently.
+  .refine((env) => env.NODE_ENV !== "production" || !["file", "memory"].includes(env.EMAIL_TRANSPORT), {
+    path: ["EMAIL_TRANSPORT"],
+    message: "Production needs a real email provider; 'file' and 'memory' only work for development and tests",
+  });
 
 export type Env = z.infer<typeof envSchema>;

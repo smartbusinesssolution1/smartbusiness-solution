@@ -37,7 +37,52 @@ export interface SessionWithUser extends Session {
   user: UserWithTenants;
 }
 
+type Tx = Prisma.TransactionClient;
+
+// Prisma's defaults are too short for a remote database under concurrent requests.
+const TX_OPTIONS = { maxWait: 10_000, timeout: 15_000 } as const;
+
 export class AuthRepository {
+  async transaction<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return prisma.$transaction(fn, TX_OPTIONS);
+  }
+
+  // True if a token of this purpose was issued to the user after `since`
+  // (used to send at most one reset email per minute per account).
+  async hasTokenIssuedSince(
+    userId: string,
+    purpose: "PASSWORD_RESET" | "INVITATION",
+    since: Date,
+    tx: Tx,
+  ): Promise<boolean> {
+    const count = await tx.userToken.count({ where: { userId, purpose, createdAt: { gt: since } } });
+    return count > 0;
+  }
+
+  // Locks the user's row until the transaction ends, so concurrent requests for the
+  // same account run one at a time (each one sees what the previous one wrote).
+  async lockUser(userId: string, tx: Tx): Promise<void> {
+    await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
+  }
+
+  async findActiveUserById(userId: string, tx: Tx) {
+    return tx.user.findFirst({ where: { id: userId, deletedAt: null, isActive: true } });
+  }
+
+  // The database side of a password reset, inside the caller's transaction:
+  // new password, email confirmed (they proved they own the inbox), every session
+  // ended, and any other reset link or pending invitation cancelled.
+  async completePasswordReset(userId: string, passwordHash: string, tx: Tx): Promise<void> {
+    const now = new Date();
+    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+    await tx.user.updateMany({ where: { id: userId, emailVerifiedAt: null }, data: { emailVerifiedAt: now } });
+    await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
+    await tx.userToken.updateMany({
+      where: { userId, purpose: { in: ["PASSWORD_RESET", "INVITATION"] }, usedAt: null, revokedAt: null },
+      data: { revokedAt: now },
+    });
+  }
+
   async findUserByEmail(email: string): Promise<UserWithTenants | null> {
     return prisma.user.findFirst({
       where: { email, deletedAt: null },

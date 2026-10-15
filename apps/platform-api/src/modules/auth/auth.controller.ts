@@ -9,7 +9,8 @@ import {
 } from "@smartbusiness/auth";
 import { server, cookie, refreshToken as refreshTokenConfig } from "../../config/index.js";
 import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
-import type { RegisterInputType, LoginInputType } from "./auth.schema.js";
+import type { RegisterInputType, LoginInputType, ForgotPasswordInput, ResetPasswordInput } from "./auth.schema.js";
+import { runInBackground } from "../../shared/services/background.js";
 
 export class AuthController {
   private cookieConfig: CookieConfig;
@@ -72,6 +73,32 @@ export class AuthController {
 
     this.clearAuthCookies(res);
     sendSuccess(res, { message: "All sessions revoked." });
+  };
+
+  // Replies at once, the same way for every email, and only then does the work: an
+  // account that exists must not answer slower (or differently) than one that does not.
+  forgotPassword = async (req: Request, res: Response): Promise<void> => {
+    const { email } = req.body as ForgotPasswordInput;
+
+    sendSuccess(
+      res,
+      { message: "If an account exists for that email, we've sent a link to reset the password." },
+      202,
+    );
+
+    runInBackground("password-reset-request", () =>
+      this.authService.requestPasswordReset(email, { ipAddress: req.ip, userAgent: req.headers["user-agent"] }),
+    );
+  };
+
+  resetPassword = async (req: Request, res: Response): Promise<void> => {
+    const { token, password } = req.body as ResetPasswordInput;
+
+    await this.authService.resetPassword(token, password, { ipAddress: req.ip, userAgent: req.headers["user-agent"] });
+
+    // Every session was ended; clear this browser's cookies too.
+    this.clearAuthCookies(res);
+    sendSuccess(res, { message: "Your password has been changed. Sign in with your new password." });
   };
 
   me = async (req: Request, res: Response): Promise<void> => {
