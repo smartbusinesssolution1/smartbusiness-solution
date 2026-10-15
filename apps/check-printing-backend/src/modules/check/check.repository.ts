@@ -70,6 +70,17 @@ const CHECK_INCLUDE = {
     },
   },
   reissuedFromCheck: { select: { id: true, checkNumber: true } },
+  attachments: {
+    orderBy: { createdAt: "asc" as const },
+    select: {
+      id: true,
+      fileName: true,
+      fileType: true,
+      fileSizeBytes: true,
+      createdAt: true,
+      uploadedBy: { select: USER_SELECT },
+    },
+  },
   reissuedToCheck: { select: { id: true, checkNumber: true } },
   approvalRecords: {
     orderBy: { createdAt: "asc" as const },
@@ -240,6 +251,26 @@ export class CheckRepository {
         ipAddress: history.ipAddress ?? null,
       },
     });
+
+    // A reissue carries its original's evidence. Stored files never change, so the new
+    // rows point at the same files.
+    if (reissuedFromCheckId) {
+      const originals = await tx.checkAttachment.findMany({ where: { checkId: reissuedFromCheckId } });
+      if (originals.length > 0) {
+        await tx.checkAttachment.createMany({
+          data: originals.map((a) => ({
+            checkId: check.id,
+            fileName: a.fileName,
+            fileType: a.fileType,
+            fileSizeBytes: a.fileSizeBytes,
+            storageKey: a.storageKey,
+            sha256: a.sha256,
+            uploadedById: a.uploadedById,
+          })),
+        });
+        return tx.check.findFirstOrThrow({ where: { id: check.id }, include: CHECK_INCLUDE });
+      }
+    }
 
     return check;
   }

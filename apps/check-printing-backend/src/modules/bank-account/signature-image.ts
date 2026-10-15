@@ -1,5 +1,6 @@
 import sharp, { type Metadata, type OutputInfo } from "sharp";
 import { AppError } from "../../shared/errors/index.js";
+import { detectFileType } from "../../shared/utils/file-type.js";
 
 // ═══════════════════════════════════════════════════════════════
 // SIGNATURE IMAGE CLEAN-UP
@@ -42,15 +43,10 @@ export class SignatureImageError extends AppError {
   }
 }
 
-// The real file type, from its first bytes: a browser's label or a file name can lie.
+// The real image type, from the file's first bytes (shared detector).
 export function detectImageType(bytes: Buffer): SignatureImageType | null {
-  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-    return "png";
-  }
-  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-    return "jpeg";
-  }
-  return null;
+  const type = detectFileType(bytes);
+  return type === "png" || type === "jpeg" ? type : null;
 }
 
 export interface CleanSignature {

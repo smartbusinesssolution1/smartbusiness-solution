@@ -11,6 +11,10 @@ import { pdfService } from "../pdf/index.js";
 import { calibrationService } from "../calibration/calibration.routes.js";
 import { encryptionService } from "../../shared/services/encryption.service.js";
 import { fileStorage } from "../../shared/storage/instance.js";
+import { singleFileUpload } from "../../middleware/file-upload.js";
+import { AttachmentRepository, ATTACHMENT_LIMITS } from "./attachment.repository.js";
+import { AttachmentService } from "./attachment.service.js";
+import { AttachmentController } from "./attachment.controller.js";
 import {
   createCheckSchema,
   updateCheckSchema,
@@ -37,6 +41,10 @@ const checkService = new CheckService(
   fileStorage,
 );
 const checkController = new CheckController(checkService);
+const attachmentController = new AttachmentController(
+  new AttachmentService(new AttachmentRepository(), auditService, fileStorage),
+);
+const attachmentUpload = singleFileUpload("file", ATTACHMENT_LIMITS.maxFileBytes, "10 MB");
 
 // ═════════════════════════════════════════════════════════════
 // ROUTER
@@ -131,6 +139,24 @@ router.post(
   idempotency(),
   validate(printCheckSchema),
   checkController.printCheck,
+);
+
+// ── Attachments (invoices, receipts) ──
+// Anyone who can see the check can list and download them (approvers need the
+// evidence). Adding and removing: the creator, while NEW or REJECTED (checked in
+// the service); permission is checked before the upload is read.
+router.get("/:checkId/attachments", attachmentController.list);
+router.get("/:checkId/attachments/:attachmentId", attachmentController.download);
+router.post(
+  "/:checkId/attachments",
+  requirePermission(P.CHECK_CREATE),
+  attachmentUpload,
+  attachmentController.upload,
+);
+router.delete(
+  "/:checkId/attachments/:attachmentId",
+  requirePermission(P.CHECK_CREATE),
+  attachmentController.remove,
 );
 
 // ── Download Check PDF ──

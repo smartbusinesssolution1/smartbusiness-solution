@@ -10,6 +10,9 @@ export default defineConfig({
           include: ["src/**/*.test.ts"],
           environment: "node",
           setupFiles: ["./test/setup/env.ts"],
+          // PDF rendering and image processing are CPU-heavy; with test files running in
+          // parallel, a few take over the 5 s default without anything being wrong.
+          testTimeout: 20_000,
         },
       },
       {

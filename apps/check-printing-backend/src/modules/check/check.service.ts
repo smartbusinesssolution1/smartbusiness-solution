@@ -29,6 +29,7 @@ import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData } from "../pdf/pdf.types.js";
 import type { ObjectStorage } from "../../shared/storage/index.js";
+import { formatAttachment } from "./attachment.service.js";
 import { Prisma } from "@smartbusiness/database";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
 
@@ -1462,6 +1463,8 @@ export class CheckService {
         reason: h.reason,
         createdAt: h.createdAt,
       })) ?? [],
+
+      attachments: (check.attachments ?? []).map(formatAttachment),
 
       approval: this.formatApprovalProgress(check),
 
