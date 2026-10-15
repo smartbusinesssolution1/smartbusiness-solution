@@ -107,6 +107,17 @@ export const AdminDashboard: React.FC = () => {
     },
   }), [isDark, theme.palette.primary.main]);
 
+  const cleanId = (id?: string | null): string => {
+    if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
+    return id.trim();
+  };
+
+  const activeWorkspaceId =
+    cleanId(currentWorkspace?.id) ||
+    cleanId(localStorage.getItem('active_workspace_id')) ||
+    cleanId(workspaces?.[0]?.id) ||
+    '';
+
   // Fetch admin dashboard metrics
   const {
     data: metrics,
@@ -114,8 +125,8 @@ export const AdminDashboard: React.FC = () => {
     isFetching: isMetricsFetching,
     refetch: refetchMetrics,
   } = useQuery({
-    queryKey: ['adminDashboardMetrics'],
-    queryFn: () => attendanceService.getAdminDashboardMetrics(),
+    queryKey: ['adminDashboardMetrics', activeWorkspaceId],
+    queryFn: () => attendanceService.getAdminDashboardMetrics(activeWorkspaceId || undefined),
   });
 
   // Fetch recent attendance logs for real-time pulse stream
@@ -124,8 +135,8 @@ export const AdminDashboard: React.FC = () => {
     isLoading: isAttendanceLoading,
     refetch: refetchAttendance,
   } = useQuery({
-    queryKey: ['adminAttendanceStream'],
-    queryFn: () => attendanceService.getAllAttendance(),
+    queryKey: ['adminAttendanceStream', activeWorkspaceId],
+    queryFn: () => attendanceService.getAllAttendance({ workspaceId: activeWorkspaceId || undefined }),
   });
 
   // Fetch employees directory to support dynamic department analytics
@@ -134,8 +145,8 @@ export const AdminDashboard: React.FC = () => {
     isLoading: isEmployeesLoading,
     refetch: refetchEmployees,
   } = useQuery({
-    queryKey: ['adminEmployeesList'],
-    queryFn: () => employeeService.getEmployees(),
+    queryKey: ['adminEmployeesList', activeWorkspaceId],
+    queryFn: () => employeeService.getEmployees({ workspaceId: activeWorkspaceId || undefined }),
   });
 
   const employees: User[] = useMemo(() => {
@@ -223,22 +234,22 @@ export const AdminDashboard: React.FC = () => {
     {
       title: 'Audit Reports',
       desc: 'Daily & weekly ledgers',
-      icon: <ReportIcon sx={{ fontSize: 22, color: colors.present.main }} />,
-      bgColor: colors.present.bg,
+      icon: <ReportIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
+      bgColor: colors.primary.bg,
       onClick: () => navigate('/admin/reports'),
     },
     {
       title: 'Organization',
       desc: 'Policies, shifts & geofence',
-      icon: <SettingsIcon sx={{ fontSize: 22, color: colors.geofence.main }} />,
-      bgColor: colors.geofence.bg,
+      icon: <SettingsIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
+      bgColor: colors.primary.bg,
       onClick: () => navigate('/admin/settings'),
     },
     {
       title: 'Export Audit',
       desc: 'Download PDF / CSV',
-      icon: <ExportIcon sx={{ fontSize: 22, color: colors.autoclosed.main }} />,
-      bgColor: colors.autoclosed.bg,
+      icon: <ExportIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
+      bgColor: colors.primary.bg,
       onClick: () => navigate('/admin/reports'),
     },
   ], [colors, navigate]);

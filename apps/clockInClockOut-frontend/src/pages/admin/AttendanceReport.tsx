@@ -41,11 +41,24 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
+import { useAuth } from '../../context/AuthContext';
 import { getAvatarUrl } from '../../utils/imageUrl';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const { currentWorkspace, workspaces } = useAuth();
+
+  const cleanId = (id?: string | null): string => {
+    if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
+    return id.trim();
+  };
+
+  const activeWorkspaceId =
+    cleanId(currentWorkspace?.id) ||
+    cleanId(localStorage.getItem('active_workspace_id')) ||
+    cleanId(workspaces?.[0]?.id) ||
+    '';
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState('');
@@ -66,7 +79,7 @@ export const AttendanceReport: React.FC = () => {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['adminAttendanceReports', page, rowsPerPage, searchTerm, statusFilter, dateFilter],
+    queryKey: ['adminAttendanceReports', activeWorkspaceId, page, rowsPerPage, searchTerm, statusFilter, dateFilter],
     queryFn: () =>
       attendanceService.getAdminAttendanceReport({
         page: page + 1,
@@ -74,6 +87,7 @@ export const AttendanceReport: React.FC = () => {
         search: searchTerm.trim() || undefined,
         status: statusFilter,
         date: dateFilter || undefined,
+        workspaceId: activeWorkspaceId || undefined,
       }),
   });
 
@@ -590,6 +604,7 @@ export const AttendanceReport: React.FC = () => {
           search: searchTerm.trim() || undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
           date: dateFilter || undefined,
+          workspaceId: activeWorkspaceId || undefined,
         }}
         totalCount={totalCount}
       />

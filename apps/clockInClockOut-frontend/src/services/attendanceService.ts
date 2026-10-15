@@ -101,11 +101,11 @@ export const attendanceService = {
       const avgHours =
         completedShifts.length > 0
           ? parseFloat(
-              (
-                completedShifts.reduce((sum, r) => sum + r.workingHours, 0) /
-                completedShifts.length
-              ).toFixed(1)
-            )
+            (
+              completedShifts.reduce((sum, r) => sum + r.workingHours, 0) /
+              completedShifts.length
+            ).toFixed(1)
+          )
           : 0;
 
       const absentCount = filtered.filter((r) => r.status === 'absent').length;
@@ -146,10 +146,11 @@ export const attendanceService = {
   /**
    * Admin: Get high-level attendance summary KPIs
    */
-  async getAdminDashboardMetrics(): Promise<AdminDashboardMetrics> {
+  async getAdminDashboardMetrics(workspaceId?: string): Promise<AdminDashboardMetrics> {
     try {
       const response = await clockInApi.get<{ success: boolean; data: any }>(
-        '/api/v1/admin/attendance/summary'
+        '/api/v1/admin/attendance/summary',
+        { params: workspaceId ? { workspaceId } : undefined }
       );
       const d = response.data?.data || {};
       return {
@@ -163,11 +164,11 @@ export const attendanceService = {
       };
     } catch {
       return {
-        totalEmployees: 24,
-        presentToday: 18,
-        lateToday: 3,
-        autoClosedToday: 1,
-        attendanceRate: 75,
+        totalEmployees: 0,
+        presentToday: 0,
+        lateToday: 0,
+        autoClosedToday: 0,
+        attendanceRate: 0,
         weeklyStats: [],
         departmentStats: [],
       };

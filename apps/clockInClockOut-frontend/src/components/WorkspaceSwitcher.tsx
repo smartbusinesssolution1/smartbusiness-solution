@@ -13,6 +13,7 @@ import {
   alpha,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -23,6 +24,7 @@ import { Workspace } from '../types';
 export const WorkspaceSwitcher: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { currentTenant, workspaces, currentWorkspace, switchWorkspace, isSuperAdmin } = useAuth();
 
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -50,6 +52,7 @@ export const WorkspaceSwitcher: React.FC = () => {
     }
     try {
       await switchWorkspace(ws.id);
+      await queryClient.invalidateQueries();
       setToastMessage(`Active workspace: ${ws.name}`);
     } catch {
       setToastMessage(`Failed to switch workspace`);
