@@ -113,13 +113,14 @@ export const EditEmployee: React.FC = () => {
   const { data: employee, isLoading, error: fetchError } = useQuery({
     queryKey: ['adminEmployee', id],
     queryFn: () => employeeService.getEmployee(id || ''),
-    enabled: !!id,
+    enabled: Boolean(user && id),
   });
 
   // Fetch organization settings to display configured standard shift
   const { data: orgSettings, isLoading: isLoadingSettings } = useQuery({
     queryKey: ['adminSettings'],
     queryFn: () => settingsService.getSettings(),
+    enabled: Boolean(user),
   });
 
   const {

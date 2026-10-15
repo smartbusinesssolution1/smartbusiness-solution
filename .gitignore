@@ -5,6 +5,10 @@ node_modules
 .pnp
 .pnp.js
 
+# Lock files
+package-lock.json
+pnpm-lock.json
+
 # Local env files
 .env
 .env.local
@@ -37,4 +41,5 @@ yarn-error.log*
 .DS_Store
 *.pem
 
+# project-docs
 project-docs/

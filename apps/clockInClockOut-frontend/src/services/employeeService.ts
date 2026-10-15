@@ -8,6 +8,7 @@ export interface EmployeeFilterParams {
   role?: string;
   page?: number;
   limit?: number;
+  workspaceId?: string;
 }
 
 export interface EmployeeListResult {

@@ -1,5 +1,4 @@
 import { clockInApi } from './apiClient';
-import { getAttendance } from './mockDb';
 import {
   AttendanceRecord,
   AdminAttendanceReportResponse,
@@ -66,64 +65,22 @@ export const attendanceService = {
         err.response?.data?.error?.message ||
         err.response?.data?.message ||
         err.message ||
-        'Authentication required.';
-
-      console.warn(
-        'Live /api/v1/admin/attendance not reachable with current session, using local fallback:',
-        serverMsg
-      );
-
-      // Graceful Fallback: Local dataset so admin view is never broken
-      const allMock = getAttendance();
-      const search = params?.search?.toLowerCase();
-      const status = params?.status?.toLowerCase();
-      const date = params?.date;
-
-      const filtered = allMock.filter((record) => {
-        const matchesSearch =
-          !search ||
-          record.employeeName.toLowerCase().includes(search) ||
-          record.employeeId.toLowerCase().includes(search);
-        const matchesStatus = !status || status === 'all' || record.status.toLowerCase() === status;
-        const matchesDate = !date || record.date === date;
-        return matchesSearch && matchesStatus && matchesDate;
-      });
-
-      const page = params?.page || 1;
-      const limit = params?.limit || 10;
-      const paginatedItems = filtered.slice((page - 1) * limit, page * limit);
-
-      const nonAbsent = filtered.filter((r) => r.status !== 'absent');
-      const totalShifts = nonAbsent.length;
-      const lateCount = filtered.filter((r) => r.status === 'late').length;
-      const latePercentage = totalShifts > 0 ? Math.round((lateCount / totalShifts) * 100) : 0;
-      const completedShifts = filtered.filter((r) => r.workingHours > 0);
-      const avgHours =
-        completedShifts.length > 0
-          ? parseFloat(
-              (
-                completedShifts.reduce((sum, r) => sum + r.workingHours, 0) /
-                completedShifts.length
-              ).toFixed(1)
-            )
-          : 0;
-
-      const absentCount = filtered.filter((r) => r.status === 'absent').length;
+        'Failed to fetch attendance report.';
 
       return {
-        items: paginatedItems,
+        items: [],
         pagination: {
-          total: filtered.length,
-          page,
-          limit,
-          totalPages: Math.ceil(filtered.length / limit) || 1,
+          total: 0,
+          page: params?.page || 1,
+          limit: params?.limit || 10,
+          totalPages: 0,
         },
         summary: {
-          totalShifts,
-          lateCount,
-          latePercentage,
-          averageWorkingHours: avgHours,
-          absentCount,
+          totalShifts: 0,
+          lateCount: 0,
+          latePercentage: 0,
+          averageWorkingHours: 0,
+          absentCount: 0,
         },
         isLive: false,
         errorMessage: serverMsg,
@@ -139,35 +96,39 @@ export const attendanceService = {
       const data = await this.getAdminAttendanceReport(params);
       return data?.items || [];
     } catch {
-      return getAttendance();
+      return [];
     }
   },
 
   /**
    * Admin: Get high-level attendance summary KPIs
    */
-  async getAdminDashboardMetrics(): Promise<AdminDashboardMetrics> {
+  async getAdminDashboardMetrics(workspaceId?: string): Promise<AdminDashboardMetrics> {
     try {
       const response = await clockInApi.get<{ success: boolean; data: any }>(
-        '/api/v1/admin/attendance/summary'
+        '/api/v1/admin/attendance/summary',
+        { params: workspaceId ? { workspaceId } : undefined }
       );
+      if (!response.data?.success) {
+        throw new Error('Summary fetch failed');
+      }
       const d = response.data?.data || {};
       return {
         totalEmployees: d.totalEmployees ?? 0,
         presentToday: d.presentToday ?? 0,
         lateToday: d.lateToday ?? 0,
         autoClosedToday: d.autoClosedToday ?? 0,
-        attendanceRate: d.attendanceRate ?? 100,
+        attendanceRate: d.attendanceRate ?? 0,
         weeklyStats: Array.isArray(d.weeklyStats) ? d.weeklyStats : [],
         departmentStats: Array.isArray(d.departmentStats) ? d.departmentStats : [],
       };
     } catch {
       return {
-        totalEmployees: 24,
-        presentToday: 18,
-        lateToday: 3,
-        autoClosedToday: 1,
-        attendanceRate: 75,
+        totalEmployees: 0,
+        presentToday: 0,
+        lateToday: 0,
+        autoClosedToday: 0,
+        attendanceRate: 0,
         weeklyStats: [],
         departmentStats: [],
       };
@@ -179,8 +140,7 @@ export const attendanceService = {
       const response = await clockInApi.get(`/api/v1/attendance/my/${employeeId}`);
       return response.data?.data || response.data || [];
     } catch {
-      const all = getAttendance();
-      return all.filter((r) => r.employeeId === employeeId);
+      return [];
     }
   },
 
@@ -189,20 +149,13 @@ export const attendanceService = {
       const response = await clockInApi.get(`/api/v1/attendance/my/${employeeId}/metrics`);
       return response.data?.data || response.data;
     } catch {
-      const all = getAttendance().filter((r) => r.employeeId === employeeId);
-      const todayStr = new Date().toISOString().split('T')[0];
-      const todayAttendance = all.find((r) => r.date === todayStr) || null;
-      const present = all.filter((r) => r.status === 'present' || r.status === 'late').length;
-      const late = all.filter((r) => r.status === 'late').length;
-      const hours = all.reduce((sum, r) => sum + r.workingHours, 0);
-
       return {
-        todayAttendance,
-        totalPresent: present,
-        totalLate: late,
-        totalWorkingHours: parseFloat(hours.toFixed(1)),
-        attendanceRate: all.length > 0 ? Math.round((present / all.length) * 100) : 100,
-        recentAttendance: all.slice(0, 5),
+        todayAttendance: null,
+        totalPresent: 0,
+        totalLate: 0,
+        totalWorkingHours: 0,
+        attendanceRate: 0,
+        recentAttendance: [],
       };
     }
   },
@@ -242,10 +195,18 @@ export const attendanceService = {
   },
 
   /**
-   * Client-side fallback generator for offline or unauthenticated demo sessions
+   * Client-side export generator using live backend attendance records
    */
   async fallbackClientExport(params: ExportReportParams): Promise<ExportReportResponse> {
-    const all = getAttendance();
+    const report = await this.getAdminAttendanceReport({
+      search: params.search,
+      status: params.status,
+      date: params.date,
+      workspaceId: params.workspaceId,
+      limit: 1000,
+    });
+
+    const all = report.items || [];
     const search = params.search?.toLowerCase();
     const status = params.status?.toLowerCase();
     const date = params.date;
@@ -253,8 +214,8 @@ export const attendanceService = {
     const filtered = all.filter((r) => {
       const matchSearch =
         !search ||
-        r.employeeName.toLowerCase().includes(search) ||
-        r.employeeId.toLowerCase().includes(search);
+        (r.employeeName && r.employeeName.toLowerCase().includes(search)) ||
+        (r.employeeId && r.employeeId.toLowerCase().includes(search));
       const matchStatus = !status || status === 'all' || r.status.toLowerCase() === status;
       const matchDate = !date || r.date === date;
       return matchSearch && matchStatus && matchDate;

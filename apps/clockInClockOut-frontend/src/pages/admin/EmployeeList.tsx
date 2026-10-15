@@ -58,8 +58,19 @@ export const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const queryClient = useQueryClient();
-  const { currentTenant, isSuperAdmin, user } = useAuth();
+  const { currentTenant, isSuperAdmin, user, currentWorkspace, workspaces } = useAuth();
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
+
+  const cleanId = (id?: string | null): string => {
+    if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
+    return id.trim();
+  };
+
+  const activeWorkspaceId =
+    cleanId(currentWorkspace?.id) ||
+    cleanId(localStorage.getItem('active_workspace_id')) ||
+    cleanId(workspaces?.[0]?.id) ||
+    '';
 
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,10 +96,11 @@ export const EmployeeList: React.FC = () => {
     severity: 'success',
   });
 
-  // Fetch employees from backend with active filters and pagination
+  // Fetch employees from backend with active filters, workspace, and pagination
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       'adminEmployees',
+      activeWorkspaceId,
       {
         page: page + 1,
         limit: rowsPerPage,
@@ -106,7 +118,9 @@ export const EmployeeList: React.FC = () => {
         department: deptFilter !== 'all' ? deptFilter : undefined,
         status: statusFilter !== 'all' ? statusFilter : undefined,
         role: roleFilter !== 'all' ? roleFilter : undefined,
+        workspaceId: activeWorkspaceId || undefined,
       }),
+    enabled: Boolean(user && activeWorkspaceId),
   });
 
   // Filter out self user as an extra guarantee (also excluded on the backend)

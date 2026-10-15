@@ -13,6 +13,14 @@ export class PasswordService {
   }
 
   async verify(plainPassword: string, storedHash: string): Promise<boolean> {
-    return argon2.verify(storedHash, plainPassword);
+    if (!plainPassword || !storedHash || typeof storedHash !== "string") {
+      return false;
+    }
+    try {
+      return await argon2.verify(storedHash, plainPassword);
+    } catch {
+      // Malformed hash (e.g. missing hash component, legacy hash, corrupted string)
+      return false;
+    }
   }
 }

@@ -72,6 +72,17 @@ export const envSchema = z.object({
         .int()
         .positive()
         .default(10),
+
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().positive().default(587),
+    SMTP_SECURE: z
+        .string()
+        .optional()
+        .transform((val) => val === "true"),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    SMTP_FROM: z.string().optional(),
+    PORTAL_LOGIN_URL: z.string().default("http://localhost:5173/login"),
 });
 
 export type Env = z.infer<typeof envSchema>;

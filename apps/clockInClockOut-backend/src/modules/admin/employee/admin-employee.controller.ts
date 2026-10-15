@@ -30,7 +30,16 @@ export class AdminEmployeeController {
    * List employees with filtering and pagination
    */
   list = async (req: Request, res: Response): Promise<void> => {
-    const queryParsed = EmployeeListQuerySchema.safeParse(req.query);
+    const headerWorkspaceId = req.headers["x-workspace-id"] as string | undefined;
+    const rawQuery = {
+      ...req.query,
+      workspaceId:
+        req.query.workspaceId ||
+        (headerWorkspaceId && headerWorkspaceId !== "null" && headerWorkspaceId !== "undefined"
+          ? headerWorkspaceId
+          : undefined),
+    };
+    const queryParsed = EmployeeListQuerySchema.safeParse(rawQuery);
     if (!queryParsed.success) {
       throw new ValidationError("Invalid query parameters", {
         query: queryParsed.error.issues.map((i) => i.message),

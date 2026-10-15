@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
@@ -36,23 +35,37 @@ import {
   Cancel as AbsentIcon,
   Autorenew as AutoClosedIcon,
   Search as SearchIcon,
-  FileDownload as PrintIcon,
+  FileDownload as DownloadIcon,
   EventNote as ReportIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
+import { useAuth } from '../../context/AuthContext';
 import { getAvatarUrl } from '../../utils/imageUrl';
+import { useDebounce } from '../../hooks/useDebounce';
 
 export const AttendanceReport: React.FC = () => {
   const theme = useTheme();
-  const navigate = useNavigate();
+  const { user, currentWorkspace, workspaces } = useAuth();
+
+  const cleanId = (id?: string | null): string => {
+    if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
+    return id.trim();
+  };
+
+  const activeWorkspaceId =
+    cleanId(currentWorkspace?.id) ||
+    cleanId(localStorage.getItem('active_workspace_id')) ||
+    cleanId(workspaces?.[0]?.id) ||
+    '';
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 350);
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState(() => dayjs().format('YYYY-MM-DD'));
 
-  // Export Modal State
+  // Export Modal State (only opens when clicking Export button)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Pagination State (0-indexed for MUI TablePagination)
@@ -66,15 +79,17 @@ export const AttendanceReport: React.FC = () => {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['adminAttendanceReports', page, rowsPerPage, searchTerm, statusFilter, dateFilter],
+    queryKey: ['adminAttendanceReports', activeWorkspaceId, page, rowsPerPage, debouncedSearch.trim(), statusFilter, dateFilter],
     queryFn: () =>
       attendanceService.getAdminAttendanceReport({
         page: page + 1,
         limit: rowsPerPage,
-        search: searchTerm.trim() || undefined,
+        search: debouncedSearch.trim() || undefined,
         status: statusFilter,
         date: dateFilter || undefined,
+        workspaceId: activeWorkspaceId || undefined,
       }),
+    enabled: Boolean(user && activeWorkspaceId),
   });
 
   const records = reportData?.items || [];
@@ -113,10 +128,6 @@ export const AttendanceReport: React.FC = () => {
     }
   };
 
-  const handleOpenExport = () => {
-    setIsExportModalOpen(true);
-  };
-
   return (
     <Box>
       {/* Header */}
@@ -126,10 +137,10 @@ export const AttendanceReport: React.FC = () => {
             <Typography variant="h4" sx={{ fontWeight: 800 }}>
               Attendance Report
             </Typography>
-            {reportData && (
+            {reportData?.isLive && (
               <Chip
-                label={reportData.isLive ? '🟢 Live Database' : '🟡 Demo Mode'}
-                color={reportData.isLive ? 'success' : 'default'}
+                label="🟢 Live Database"
+                color="success"
                 size="small"
                 variant="outlined"
                 sx={{ fontWeight: 700, fontSize: '0.72rem' }}
@@ -137,7 +148,7 @@ export const AttendanceReport: React.FC = () => {
             )}
           </Box>
           <Typography variant="body2" color="text.secondary">
-            Perform enterprise logs auditing, run compliance filters, and print reports.
+            Perform enterprise logs auditing, inspect real-time punch records, and view attendance status.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1.5 }}>
@@ -146,34 +157,19 @@ export const AttendanceReport: React.FC = () => {
           </Button>
           <Button
             variant="contained"
-            startIcon={<PrintIcon />}
-            onClick={handleOpenExport}
+            startIcon={<DownloadIcon />}
+            onClick={() => setIsExportModalOpen(true)}
             sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
           >
-            Print / Export Audit Report
+            Export Report
           </Button>
         </Box>
       </Box>
 
-      {/* Fallback / Demo Mode Notice */}
-      {!isLoading && reportData && !reportData.isLive && (
-        <Alert
-          severity="info"
-          sx={{ mb: 3, borderRadius: 2 }}
-          action={
-            <Button
-              color="primary"
-              size="small"
-              variant="contained"
-              onClick={() => navigate('/login')}
-              sx={{ textTransform: 'none', fontWeight: 600 }}
-            >
-              Log In as Maria (Admin)
-            </Button>
-          }
-        >
-          Currently displaying local fallback records ({reportData.errorMessage || 'Admin session required'}).
-          Sign in with <strong>maria@greenacres.com</strong> to query real-time attendance directly from PostgreSQL.
+      {/* Backend Error Notice */}
+      {!isLoading && reportData && !reportData.isLive && reportData.errorMessage && (
+        <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
+          {reportData.errorMessage}
         </Alert>
       )}
 
@@ -582,7 +578,7 @@ export const AttendanceReport: React.FC = () => {
         )}
       </Card>
 
-      {/* Export / Print Audit Report Modal */}
+      {/* Export Audit Report Modal - Only triggers file generation when user explicitly clicks Download */}
       <ExportAuditReportModal
         open={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
@@ -590,6 +586,7 @@ export const AttendanceReport: React.FC = () => {
           search: searchTerm.trim() || undefined,
           status: statusFilter !== 'all' ? statusFilter : undefined,
           date: dateFilter || undefined,
+          workspaceId: activeWorkspaceId || undefined,
         }}
         totalCount={totalCount}
       />

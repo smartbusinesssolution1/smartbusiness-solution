@@ -63,6 +63,7 @@ export interface LoginResponse {
 }
 
 let inFlightWorkspacesPromise: Promise<Workspace[]> | null = null;
+let inFlightCurrentUserPromise: Promise<User | null> | null = null;
 
 export const authService = {
   /**
@@ -114,6 +115,11 @@ export const authService = {
    * Fetch live workspaces from backend for the active tenant (deduplicated)
    */
   async fetchWorkspaces(): Promise<Workspace[]> {
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return this.getWorkspaces();
+    }
+
     if (inFlightWorkspacesPromise) {
       return inFlightWorkspacesPromise;
     }
@@ -242,12 +248,7 @@ export const authService = {
    */
   async login(email: string, password = 'Password1!'): Promise<LoginResponse> {
     try {
-      let loginRes;
-      try {
-        loginRes = await clockInApi.post('/api/v1/auth/login', { email, password });
-      } catch {
-        loginRes = await platformAuthApi.post('/api/v1/auth/login', { email, password });
-      }
+      const loginRes = await platformAuthApi.post('/api/v1/auth/login', { email, password });
 
       const { user: authUser, tenants: rawTenants, tokens } = loginRes.data.data;
 
@@ -324,40 +325,6 @@ export const authService = {
         currentWorkspace,
       };
     } catch (error: any) {
-      console.warn('API login failed or unavailable, checking mock fallback:', error?.message);
-
-      if (error?.message?.includes('Access Restricted')) {
-        throw error;
-      }
-
-      const mockUsers = getUsers();
-      const matchedMock = mockUsers.find(
-        (u) => u.email.toLowerCase() === email.toLowerCase()
-      );
-
-      if (matchedMock) {
-        if (matchedMock.role !== 'admin') {
-          throw new Error(
-            'Access Restricted: The Clock-In/Clock-Out Web Console is exclusively for Administrators and Managers. Employees must use the SmartBusiness Mobile App to clock in and out.'
-          );
-        }
-        const tenant = this.getCurrentTenant();
-        const workspaces = this.getWorkspaces();
-        const currentWorkspace = this.getActiveWorkspace();
-
-        localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
-        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
-        setSessionUser(matchedMock);
-
-        return {
-          user: matchedMock,
-          token: 'mock-session-active',
-          tenant,
-          workspaces,
-          currentWorkspace,
-        };
-      }
-
       const errorObj = error.response?.data?.error;
       const errorMsg =
         (typeof errorObj === 'object' ? errorObj?.message : errorObj) ||
@@ -417,22 +384,12 @@ export const authService = {
     ];
 
     try {
-      let res;
-      try {
-        res = await clockInApi.post('/api/v1/auth/register', {
-          companyName,
-          fullName,
-          email,
-          password: 'Password1!',
-        });
-      } catch {
-        res = await platformAuthApi.post('/api/v1/auth/register', {
-          companyName,
-          fullName,
-          email,
-          password: 'Password1!',
-        });
-      }
+      const res = await platformAuthApi.post('/api/v1/auth/register', {
+        companyName,
+        fullName,
+        email,
+        password: 'Password1!',
+      });
 
       const { user: authUser, tokens } = res.data.data;
       if (tokens?.accessToken) {
@@ -501,7 +458,6 @@ export const authService = {
    */
   async logout(): Promise<void> {
     try {
-      await clockInApi.post('/api/v1/auth/logout').catch(() => {});
       await platformAuthApi.post('/api/v1/auth/logout').catch(() => {});
     } catch (err) {
       console.warn('Logout API error:', err);
@@ -514,78 +470,87 @@ export const authService = {
   },
 
   /**
-   * Get current session user
+   * Get current session user (deduplicated)
    */
   async getCurrentUser(): Promise<User | null> {
-    try {
-      let meRes;
-      try {
-        meRes = await clockInApi.get('/api/v1/auth/me');
-      } catch {
-        meRes = await platformAuthApi.get('/api/v1/auth/me');
-      }
-      const authUser = meRes.data.data?.user;
-      const rawTenants = meRes.data.data?.tenants;
-
-
-      if (authUser) {
-        if (rawTenants && rawTenants.length > 0) {
-          const raw = rawTenants[0];
-          const tenant: Tenant = {
-            id: raw.tenantId || raw.id,
-            name: raw.tenantName || raw.name || 'Green Acres Landscaping LLC',
-            role: (raw.role || 'MEMBER').toUpperCase() as any,
-            status: (raw.status || 'ACTIVE').toUpperCase() as any,
-          };
-          this.setCurrentTenant(tenant);
-        }
-
-        const tenant = this.getCurrentTenant();
-        const tenantRole = tenant.role || 'MEMBER';
-        const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
-
-        if (!isPrivileged) {
-          localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
-          localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
-          setSessionUser(null);
-          return null;
-        }
-
-        localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
-        const currentWorkspace = this.getActiveWorkspace();
-        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
-
-        let employeeProfile: any = null;
-        try {
-          const empRes = await clockInApi.get('/api/v1/employees/me');
-          employeeProfile = empRes.data.data;
-        } catch (empErr) {
-          console.warn('Could not fetch employee profile on session restore:', empErr);
-        }
-
-        const existingUser = getSessionUser();
-        const user: User = {
-          id: authUser.id,
-          employeeId: employeeProfile?.employeeCode || existingUser?.employeeId || 'EMP-GA001',
-          name: authUser.fullName || existingUser?.name || 'Admin',
-          email: authUser.email,
-          phone: (existingUser && existingUser.id === authUser.id && existingUser.phone) ? existingUser.phone : '+1 (555) 019-2834',
-          role: 'admin',
-          status: 'active',
-          designation: employeeProfile?.designation || existingUser?.designation || 'Operations Manager',
-          department: employeeProfile?.department || existingUser?.department || 'Operations',
-          joinedDate: existingUser?.joinedDate || '2024-01-15',
-          avatarUrl: employeeProfile?.biometricPhotoUrl || existingUser?.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-        };
-
-        setSessionUser(user);
-        return user;
-      }
-    } catch {
-      // Session cookie absent or network error, fallback to cached session user
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      return null;
     }
 
-    return getSessionUser();
+    if (inFlightCurrentUserPromise) {
+      return inFlightCurrentUserPromise;
+    }
+
+    inFlightCurrentUserPromise = (async () => {
+      try {
+        const meRes = await platformAuthApi.get('/api/v1/auth/me');
+        const authUser = meRes.data.data?.user;
+        const rawTenants = meRes.data.data?.tenants;
+
+        if (authUser) {
+          if (rawTenants && rawTenants.length > 0) {
+            const raw = rawTenants[0];
+            const tenant: Tenant = {
+              id: raw.tenantId || raw.id,
+              name: raw.tenantName || raw.name || 'Green Acres Landscaping LLC',
+              role: (raw.role || 'MEMBER').toUpperCase() as any,
+              status: (raw.status || 'ACTIVE').toUpperCase() as any,
+            };
+            this.setCurrentTenant(tenant);
+          }
+
+          const tenant = this.getCurrentTenant();
+          const tenantRole = tenant.role || 'MEMBER';
+          const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
+
+          if (!isPrivileged) {
+            localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+            localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+            setSessionUser(null);
+            return null;
+          }
+
+          localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
+          const currentWorkspace = this.getActiveWorkspace();
+          localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+
+          let employeeProfile: any = null;
+          try {
+            const empRes = await clockInApi.get('/api/v1/employees/me');
+            employeeProfile = empRes.data.data;
+          } catch (empErr) {
+            console.warn('Could not fetch employee profile on session restore:', empErr);
+          }
+
+          const existingUser = getSessionUser();
+          const user: User = {
+            id: authUser.id,
+            employeeId: employeeProfile?.employeeCode || existingUser?.employeeId || 'EMP-GA001',
+            name: authUser.fullName || existingUser?.name || 'Admin',
+            email: authUser.email,
+            phone: (existingUser && existingUser.id === authUser.id && existingUser.phone) ? existingUser.phone : '+1 (555) 019-2834',
+            role: 'admin',
+            status: 'active',
+            designation: employeeProfile?.designation || existingUser?.designation || 'Operations Manager',
+            department: employeeProfile?.department || existingUser?.department || 'Operations',
+            joinedDate: existingUser?.joinedDate || '2024-01-15',
+            avatarUrl: employeeProfile?.biometricPhotoUrl || existingUser?.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+          };
+
+          setSessionUser(user);
+          return user;
+        }
+      } catch (err) {
+        console.warn('Session verification failed on backend:', err);
+      } finally {
+        inFlightCurrentUserPromise = null;
+      }
+
+      return getSessionUser();
+    })();
+
+    return inFlightCurrentUserPromise;
   },
 };
 

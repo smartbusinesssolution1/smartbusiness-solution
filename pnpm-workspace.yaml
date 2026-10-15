@@ -5,6 +5,7 @@ allowBuilds:
   '@google/genai': true
   '@prisma/engines': true
   argon2: false
+  core-js: true
   esbuild: true
   msgpackr-extract: true
   prisma: true

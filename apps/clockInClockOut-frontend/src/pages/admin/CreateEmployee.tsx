@@ -99,7 +99,7 @@ export const CreateEmployee: React.FC = () => {
   const theme = useTheme();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { currentTenant, isSuperAdmin } = useAuth();
+  const { user, currentTenant, isSuperAdmin } = useAuth();
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
 
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export const CreateEmployee: React.FC = () => {
   const { data: orgSettings, isLoading: isLoadingSettings } = useQuery({
     queryKey: ['adminSettings'],
     queryFn: () => settingsService.getSettings(),
+    enabled: Boolean(user),
   });
 
   const {
