@@ -1,0 +1,21 @@
+# Local development services.
+#   docker compose -f docker-compose.dev.yml up -d     start Redis on 127.0.0.1:6379
+#   docker compose -f docker-compose.dev.yml down      stop it (data is kept in the volume)
+services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: smartbusiness-dev-redis
+    ports:
+      - "127.0.0.1:6379:6379"
+    # Append-only file: queued jobs survive a container restart, as they would in production.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-dev-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  redis-dev-data:

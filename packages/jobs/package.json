@@ -1,0 +1,29 @@
+{
+  "name": "@smartbusiness/jobs",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Shared job queue for SmartBusiness: BullMQ on Redis, typed job payloads, default retry policy and graceful workers",
+  "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "bullmq": "6.3.4",
+    "ioredis": "6.0.0"
+  },
+  "devDependencies": {
+    "@smartbusiness/typescript-config": "workspace:*",
+    "@types/node": "^22.20.2",
+    "vitest": "4.1.11"
+  }
+}
