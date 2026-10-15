@@ -2,6 +2,9 @@
 export { TokenService } from "./services/token.service.js";
 export type { AccessTokenPayload } from "./services/token.service.js";
 export { PasswordService } from "./services/password.service.js";
+export { UserTokenService } from "./services/user-token.service.js";
+export type { IssueTokenInput, TokenCheck, TokenProblem } from "./services/user-token.service.js";
+export { generateOpaqueToken, hashOpaqueToken, looksLikeOpaqueToken } from "./utils/opaque-token.js";
 
 // Middleware
 export { createAuthMiddleware } from "./middleware/auth.middleware.js";

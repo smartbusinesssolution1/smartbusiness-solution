@@ -19,11 +19,10 @@ export interface EmailConfig {
   log?: (line: string) => void;
 }
 
-/**
- * Chooses the delivery for this environment. Business code receives the result as
- * an EmailSender and never knows which one it got. A real provider will be added
- * here as one more case once the client chooses it.
- */
+// Chooses the delivery for this environment. Business code receives the result as
+// an EmailSender and never knows which one it got. A real provider will be added
+// here as one more case once the client chooses it.
+
 export function createEmailSender(config: EmailConfig): EmailSender {
   switch (config.transport) {
     case "file":

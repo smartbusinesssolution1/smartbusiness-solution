@@ -1,5 +1,5 @@
 import jwt, { type SignOptions } from "jsonwebtoken";
-import { randomBytes, createHash } from "crypto";
+import { generateOpaqueToken, hashOpaqueToken } from "../utils/opaque-token.js";
 import { AuthError } from "../errors/index.js";
 
 export interface AccessTokenPayload {
@@ -34,12 +34,10 @@ export class TokenService {
   }
 
   generateRefreshToken(): { raw: string; hash: string } {
-    const raw = randomBytes(32).toString("base64url");
-    const hash = this.hashRefreshToken(raw);
-    return { raw, hash };
+    return generateOpaqueToken();
   }
 
   hashRefreshToken(rawToken: string): string {
-    return createHash("sha256").update(rawToken).digest("hex");
+    return hashOpaqueToken(rawToken);
   }
 }

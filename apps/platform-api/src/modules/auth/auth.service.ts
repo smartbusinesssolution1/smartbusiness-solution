@@ -100,10 +100,7 @@ export class AuthService {
     // The password is checked FIRST. Only someone who knows it may learn anything
     // about the account (deactivated, no active organization); anyone else gets the
     // same answer as for an unknown email, so accounts cannot be discovered.
-    const isValidPassword = await this.passwordService.verify(
-      data.password,
-      user.passwordHash,
-    );
+    const isValidPassword = await this.passwordMatches(data.password, user.passwordHash);
     if (!isValidPassword) {
       const anyTenantId = user.tenantMembers[0]?.tenant.id;
       if (anyTenantId) {
@@ -261,6 +258,17 @@ export class AuthService {
   }
 
   // ─── Private Helpers ─────────────────────────────────────────
+
+  // An invited user who has not accepted yet has no password (null). Refuse them exactly
+  // like a wrong password, after the same hashing work, so neither the answer nor the
+  // response time reveals that the account exists.
+  private async passwordMatches(password: string, storedHash: string | null): Promise<boolean> {
+    if (!storedHash) {
+      await this.passwordService.hash(password);
+      return false;
+    }
+    return this.passwordService.verify(password, storedHash);
+  }
 
   private extractTenants(user: UserWithTenants): TenantInfo[] {
     return user.tenantMembers

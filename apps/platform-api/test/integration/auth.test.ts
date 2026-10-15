@@ -174,6 +174,18 @@ describe("login", () => {
     });
   });
 
+  it("refuses an invited user who has not set a password yet, with the generic answer", async () => {
+    const tenant = await prisma.tenant.findFirstOrThrow();
+    const invited = await prisma.user.create({
+      data: { fullName: "Jennifer Chen", email: "jennifer@greenacres.test", passwordHash: null },
+    });
+    await prisma.tenantMember.create({ data: { tenantId: tenant.id, userId: invited.id, role: "MEMBER" } });
+
+    const res = await new AuthClient().login("jennifer@greenacres.test", VALID_PASSWORD);
+    expect(res.status).toBe(401);
+    expect(res.body.error.message).toBe("Invalid email or password.");
+  });
+
   it("keeps at most 5 sessions: a 6th sign-in ends the oldest", async () => {
     const devices = Array.from({ length: 6 }, () => new AuthClient());
     for (const d of devices) {

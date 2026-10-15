@@ -1,10 +1,14 @@
-import { assertSendable, type EmailMessage, type EmailSender, type SentEmail } from "../types.js";
+import {
+  assertSendable,
+  type EmailMessage,
+  type EmailSender,
+  type SentEmail,
+} from "../types.js";
 
-/**
- * Keeps every email in a list instead of delivering it. Used by automated tests,
- * which read the list to check that the right email went to the right person and
- * to pull links out of it.
- */
+//Keeps every email in a list instead of delivering it. Used by automated tests,
+//which read the list to check that the right email went to the right person and
+//to pull links out of it.
+
 export class MemoryEmailSender implements EmailSender {
   readonly sent: SentEmail[] = [];
 
@@ -15,12 +19,14 @@ export class MemoryEmailSender implements EmailSender {
     this.sent.push({ ...message, from: this.from, sentAt: new Date() });
   }
 
-  /** Emails sent to `to`, optionally only of one kind, oldest first. */
+  // Emails sent to `to`, optionally only of one kind, oldest first.
   to(to: string, tag?: string): SentEmail[] {
-    return this.sent.filter((e) => e.to === to && (tag === undefined || e.tag === tag));
+    return this.sent.filter(
+      (e) => e.to === to && (tag === undefined || e.tag === tag),
+    );
   }
 
-  /** The most recent email sent to `to` (optionally of one kind), or undefined. */
+  // The most recent email sent to `to` (optionally of one kind), or undefined.
   last(to: string, tag?: string): SentEmail | undefined {
     return this.to(to, tag).at(-1);
   }

@@ -1,13 +1,16 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { escapeHtml } from "../escape.js";
-import { assertSendable, type EmailMessage, type EmailSender } from "../types.js";
+import {
+  assertSendable,
+  type EmailMessage,
+  type EmailSender,
+} from "../types.js";
 
-/**
- * Development delivery: writes each email to a folder as an .html file you can open
- * in a browser (links are clickable) plus a .txt file with the plain-text version.
- * Nothing leaves the machine.
- */
+// Development delivery: writes each email to a folder as an .html file you can open
+// in a browser (links are clickable) plus a .txt file with the plain-text version.
+// Nothing leaves the machine.
+
 export class FileEmailSender implements EmailSender {
   constructor(
     private readonly from: string,
@@ -38,7 +41,11 @@ export class FileEmailSender implements EmailSender {
       message.html;
 
     await fs.writeFile(`${base}.html`, htmlFile, "utf8");
-    await fs.writeFile(`${base}.txt`, `${header.join("\n")}\n\n${message.text}`, "utf8");
+    await fs.writeFile(
+      `${base}.txt`,
+      `${header.join("\n")}\n\n${message.text}`,
+      "utf8",
+    );
 
     this.log(`Email "${message.tag}" to ${message.to} written to ${base}.html`);
   }

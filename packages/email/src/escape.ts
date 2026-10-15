@@ -15,10 +15,9 @@ export function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (ch) => HTML_ESCAPES[ch]!);
 }
 
-/**
- * A link that may go into an href. Only http(s) URLs are accepted, so a value such as
- * `javascript:...` can never become a clickable link. Returns the escaped URL.
- */
+//A link that may go into an href. Only http(s) URLs are accepted, so a value such as
+//`javascript:...` can never become a clickable link. Returns the escaped URL.
+
 export function safeLink(url: string): string {
   let parsed: URL;
   try {

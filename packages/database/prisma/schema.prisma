@@ -56,6 +56,7 @@ model Tenant {
   auditLogs     AuditLog[]
   tenantMembers TenantMember[]
   subscriptions ProductSubscription[]
+  userTokens    UserToken[]
 
   @@map("tenants")
 }
@@ -64,7 +65,8 @@ model User {
   id              String    @id @default(uuid())
   fullName        String    @map("full_name")
   email           String    @unique
-  passwordHash    String    @map("password_hash")
+  // null = invited, no password set yet: the account cannot sign in until the invitation is accepted
+  passwordHash    String?   @map("password_hash")
   isActive        Boolean   @default(true) @map("is_active")
   lastLoginAt     DateTime? @map("last_login_at")
   emailVerifiedAt DateTime? @map("email_verified_at")
@@ -88,6 +90,8 @@ model User {
   approvalRecords           ApprovalRecord[]
   createdApprovalRules      ApprovalWorkflowRule[]
   sessions                  Session[]
+  userTokens                UserToken[]                @relation("UserTokenOwner")
+  createdUserTokens         UserToken[]                @relation("UserTokenCreatedBy")
 
   @@map("users")
 }
@@ -222,6 +226,7 @@ model Workspace {
   calibrationProfiles   CalibrationProfile[]
   auditLogs             AuditLog[]
   approvalRules         ApprovalWorkflowRule[]
+  userTokens            UserToken[]
   checkPrintingSettings CheckPrintingSettings?
 
   @@index([tenantId])
@@ -364,7 +369,7 @@ model Check {
 
   // Starts at 1 and increases on every resubmit. Approval votes belong to one round,
   // so votes cast before an edit never count toward the edited check.
-  approvalRound    Int         @default(1) @map("approval_round")
+  approvalRound Int @default(1) @map("approval_round")
 
   // Void fields
   voidReason String?   @map("void_reason")
@@ -498,7 +503,7 @@ model ApprovalRecord {
   checkId    String   @map("check_id") // Which check was this decision about?
   ruleId     String   @map("rule_id") // Which rule triggered this approval?
   approverId String   @map("approver_id") // Who made the decision?
-  round      Int      // Check.approvalRound when the decision was made
+  round      Int // Check.approvalRound when the decision was made
   decision   String   @db.VarChar(10) // approved or rejected
   reason     String? // rejected reason
   createdAt  DateTime @default(now()) @map("created_at") //When was the decision made?
@@ -599,6 +604,39 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([tenantId, productSlug])
   @@map("audit_log")
+}
+
+enum UserTokenPurpose {
+  PASSWORD_RESET
+  INVITATION
+}
+
+// One-time links sent by email (password reset, invitation). Only a SHA-256 fingerprint
+// of the token is stored. A token works while usedAt and revokedAt are null and
+// expiresAt is in the future; "expired" is worked out from expiresAt, never stored.
+model UserToken {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  purpose   UserTokenPurpose
+  tokenHash String           @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime         @map("expires_at")
+  usedAt    DateTime?        @map("used_at")
+  revokedAt DateTime?        @map("revoked_at") // replaced by a newer link, or the invitation was cancelled
+
+  // Invitations only: where the user was invited, and by whom
+  tenantId    String? @map("tenant_id")
+  workspaceId String? @map("workspace_id")
+  createdById String? @map("created_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User       @relation("UserTokenOwner", fields: [userId], references: [id])
+  createdBy User?      @relation("UserTokenCreatedBy", fields: [createdById], references: [id])
+  tenant    Tenant?    @relation(fields: [tenantId], references: [id])
+  workspace Workspace? @relation(fields: [workspaceId], references: [id])
+
+  @@index([userId, purpose])
+  @@map("user_tokens")
 }
 
 model Session {
