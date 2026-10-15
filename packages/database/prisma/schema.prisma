@@ -81,6 +81,7 @@ model User {
   printedChecks             Check[]                    @relation("CheckPrintedBy")
   voidedChecks              Check[]                    @relation("CheckVoidedBy")
   printConfirmedChecks      Check[]                    @relation("CheckPrintConfirmedBy")
+  updatedSignatures         BankAccount[]              @relation("BankAccountSignatureUpdatedBy")
   clearedChecks             Check[]                    @relation("CheckClearedBy")
   statusChanges             CheckStatusHistory[]
   uploadedAttachment        CheckAttachment[]
@@ -303,7 +304,10 @@ model BankAccount {
   accountType            AccountType @default(CHECKING) @map("account_type")
   nextCheckNumber        Int         @map("next_check_number")
   checkNumberPadding     Int         @default(6) @map("check_number_padding")
-  signatureImageUrl      String?     @map("signature_image_url")
+  // Key of the signature image in encrypted file storage (not a URL: never served directly)
+  signatureStorageKey    String?     @map("signature_storage_key")
+  signatureUpdatedAt     DateTime?   @map("signature_updated_at")
+  signatureUpdatedById   String?     @map("signature_updated_by_id")
   encryptionKeyVersion   Int         @default(1) @map("encryption_key_version")
   isActive               Boolean     @default(true) @map("is_active")
   createdAt              DateTime    @default(now()) @map("created_at")
@@ -312,6 +316,7 @@ model BankAccount {
 
   // Relations
   workspace Workspace @relation(fields: [workspaceId], references: [id])
+  signatureUpdatedBy User? @relation("BankAccountSignatureUpdatedBy", fields: [signatureUpdatedById], references: [id])
 
   checks Check[]
 
