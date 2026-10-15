@@ -30,11 +30,12 @@ export interface VerificationExpectation {
  * profile applies: a correctly calibrated printer puts ink exactly here.
  */
 export function verificationExpectations(tmpl: CheckTemplate): VerificationExpectation[] {
-  const boundaries = [tmpl.stub1, tmpl.checkArea, tmpl.stub2]
-    .map((z) => z.top)
-    .sort((a, b) => a - b)
-    .slice(1);
+  // The two upper lines across the sheet (every layout has at least two).
+  const boundaries = tmpl.cutLines.map((l) => l.y).sort((a, b) => a - b);
   const edge = tmpl.tearGuides ? "tear line" : "perforation";
+  // On check-on-bottom paper the check's bottom edge is the paper's edge, not a line.
+  const checkBottom = tmpl.checkArea.top + tmpl.checkArea.height;
+  const micrFrom = checkBottom >= tmpl.pageHeight - 0.5 ? "Bottom edge of paper" : `Check's bottom ${edge}`;
 
   return [
     { item: "upperTearLine", label: `Upper ${edge}`, from: "Top edge of paper", expectedPts: boundaries[0]! },
@@ -42,7 +43,7 @@ export function verificationExpectations(tmpl: CheckTemplate): VerificationExpec
     {
       item: "micrBottom",
       label: "Bottom of MICR digits",
-      from: `Check's bottom ${edge}`,
+      from: micrFrom,
       expectedPts: MICR.baselineFromBottomIn * PTS_PER_INCH,
     },
     {

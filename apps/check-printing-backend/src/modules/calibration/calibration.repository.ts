@@ -1,3 +1,4 @@
+import type { CheckLayout } from "../pdf/pdf.types.js";
 import { prisma, Prisma } from "@smartbusiness/database";
 import type { PaperSize } from "../pdf/pdf.types.js";
 import type { CalibrationMeasurements, Repeatability } from "./calibration.math.js";
@@ -38,6 +39,7 @@ export class CalibrationRepository {
     workspaceId: string;
     profileName: string;
     stockType: "PLAIN_PAPER" | "PERFORATED_STOCK";
+    layout: CheckLayout;
     tray?: string;
   }) {
     // The first printer profile in a workspace becomes its default.
@@ -52,6 +54,7 @@ export class CalibrationRepository {
           workspaceId: data.workspaceId,
           profileName: data.profileName,
           stockType: data.stockType,
+          layout: data.layout,
           tray: data.tray ?? null,
           isDefault: !existingDefault,
           ...toColumns(data),
@@ -96,10 +99,12 @@ export class CalibrationRepository {
     profileName?: string;
     tray?: string | null;
     stockType?: "PLAIN_PAPER" | "PERFORATED_STOCK";
-  }): Promise<{ count: number }> {
+    layout?: CheckLayout;
+  }, options: { clearVerification?: boolean } = {}): Promise<{ count: number }> {
     return prisma.calibrationProfile.updateMany({
       where: { id, workspaceId },
-      data,
+      // Different paper needs a fresh verification sample.
+      data: { ...data, ...(options.clearVerification && CLEARED_VERIFICATION) },
     });
   }
 

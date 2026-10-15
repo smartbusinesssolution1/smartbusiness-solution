@@ -35,7 +35,7 @@ function checkData(signatureImage: Buffer | null): CheckPdfData {
     horizontalOffsetPts: 0,
     verticalOffsetPts: 0,
     signatureImage,
-    template: templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER" }),
+    template: templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER", layout: "CHECK_MIDDLE" }),
     invoiceItems: null,
   };
 }

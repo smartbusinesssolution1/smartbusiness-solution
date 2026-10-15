@@ -27,7 +27,7 @@ import type { CalibrationService } from "../calibration/calibration.service.js";
 import type { EncryptionService } from "../../shared/services/encryption.service.js";
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
-import type { CheckPdfData } from "../pdf/pdf.types.js";
+import type { CheckPdfData, SheetPosition } from "../pdf/pdf.types.js";
 import type { ObjectStorage } from "../../shared/storage/index.js";
 import { formatAttachment } from "./attachment.service.js";
 import { Prisma } from "@smartbusiness/database";
@@ -658,6 +658,16 @@ export class CheckService {
       input.calibrationProfileId,
     );
 
+    // Slots exist only on three-per-page paper; there the default is the top slot.
+    const isThreePerPage = printer.layout === "THREE_PER_PAGE";
+    if (input.position !== undefined && !isThreePerPage) {
+      throw new ValidationError(
+        `"${printer.profileName}" prints one check per sheet, so there is no slot to choose.`,
+        { position: ["Only printers with three-per-page paper have slots"] },
+      );
+    }
+    const position = isThreePerPage ? ((input.position ?? 1) as SheetPosition) : null;
+
     const paddedCheckNumber = String(check.checkNumber).padStart(
       bankAccount.checkNumberPadding ?? 6,
       "0",
@@ -700,7 +710,7 @@ export class CheckService {
       horizontalOffsetPts: printer.horizontalOffsetPts,
       verticalOffsetPts: printer.verticalOffsetPts,
       signatureImage: await this.loadSignature(bankAccount.signatureStorageKey),
-      template: templateForPrinter(printer),
+      template: templateForPrinter({ ...printer, position: position ?? undefined }),
       invoiceItems: check.invoiceTableJson as
         Array<{ description: string; amount: string }> | null,
     };
@@ -733,6 +743,8 @@ export class CheckService {
           printOffsetXPts: printer.horizontalOffsetPts,
           printOffsetYPts: printer.verticalOffsetPts,
           printPaperSize: printer.paperSize,
+          printLayout: printer.layout,
+          printPosition: position,
         },
       );
     } catch (err) {
@@ -759,6 +771,8 @@ export class CheckService {
           profileId: printer.profileId,
           profileName: printer.profileName,
           paperSize: printer.paperSize,
+          layout: printer.layout,
+          position,
           horizontalOffsetPts: printer.horizontalOffsetPts,
           verticalOffsetPts: printer.verticalOffsetPts,
         },
@@ -766,7 +780,14 @@ export class CheckService {
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatCheck(updated);
+    // Three-per-page paper has no stubs, so invoice lines have nowhere to go.
+    const invoiceLines = (check.invoiceTableJson as unknown[] | null)?.length ?? 0;
+    const notice =
+      isThreePerPage && invoiceLines > 0
+        ? "This printer's paper has no stubs, so the invoice lines were not printed. Send the invoice to the payee separately if they need it."
+        : null;
+
+    return { ...this.formatCheck(updated), notice };
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -1416,6 +1437,8 @@ export class CheckService {
         ? {
             calibrationProfileId: check.calibrationProfileId,
             paperSize: check.printPaperSize,
+            layout: check.printLayout ?? null,
+            position: check.printPosition ?? null,
             horizontalOffsetPts: check.printOffsetXPts === null ? null : Number(check.printOffsetXPts).toFixed(2),
             verticalOffsetPts: check.printOffsetYPts === null ? null : Number(check.printOffsetYPts).toFixed(2),
           }

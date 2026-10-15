@@ -52,7 +52,7 @@ export function fitText(text: string, spec: FitSpec): FitResult {
 export const PAYEE_FIT = { font: "Helvetica-Bold", maxSize: 12, minSize: 8 } as const;
 
 // The payee box is narrowest on A4, so a name that fits there fits on every supported paper.
-const NARROWEST_PAYEE_WIDTH = buildCheckTemplate("check-middle", "A4").elements.payeeName.width!;
+const NARROWEST_PAYEE_WIDTH = buildCheckTemplate("CHECK_MIDDLE", "A4").elements.payeeName.width!;
 
 export function payeeFitsOnCheck(payeeName: string, width = NARROWEST_PAYEE_WIDTH): boolean {
   return !fitText(payeeName, { ...PAYEE_FIT, width }).truncated;

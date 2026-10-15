@@ -191,14 +191,15 @@ export class PdfRenderer {
         // A calibration sample is drawn by exactly the same code as a real check, so it
         // goes through the same printing path; only the watermark and lower stub differ.
         if (data.verification) this.drawSampleWatermark(doc, t);
-        this.drawStub(doc, data, t, t.stub1, "EMPLOYEE COPY");
+        // Every stub the layout has (none on three-per-page paper). On a calibration
+        // sample, the measuring panel takes the place of the lower stub.
+        t.stubs.forEach((stub, i) => {
+          const isSampleArea = data.verification && i === t.stubs.length - 1;
+          if (!isSampleArea) this.drawStub(doc, data, t, stub, stub.label);
+        });
         this.drawCheckFace(doc, data, t);
         this.drawMicrLine(doc, data, t, fontReport.fontSizePts);
-        if (data.verification) {
-          this.drawVerificationPanel(doc, t, t.stub2, data.verification);
-        } else {
-          this.drawStub(doc, data, t, t.stub2, "EMPLOYER COPY");
-        }
+        if (data.verification) this.drawVerificationPanel(doc, t, t.sampleArea, data.verification);
         if (t.tearGuides) this.drawTearGuides(doc, t);
 
         doc.restore();
@@ -599,10 +600,8 @@ export class PdfRenderer {
   // ─────────────────────────────────────────────────────────────
 
   private drawTearGuides(doc: PDFKit.PDFDocument, tmpl: CheckTemplate): void {
-    const zones = [tmpl.stub1, tmpl.checkArea, tmpl.stub2].sort((a, b) => a.top - b.top);
-    for (const zone of zones.slice(1)) {
-      const labelAbove = zone.top === tmpl.checkArea.top;
-      this.drawTearGuide(doc, tmpl, zone.top, labelAbove);
+    for (const line of tmpl.cutLines) {
+      this.drawTearGuide(doc, tmpl, line.y, line.labelAbove);
     }
   }
 

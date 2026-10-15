@@ -79,6 +79,18 @@ export interface StubAreaLayout {
   height: number;
 }
 
+// A stub (voucher) zone and the copy it is printed as.
+export interface StubZone extends StubAreaLayout {
+  label: string;
+}
+
+// A perforation / tear line across the page. Its label goes on the side that is not
+// the printed check, so it never lands on the check face.
+export interface CutLine {
+  y: number;
+  labelAbove: boolean;
+}
+
 export interface CheckElementPosition {
   x: number;
   y: number;
@@ -87,7 +99,11 @@ export interface CheckElementPosition {
   align?: "left" | "center" | "right";
 }
 
-export type CheckLayout = "check-top" | "check-middle" | "check-bottom";
+// Same values as the database's CheckLayout enum.
+export type CheckLayout = "CHECK_TOP" | "CHECK_MIDDLE" | "CHECK_BOTTOM" | "THREE_PER_PAGE";
+
+// Slot on three-per-page paper (always 1 for the other layouts).
+export type SheetPosition = 1 | 2 | 3;
 
 export interface CheckTemplate {
   name: string;
@@ -98,9 +114,14 @@ export interface CheckTemplate {
   // Dashed tear lines are printed only on plain paper; perforated stock already has them.
   tearGuides: boolean;
   layout: CheckLayout;
+  position: SheetPosition;
   checkArea: CheckAreaLayout;
-  stub1: StubAreaLayout;
-  stub2: StubAreaLayout;
+  // Two for the voucher layouts, none for three-per-page
+  stubs: StubZone[];
+  // Perforations / tear lines, top to bottom
+  cutLines: CutLine[];
+  // Where a calibration sample's measuring panel is printed (a stub, or an empty slot)
+  sampleArea: StubAreaLayout;
   elements: {
     companyName: CheckElementPosition;
     companyAddress: CheckElementPosition;

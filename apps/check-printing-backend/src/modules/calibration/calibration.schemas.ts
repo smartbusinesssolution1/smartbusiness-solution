@@ -3,6 +3,8 @@ import { CALIBRATION_LIMITS } from "../pdf/pdf.types.js";
 
 const paperSizeSchema = z.enum(["LETTER", "A4"]);
 const stockTypeSchema = z.enum(["PLAIN_PAPER", "PERFORATED_STOCK"]);
+// Where the check sits on the paper in this printer's tray.
+const layoutSchema = z.enum(["CHECK_TOP", "CHECK_MIDDLE", "CHECK_BOTTOM", "THREE_PER_PAGE"]);
 const unitSchema = z.enum(["mm", "in"]);
 const positive = z.number().positive("Measurement must be positive");
 
@@ -26,6 +28,7 @@ export const createCalibrationSchema = z.object({
     .trim(),
   paperSize: paperSizeSchema,
   stockType: stockTypeSchema.default("PLAIN_PAPER"),
+  layout: layoutSchema.default("CHECK_MIDDLE"),
   tray: z.string().trim().max(50).optional(),
   measurements: measurementsSchema,
 });
@@ -36,6 +39,7 @@ export const updateCalibrationSchema = z
     profileName: z.string().min(1).max(100).trim().optional(),
     tray: z.string().trim().max(50).nullable().optional(),
     stockType: stockTypeSchema.optional(),
+    layout: layoutSchema.optional(),
     paperSize: paperSizeSchema.optional(),
     measurements: measurementsSchema.optional(),
   })

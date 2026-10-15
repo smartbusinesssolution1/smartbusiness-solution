@@ -1,6 +1,6 @@
 import { NotFoundError, ValidationError } from "../../shared/errors/index.js";
 import { CALIBRATION_LIMITS, CALIBRATION_REF, PAPER, PTS_PER_INCH, PTS_PER_MM } from "../pdf/pdf.types.js";
-import type { CheckPdfData, PaperSize, StockType } from "../pdf/pdf.types.js";
+import type { CheckPdfData, PaperSize, StockType, CheckLayout } from "../pdf/pdf.types.js";
 import type { PdfService } from "../pdf/pdf.service.js";
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { computeCalibration, normalizeStoredMeasurements } from "./calibration.math.js";
@@ -50,6 +50,7 @@ export class CalibrationService {
       workspaceId,
       profileName: input.profileName,
       stockType: input.stockType,
+      layout: input.layout,
       tray: input.tray,
       paperSize: input.paperSize,
       horizontalOffsetPts: result.horizontalOffsetPts,
@@ -73,6 +74,7 @@ export class CalibrationService {
         profileName: input.profileName,
         paperSize: input.paperSize,
         stockType: input.stockType,
+        layout: input.layout,
         tray: input.tray ?? null,
         measurements: input.measurements,
         refVersion: CALIBRATION_REF.version,
@@ -110,13 +112,27 @@ export class CalibrationService {
     let warnings: string[] = [];
     const auditDetails: Record<string, unknown> = {};
 
-    if (input.profileName !== undefined || input.tray !== undefined || input.stockType !== undefined) {
-      await this.repo.updateDetails(profileId, workspaceId, {
+    if (
+      input.profileName !== undefined ||
+      input.tray !== undefined ||
+      input.stockType !== undefined ||
+      input.layout !== undefined
+    ) {
+      // A different layout means different paper: the earlier verification no longer applies.
+      const layoutChanged = input.layout !== undefined && input.layout !== existing.layout;
+      await this.repo.updateDetails(
+        profileId,
+        workspaceId,
+        { profileName: input.profileName, tray: input.tray, stockType: input.stockType, layout: input.layout },
+        { clearVerification: layoutChanged },
+      );
+      Object.assign(auditDetails, {
         profileName: input.profileName,
         tray: input.tray,
         stockType: input.stockType,
+        layout: input.layout,
+        ...(layoutChanged && { verificationCleared: true, previousLayout: existing.layout }),
       });
-      Object.assign(auditDetails, { profileName: input.profileName, tray: input.tray, stockType: input.stockType });
     }
 
     if (input.measurements) {
@@ -377,8 +393,12 @@ export class CalibrationService {
     };
   }
 
-  private printerOf(profile: ProfileRow): { paperSize: PaperSize; stockType: StockType } {
-    return { paperSize: profile.paperSize as PaperSize, stockType: profile.stockType as StockType };
+  private printerOf(profile: ProfileRow): { paperSize: PaperSize; stockType: StockType; layout: CheckLayout } {
+    return {
+      paperSize: profile.paperSize as PaperSize,
+      stockType: profile.stockType as StockType,
+      layout: profile.layout as CheckLayout,
+    };
   }
 
   private async findOrThrow(profileId: string, workspaceId: string): Promise<ProfileRow> {
@@ -398,6 +418,7 @@ export class CalibrationService {
       profileName: profile.profileName,
       paperSize: profile.paperSize as PaperSize,
       stockType: profile.stockType as StockType,
+      layout: profile.layout as CheckLayout,
       tray: profile.tray,
       horizontalOffsetPts: Number(profile.horizontalOffsetPts).toFixed(2),
       verticalOffsetPts: Number(profile.verticalOffsetPts).toFixed(2),

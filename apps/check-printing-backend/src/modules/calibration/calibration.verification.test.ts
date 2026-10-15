@@ -8,7 +8,7 @@ import {
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { PTS_PER_MM } from "../pdf/pdf.types.js";
 
-const template = templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER" });
+const template = templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER", layout: "CHECK_MIDDLE" });
 const expectations = verificationExpectations(template);
 const expectedMm = Object.fromEntries(
   expectations.map((e) => [e.item, e.expectedPts / PTS_PER_MM]),

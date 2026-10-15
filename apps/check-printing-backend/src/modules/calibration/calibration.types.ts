@@ -1,4 +1,4 @@
-import type { PaperSize, StockType } from "../pdf/pdf.types.js";
+import type { PaperSize, StockType, CheckLayout } from "../pdf/pdf.types.js";
 import type { CalibrationMeasurements } from "./calibration.math.js";
 import type { VerificationOutcome } from "./calibration.verification.js";
 
@@ -7,6 +7,7 @@ export interface CalibrationProfileResponse {
   profileName: string;
   paperSize: PaperSize;
   stockType: StockType;
+  layout: CheckLayout;
   tray: string | null;
   horizontalOffsetPts: string;
   verticalOffsetPts: string;
@@ -50,6 +51,7 @@ export interface PrintCalibration {
   profileName: string;
   paperSize: PaperSize;
   stockType: StockType;
+  layout: CheckLayout;
   horizontalOffsetPts: number;
   verticalOffsetPts: number;
 }

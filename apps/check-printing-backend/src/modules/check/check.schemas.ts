@@ -121,6 +121,8 @@ export type VoidCheckInput = z.infer<typeof voidCheckSchema>;
 export const printCheckSchema = z
   .object({
     calibrationProfileId: z.uuid().optional(),
+    // Slot on three-per-page paper (1 = top). Only for printers with that layout.
+    position: z.number().int().min(1, "Slot must be 1, 2 or 3").max(3, "Slot must be 1, 2 or 3").optional(),
   })
   .default({});
 

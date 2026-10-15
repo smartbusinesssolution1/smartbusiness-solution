@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfRenderer } from "./pdf.renderer.js";
 import { templateForPrinter } from "./pdf.templates.js";
 import { MICR, MICR_CHARS, MICR_FIELD_END_POSITION, PTS_PER_INCH } from "./pdf.types.js";
-import type { CheckPdfData, PaperSize } from "./pdf.types.js";
+import type { CheckLayout, CheckPdfData, PaperSize, SheetPosition } from "./pdf.types.js";
 
 // MICR line placement per ANSI X9.100-160-1, checked on the drawing commands the
 // renderer issues (points, origin top-left, before the printer offset is applied):
@@ -30,7 +30,12 @@ interface TextCall {
 const PITCH = MICR.pitchPts;
 const { transit: T, onUs: O } = MICR_CHARS;
 
-function data(paperSize: PaperSize, overrides: Partial<CheckPdfData> = {}): CheckPdfData {
+function data(
+  paperSize: PaperSize,
+  overrides: Partial<CheckPdfData> = {},
+  layout: CheckLayout = "CHECK_MIDDLE",
+  position: SheetPosition = 1,
+): CheckPdfData {
   return {
     checkNumber: "001001",
     payeeName: "Hill Country Supply Co.",
@@ -48,7 +53,7 @@ function data(paperSize: PaperSize, overrides: Partial<CheckPdfData> = {}): Chec
     horizontalOffsetPts: 0,
     verticalOffsetPts: 0,
     signatureImage: null,
-    template: templateForPrinter({ paperSize, stockType: "PLAIN_PAPER" }),
+    template: templateForPrinter({ paperSize, stockType: "PLAIN_PAPER", layout, position }),
     invoiceItems: null,
     ...overrides,
   };
@@ -91,9 +96,21 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
   // The renderer registers the MICR font as "E13B"; nothing else is drawn in it.
   const micrCalls = () => calls.filter((c) => c.font === "E13B");
 
-  describe.each(["A4", "LETTER"] as const)("on %s paper", (paperSize) => {
+  // Every layout on both paper sizes, and every slot of three-per-page paper.
+  const CASES: Array<[PaperSize, CheckLayout, SheetPosition]> = (["A4", "LETTER"] as const).flatMap(
+    (paper): Array<[PaperSize, CheckLayout, SheetPosition]> => [
+      [paper, "CHECK_TOP", 1],
+      [paper, "CHECK_MIDDLE", 1],
+      [paper, "CHECK_BOTTOM", 1],
+      [paper, "THREE_PER_PAGE", 1],
+      [paper, "THREE_PER_PAGE", 2],
+      [paper, "THREE_PER_PAGE", 3],
+    ],
+  );
+
+  describe.each(CASES)("on %s paper, %s, slot %i", (paperSize, layout, position) => {
     it("places every field at its ANSI position", async () => {
-      const d = data(paperSize);
+      const d = data(paperSize, {}, layout, position);
       await renderer.render(d);
       const t = d.template;
 
@@ -113,7 +130,7 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
     });
 
     it("puts the baseline 3/16 in above the check's bottom edge", async () => {
-      const d = data(paperSize);
+      const d = data(paperSize, {}, layout, position);
       await renderer.render(d);
       const checkBottom = d.template.checkArea.top + d.template.checkArea.height;
 
@@ -124,7 +141,7 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
     });
 
     it("keeps the amount field (positions 1–12) blank", async () => {
-      const d = data(paperSize);
+      const d = data(paperSize, {}, layout, position);
       await renderer.render(d);
       const position1Right = d.template.pageWidth - MICR.position1RightIn * PTS_PER_INCH;
       const amountFieldLeft = position1Right - 12 * PITCH;
@@ -138,7 +155,7 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
       const d = data(paperSize, {
         memo: "A long memo that should still stay above the band",
         invoiceItems: [{ description: "Mulch", amount: "1,250.50" }],
-      });
+      }, layout, position);
       await renderer.render(d);
       const checkBottom = d.template.checkArea.top + d.template.checkArea.height;
       const bandTop = checkBottom - 0.625 * PTS_PER_INCH;
