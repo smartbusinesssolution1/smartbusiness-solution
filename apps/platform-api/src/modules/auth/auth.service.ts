@@ -72,13 +72,14 @@ export class AuthService {
   ) {}
 
   // ═════════════════════════════════════════════════════════════
-  // FORGOT PASSWORD
+  // FORGOT PASSWORD (runs in the job worker)
   //
-  // Called AFTER the HTTP reply was sent, so real and unknown emails answer
-  // equally fast. Never reveals whether the account exists: every "no" is silent.
+  // The request only adds a job, the same way for every email, so the reply never
+  // depends on whether the account exists. Every "no" here is silent. Safe to run
+  // again: a retry issues a fresh link, which revokes any earlier unsent one.
   // ═════════════════════════════════════════════════════════════
 
-  async requestPasswordReset(email: string, ctx: SessionContext): Promise<void> {
+  async processPasswordResetJob(email: string, opts: { isRetry: boolean; ipAddress?: string }): Promise<void> {
     const user = await this.authRepository.findUserByEmail(email);
     if (!user || !user.isActive) return;
 
@@ -88,7 +89,9 @@ export class AuthService {
     const token = await this.authRepository.transaction(async (tx) => {
       await this.authRepository.lockUser(user.id, tx);
       const since = new Date(Date.now() - RESET_EMAIL_COOLDOWN_MS);
-      if (await this.authRepository.hasTokenIssuedSince(user.id, "PASSWORD_RESET", since, tx)) return null;
+      if (!opts.isRetry && (await this.authRepository.hasTokenIssuedSince(user.id, "PASSWORD_RESET", since, tx))) {
+        return null;
+      }
 
       const issued = await this.userTokens.issue(
         { userId: user.id, purpose: "PASSWORD_RESET", ttlMs: this.resetSettings.ttlMinutes * 60 * 1000 },
@@ -104,12 +107,13 @@ export class AuthService {
 
     // Built from configuration only: never from the request's Host header.
     const resetUrl = `${this.resetSettings.appUrl}/reset-password?token=${token}`;
+    // If sending fails, this throws and the queue retries the whole job later.
     await this.emailSender.send({
       to: user.email,
       ...passwordResetEmail({ name: user.fullName, resetUrl, expiresInMinutes: this.resetSettings.ttlMinutes }),
     });
 
-    await this.auditForUser(user, "PASSWORD_RESET_REQUESTED", ctx.ipAddress);
+    await this.auditForUser(user, "PASSWORD_RESET_REQUESTED", opts.ipAddress);
   }
 
   // ═════════════════════════════════════════════════════════════

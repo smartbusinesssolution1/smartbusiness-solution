@@ -2,31 +2,7 @@ import { Router } from "express";
 import { authRateLimiter } from "../../middleware/rate-limiter.js";
 import { validate } from "../../middleware/validate.js";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "./auth.schema.js";
-import { AuthRepository } from "./auth.repository.js";
-import { AuthService } from "./auth.service.js";
-import { AuthController } from "./auth.controller.js";
-import { createAuthMiddleware, TokenService, PasswordService, UserTokenService } from "@smartbusiness/auth";
-import { AuditService } from "../../shared/services/audit.service.js";
-import { accessToken, app, passwordReset } from "../../config/index.js";
-import { emailSender } from "../../shared/services/email.js";
-
-// ─── Composition Root ──────────────────────────────────────────
-
-const tokenService = new TokenService(accessToken.secret, accessToken.expiresIn);
-const passwordService = new PasswordService();
-const authRepository = new AuthRepository();
-const auditService = new AuditService();
-const authService = new AuthService(
-  authRepository,
-  passwordService,
-  tokenService,
-  auditService,
-  new UserTokenService(),
-  emailSender,
-  { appUrl: app.url, ttlMinutes: passwordReset.ttlMinutes },
-);
-const authController = new AuthController(authService);
-const authMiddleware = createAuthMiddleware(tokenService);
+import { authController, authMiddleware } from "./auth.module.js";
 
 // ─── Routes ────────────────────────────────────────────────────
 

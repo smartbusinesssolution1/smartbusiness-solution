@@ -2,7 +2,9 @@ import { server as serverConfig } from "./config/index.js";
 import { createApp } from "./app.js";
 import { prisma } from "@smartbusiness/database";
 import { logger } from "./shared/services/logger.js";
-import { drainBackgroundWork } from "./shared/services/background.js";
+import { jobs } from "./config/index.js";
+import { startEmailWorker } from "./jobs/email-worker.js";
+import { closeQueues } from "./jobs/queues.js";
 
 async function startServer() {
   try {
@@ -12,6 +14,10 @@ async function startServer() {
 
     const app = createApp();
 
+    // Development: the worker runs inside the API (one command). Production: separately.
+    const emailWorker = jobs.runWorkerInApi ? startEmailWorker() : null;
+    if (emailWorker) logger.info("Job worker running inside the API process");
+
     const httpServer = app.listen(serverConfig.port, () => {
       logger.info(
         { port: serverConfig.port, env: serverConfig.nodeEnv },
@@ -19,9 +25,9 @@ async function startServer() {
       );
     });
 
-    // Order matters: stop taking requests, let the ones in flight finish, let work
-    // that outlives its request finish (e.g. reset emails), and only then close the
-    // database. A hard limit stops a stuck task from blocking a deploy forever.
+    // Order matters: stop taking requests, let the ones in flight finish, let the worker
+    // finish the jobs it is running, and only then close the database. A hard limit
+    // stops anything stuck from blocking a deploy forever.
     let shuttingDown = false;
     const gracefulShutdown = async (signal: string) => {
       if (shuttingDown) return;
@@ -40,8 +46,9 @@ async function startServer() {
       });
       logger.info("HTTP server closed");
 
-      const unfinished = await drainBackgroundWork(10_000);
-      if (unfinished > 0) logger.error({ unfinished }, "Background work still running at shutdown");
+      // Finish running jobs; queued ones stay safely in Redis for the next worker.
+      await emailWorker?.close();
+      await closeQueues();
 
       try {
         await prisma.$disconnect();

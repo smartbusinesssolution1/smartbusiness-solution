@@ -58,6 +58,22 @@ export const envSchema = z
   EMAIL_FROM: z.string().min(3).default("SmartBusiness <no-reply@smartbusiness.local>"),
   EMAIL_FILE_DIRECTORY: z.string().default("./tmp/emails"),
 
+  // Job queue (BullMQ). redis:// locally, rediss:// (TLS) for a hosted Redis.
+  REDIS_URL: z
+    .string({ error: "REDIS_URL is required" })
+    .regex(/^rediss?:\/\//, "REDIS_URL must start with redis:// or rediss://"),
+
+  // Wait before the first retry of a failed job (later retries double it).
+  JOB_RETRY_BACKOFF_MS: z
+    .string()
+    .default("10000")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1)),
+
+  // Run the job worker inside the API process. Default: yes in development and tests
+  // (one command), no in production, where `pnpm start:worker` runs it separately.
+  RUN_WORKER_IN_API: z.enum(["true", "false"]).optional(),
+
   PASSWORD_RESET_TTL_MINUTES: z
     .string()
     .default("60")

@@ -48,4 +48,7 @@ export function applyTestEnv(): void {
   process.env.EMAIL_FROM = "SmartBusiness <no-reply@smartbusiness.test>";
   process.env.APP_URL = "https://app.smartbusiness.test";
   process.env.PASSWORD_RESET_TTL_MINUTES = "60";
+  // Job queue: the test Redis, database 1 (emptied by global setup); short retry waits.
+  process.env.REDIS_URL = process.env.PLATFORM_TEST_REDIS_URL ?? "redis://127.0.0.1:63790/1";
+  process.env.JOB_RETRY_BACKOFF_MS = "50";
 }

@@ -10,12 +10,17 @@ import {
 import { server, cookie, refreshToken as refreshTokenConfig } from "../../config/index.js";
 import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
 import type { RegisterInputType, LoginInputType, ForgotPasswordInput, ResetPasswordInput } from "./auth.schema.js";
-import { runInBackground } from "../../shared/services/background.js";
+import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
+import { AppError } from "../../shared/errors/index.js";
+import { logger } from "../../shared/services/logger.js";
 
 export class AuthController {
   private cookieConfig: CookieConfig;
 
-  constructor(private authService: AuthService) {
+  constructor(
+    private authService: AuthService,
+    private emailQueue: TypedQueue<EmailJobs>,
+  ) {
     this.cookieConfig = {
       isDev: server.isDev,
       cookieDomain: cookie.domain,
@@ -75,19 +80,24 @@ export class AuthController {
     sendSuccess(res, { message: "All sessions revoked." });
   };
 
-  // Replies at once, the same way for every email, and only then does the work: an
-  // account that exists must not answer slower (or differently) than one that does not.
+  // Adds a job for EVERY email, known or not, and replies the same way: the request
+  // does no lookup, so neither the answer nor its timing reveals whether the account
+  // exists. The worker does the real work, with retries.
   forgotPassword = async (req: Request, res: Response): Promise<void> => {
     const { email } = req.body as ForgotPasswordInput;
+
+    try {
+      await this.emailQueue.add("password-reset", { email, ipAddress: req.ip });
+    } catch (err) {
+      // Happens equally for every email, so saying so reveals nothing.
+      logger.error({ err }, "Could not queue a password reset");
+      throw new AppError("We couldn't start the reset right now. Try again in a moment.", 503, "SERVICE_UNAVAILABLE");
+    }
 
     sendSuccess(
       res,
       { message: "If an account exists for that email, we've sent a link to reset the password." },
       202,
-    );
-
-    runInBackground("password-reset-request", () =>
-      this.authService.requestPasswordReset(email, { ipAddress: req.ip, userAgent: req.headers["user-agent"] }),
     );
   };
 

@@ -10,6 +10,7 @@ import { notFoundHandler } from "./middleware/not-found.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { prisma } from "@smartbusiness/database";
 import apiRouter from "./routes/index.js";
+import { producerConnection } from "./jobs/queues.js";
 
 export function createApp(): Express {
   const app = express();
@@ -53,17 +54,25 @@ export function createApp(): Express {
       isDatabaseOk = false;
     }
 
-    const status = isDatabaseOk ? "healthy" : "degraded";
-    const httpStatus = isDatabaseOk ? 200 : 503;
+    let isRedisOk = false;
+    try {
+      isRedisOk = (await producerConnection.ping()) === "PONG";
+    } catch {
+      isRedisOk = false;
+    }
+
+    const status = isDatabaseOk && isRedisOk ? "healthy" : "degraded";
+    const httpStatus = isDatabaseOk && isRedisOk ? 200 : 503;
 
     res.status(httpStatus).json({
-      success: isDatabaseOk,
+      success: isDatabaseOk && isRedisOk,
       data: {
         status,
         service: "platform-api",
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
         database: { connected: isDatabaseOk, latencyMs: dbLatencyMs },
+        jobQueue: { connected: isRedisOk },
       },
     });
   });

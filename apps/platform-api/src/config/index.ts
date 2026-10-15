@@ -49,6 +49,13 @@ export const passwordReset = {
   ttlMinutes: config.PASSWORD_RESET_TTL_MINUTES,
 } as const;
 
+export const jobs = {
+  redisUrl: config.REDIS_URL,
+  retry: { attempts: 5, backoffMs: config.JOB_RETRY_BACKOFF_MS },
+  runWorkerInApi:
+    config.RUN_WORKER_IN_API === undefined ? config.NODE_ENV !== "production" : config.RUN_WORKER_IN_API === "true",
+} as const;
+
 export const rateLimits = {
   globalPerMinute: config.RATE_LIMIT_MAX,
   authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,
