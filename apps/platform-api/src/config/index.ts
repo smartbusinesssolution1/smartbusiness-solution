@@ -32,6 +32,12 @@ export const server = {
   nodeEnv: config.NODE_ENV,
   isDev: config.NODE_ENV === "development",
   isProd: config.NODE_ENV === "production",
+  isTest: config.NODE_ENV === "test",
+} as const;
+
+export const rateLimits = {
+  globalPerMinute: config.RATE_LIMIT_MAX,
+  authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,
 } as const;
 
 export const cors = {

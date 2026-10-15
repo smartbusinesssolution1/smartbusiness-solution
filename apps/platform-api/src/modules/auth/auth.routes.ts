@@ -44,7 +44,9 @@ router.post(
 router.post("/refresh", authRateLimiter, authController.refresh);
 
 // Protected — auth required
-router.post("/logout", authMiddleware, authController.logout);
+// Logout is identified by the refresh-token cookie alone: the access token lasts only
+// 15 minutes, and a user who was idle longer must still be able to end the session.
+router.post("/logout", authController.logout);
 router.post("/logout-all", authMiddleware, authController.logoutAll);
 router.get("/me", authMiddleware, authController.me);
 

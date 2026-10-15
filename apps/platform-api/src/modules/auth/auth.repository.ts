@@ -1,5 +1,6 @@
 import {
   prisma,
+  Prisma,
   type User,
   type Tenant,
   type TenantMember,
@@ -49,7 +50,25 @@ export class AuthRepository {
     }) as Promise<UserWithTenants | null>;
   }
 
+  /**
+   * Returns null when the email is already taken: the service's earlier lookup can't
+   * see a sign-up for the same email that is committing at this very moment, but the
+   * unique indexes on users.email and tenants.billing_email can.
+   */
   async createUserWithTenant(
+    data: CreateUserWithTenantData,
+  ): Promise<UserWithTenants | null> {
+    try {
+      return await this.insertUserWithTenant(data);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  private async insertUserWithTenant(
     data: CreateUserWithTenantData,
   ): Promise<UserWithTenants> {
     return prisma.$transaction(async (tx) => {

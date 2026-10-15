@@ -3,7 +3,7 @@ import { server } from "../../config/index.js";
 
 export const logger = pino({
   name: "platform-api",
-  level: server.isDev ? "debug" : "info",
+  level: server.isTest ? "silent" : server.isDev ? "debug" : "info",
   ...(server.isDev && {
     transport: {
       target: "pino-pretty",

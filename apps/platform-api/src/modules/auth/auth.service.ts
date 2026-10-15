@@ -5,6 +5,7 @@ import {
 } from "./auth.repository.js";
 import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
+import { ConflictError } from "../../shared/errors/index.js";
 import { TokenService, PasswordService } from "@smartbusiness/auth";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { refreshToken as refreshTokenConfig } from "../../config/index.js";
@@ -32,17 +33,6 @@ interface SessionContext {
   userAgent?: string;
 }
 
-export class ConflictError extends Error {
-  public readonly statusCode = 409;
-  public readonly code = "CONFLICT";
-  public readonly isOperational = true;
-
-  constructor(message: string) {
-    super(message);
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-}
-
 export class AuthService {
   constructor(
     private authRepository: AuthRepository,
@@ -68,6 +58,9 @@ export class AuthService {
       fullName: data.fullName,
       companyName: data.companyName,
     });
+    if (!user) {
+      throw new ConflictError("An account with this email already exists.");
+    }
 
     const tenants = this.extractTenants(user);
     const primaryTenant = tenants[0]!;
@@ -95,11 +88,35 @@ export class AuthService {
     const user = await this.authRepository.findUserByEmail(data.email);
 
     if (!user) {
+      // Hash anyway so an unknown email takes as long as a wrong password.
       await this.passwordService.hash(data.password);
       logger.warn(
-        { email: data.email, ipAddress: ctx.ipAddress, action: "LOGIN_FAILED" },
+        { ipAddress: ctx.ipAddress, action: "LOGIN_FAILED" },
         "Login attempt for nonexistent email",
       );
+      throw new AuthError("Invalid email or password.");
+    }
+
+    // The password is checked FIRST. Only someone who knows it may learn anything
+    // about the account (deactivated, no active organization); anyone else gets the
+    // same answer as for an unknown email, so accounts cannot be discovered.
+    const isValidPassword = await this.passwordService.verify(
+      data.password,
+      user.passwordHash,
+    );
+    if (!isValidPassword) {
+      const anyTenantId = user.tenantMembers[0]?.tenant.id;
+      if (anyTenantId) {
+        await this.auditService.log({
+          tenantId: anyTenantId,
+          userId: user.id,
+          action: "LOGIN_FAILED",
+          entityType: "Auth",
+          entityId: user.id,
+          details: { reason: "INVALID_PASSWORD" },
+          ipAddress: ctx.ipAddress,
+        });
+      }
       throw new AuthError("Invalid email or password.");
     }
 
@@ -119,24 +136,6 @@ export class AuthService {
         "Login attempt with no active tenant memberships",
       );
       throw new AuthError("No active organization found for this account.");
-    }
-
-    const isValidPassword = await this.passwordService.verify(
-      data.password,
-      user.passwordHash,
-    );
-    if (!isValidPassword) {
-      const auditTenant = activeTenants[0]!;
-      await this.auditService.log({
-        tenantId: auditTenant.tenantId,
-        userId: user.id,
-        action: "LOGIN_FAILED",
-        entityType: "Auth",
-        entityId: user.id,
-        details: { reason: "INVALID_PASSWORD" },
-        ipAddress: ctx.ipAddress,
-      });
-      throw new AuthError("Invalid email or password.");
     }
 
     await this.authRepository.updateLastLogin(user.id);
@@ -211,7 +210,7 @@ export class AuthService {
     };
   }
 
-  async logout(rawRefreshToken: string, userId?: string): Promise<void> {
+  async logout(rawRefreshToken: string): Promise<void> {
     const tokenHash = this.tokenService.hashRefreshToken(rawRefreshToken);
     const session =
       await this.authRepository.findActiveSessionByTokenHash(tokenHash);
@@ -224,7 +223,7 @@ export class AuthService {
 
       await this.auditService.log({
         tenantId: auditTenantId,
-        userId: userId ?? session.userId,
+        userId: session.userId,
         action: "USER_LOGOUT",
         entityType: "Session",
         entityId: session.id,

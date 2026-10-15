@@ -60,7 +60,7 @@ export class AuthController {
     const rawRefreshToken = req.cookies?.refresh_token;
 
     if (rawRefreshToken) {
-      await this.authService.logout(rawRefreshToken, req.user?.userId);
+      await this.authService.logout(rawRefreshToken);
     }
 
     this.clearAuthCookies(res);

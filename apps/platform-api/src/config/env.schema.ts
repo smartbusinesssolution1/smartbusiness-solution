@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const envSchema = z.object({
   NODE_ENV: z
-    .enum(["development", "staging", "production"])
+    .enum(["development", "test", "staging", "production"])
     .default("development"),
 
   PORT: z
@@ -32,6 +32,20 @@ export const envSchema = z.object({
   CORS_ORIGIN: z.string().default("http://localhost:5173"),
 
   COOKIE_DOMAIN: z.string().optional(),
+
+  // Requests per minute per IP, across the whole API.
+  RATE_LIMIT_MAX: z
+    .string()
+    .default("100")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1)),
+
+  // Sign-in, sign-up and refresh attempts per IP per 15 minutes (brute-force protection).
+  AUTH_RATE_LIMIT_MAX: z
+    .string()
+    .default("10")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1)),
 });
 
 export type Env = z.infer<typeof envSchema>;

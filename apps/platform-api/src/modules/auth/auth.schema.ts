@@ -13,13 +13,14 @@ const passwordSchema = z
 
 export const registerSchema = z.object({
   fullName: z.string().min(1, "Full Name is required").max(255).trim(),
-  email: z.email({ error: "Invalid email format" }).max(255).trim().toLowerCase(),
+  // Trim and lower-case BEFORE checking the format, so a pasted " Maria@X.com " is accepted.
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" }).max(255)),
   password: passwordSchema,
   companyName: z.string().min(1, "Company name is required").max(255).trim(),
 });
 
 export const loginSchema = z.object({
-  email: z.email({ error: "Invalid email format" }).trim().toLowerCase(),
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" })),
   password: z.string().min(1, "Password is required"),
 });
 

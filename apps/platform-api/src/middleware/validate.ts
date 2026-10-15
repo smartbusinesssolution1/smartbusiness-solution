@@ -1,20 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
 import { z } from "zod";
+import { ValidationError } from "../shared/errors/index.js";
 
 type ValidationTarget = "body" | "query" | "params";
-
-export class ValidationError extends Error {
-  public readonly statusCode = 400;
-  public readonly code = "VALIDATION_ERROR";
-  public readonly isOperational = true;
-  public readonly details: Record<string, string[]>;
-
-  constructor(message: string, details: Record<string, string[]> = {}) {
-    super(message);
-    this.details = details;
-    Object.setPrototypeOf(this, new.target.prototype);
-  }
-}
 
 export function validate(
   schema: z.ZodType,
@@ -36,7 +24,13 @@ export function validate(
       throw new ValidationError("Validation Failed", formattedErrors);
     }
 
-    req[target] = result.data;
+    // Express 5 exposes req.query through a getter, so it cannot be assigned directly.
+    Object.defineProperty(req, target, {
+      value: result.data,
+      writable: true,
+      configurable: true,
+      enumerable: true,
+    });
     next();
   };
 }
