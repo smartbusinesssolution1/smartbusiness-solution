@@ -19,17 +19,22 @@ const auditService = new AuditService();
 const payeeService = new PayeeService(payeeRepository, auditService);
 const payeeController = new PayeeController(payeeService);
 
-// List/search payees (any member — used by check creation autocomplete)
+// List/search payees (any Check Printing member: check creation autocomplete, and approvers
+// and printers need to see who is being paid)
 router.get("/", validate(listPayeesQuerySchema, "query"), payeeController.list);
 
 // get a single payee
 router.get("/:pid", payeeController.get);
 
-// create a payee
-router.post("/", validate(createPayeeSchema), payeeController.create);
+// The payee directory is the vendor master file: adding a look-alike vendor or switching a
+// real vendor's address is how fake-vendor fraud starts. Only those who maintain vendors
+// (payee:write: Admin, Editor) may change it; approvers in particular must not.
 
-// update a payee
-router.put("/:pid", validate(updatePayeeSchema), payeeController.update);
+// create a payee (requires payee:write permission)
+router.post("/", requirePermission(P.PAYEE_WRITE), validate(createPayeeSchema), payeeController.create);
+
+// update a payee (requires payee:write permission)
+router.put("/:pid", requirePermission(P.PAYEE_WRITE), validate(updatePayeeSchema), payeeController.update);
 
 // archive payee (requires payee:manage permission)
 router.patch("/:pid/archive", requirePermission(P.PAYEE_MANAGE), payeeController.archive);

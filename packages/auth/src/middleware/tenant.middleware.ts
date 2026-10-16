@@ -19,11 +19,18 @@ export async function tenantMiddleware(
       userId: req.user!.userId,
       deletedAt: null,
     },
-    include: { tenant: true },
+    include: { tenant: true, user: { select: { isActive: true, deletedAt: true } } },
   });
 
   if (!membership) {
     throw new ForbiddenError("You are not a member of this organization.");
+  }
+
+  // Login tokens are checked by signature only and stay valid until they expire (15 min).
+  // Re-reading the user here, with the membership already being loaded, ends access the
+  // moment an account is deactivated or deleted instead of when the token runs out.
+  if (!membership.user.isActive || membership.user.deletedAt !== null) {
+    throw new AuthError("Account has been deactivated.");
   }
 
   if (membership.tenant.status !== "ACTIVE") {

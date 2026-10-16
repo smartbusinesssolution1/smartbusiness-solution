@@ -5,6 +5,11 @@ import { AuditService } from "../../shared/services/audit.service.js";
 import { PayeeRepository } from "./payee.repository.js";
 import { CreatePayeeInput, ListPayeesQuery, UpdatePayeeInput } from "./payee.schema.js";
 
+// Optional fields a payee update may change or clear (an empty string clears one). The name
+// is handled on its own: it can change but never be cleared.
+const CLEARABLE_FIELDS = ["defaultMemo", "addressLine1", "addressLine2", "city", "state", "zipCode"] as const;
+type ClearableField = (typeof CLEARABLE_FIELDS)[number];
+
 interface AuditContext {
     userId: string;
     tenantId: string;
@@ -105,15 +110,28 @@ export class PayeeService {
             }
         }
 
-        const updated = await this.payeeRepository.update(payeeId, {
-            ...(data.name && { name: data.name }),
-            ...(data.defaultMemo !== undefined && { defaultMemo: data.defaultMemo || null }),
-            ...(data.addressLine1 !== undefined && { addressLine1: data.addressLine1 || null }),
-            ...(data.addressLine2 !== undefined && { addressLine2: data.addressLine2 || null }),
-            ...(data.city !== undefined && { city: data.city || null }),
-            ...(data.state !== undefined && { state: data.state || null }),
-            ...(data.zipCode !== undefined && { zipCode: data.zipCode || null }),
-        });
+        // Only fields whose value actually changes are written and audited, with the old and
+        // new value: "the address changed from 100 Main St to PO Box 666" is what an investigator
+        // of a vendor change needs, not just "addressLine1 was edited". An empty string clears a field.
+        const changes: { name?: string } & Partial<Record<ClearableField, string | null>> = {};
+        const audited: Record<string, { from: string | null; to: string | null }> = {};
+        if (data.name !== undefined && data.name !== existing.name) {
+            changes.name = data.name;
+            audited.name = { from: existing.name, to: data.name };
+        }
+        for (const field of CLEARABLE_FIELDS) {
+            const sent = data[field];
+            if (sent === undefined) continue;
+            const to = sent || null;
+            const from = existing[field] ?? null;
+            if (from === to) continue;
+            changes[field] = to;
+            audited[field] = { from, to };
+        }
+
+        if (Object.keys(changes).length === 0) return this.formatPayee(existing);
+
+        const updated = await this.payeeRepository.update(payeeId, { workspaceId, ...changes });
 
         await this.auditService.log({
             tenantId: ctx.tenantId,
@@ -122,7 +140,7 @@ export class PayeeService {
             action: "PAYEE_UPDATED",
             entityType: "Payee",
             entityId: payeeId,
-            details: { fields: Object.keys(data) },
+            details: { name: existing.name, changes: audited },
             ipAddress: ctx.ipAddress,
         });
 

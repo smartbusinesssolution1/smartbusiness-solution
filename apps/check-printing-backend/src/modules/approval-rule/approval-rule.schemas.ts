@@ -80,6 +80,12 @@ export const updateApprovalRuleSchema = z.object({
   allowSelfApproval: z.boolean().optional(),
 });
 
+// The master switch. Must be a real boolean: a missing value would change nothing yet be
+// audited as "disabled", and a string would reach the database and fail there.
+export const approvalToggleSchema = z.object({
+  enabled: z.boolean({ error: "enabled must be true or false" }),
+});
+
 export const listApprovalRulesQuerySchema = z.object({
   includeInactive: z.coerce.boolean().optional().default(false),
 });
@@ -97,5 +103,6 @@ export const syncApproversSchema = z.object({
 export type CreateApprovalRuleInput = z.infer<typeof createApprovalRuleSchema>;
 export type UpdateApprovalRuleInput = z.infer<typeof updateApprovalRuleSchema>;
 export type ListApprovalRulesQuery = z.infer<typeof listApprovalRulesQuerySchema>;
+export type ApprovalToggleInput = z.infer<typeof approvalToggleSchema>;
 export type AddApproverInput = z.infer<typeof addApproverSchema>;
 export type SyncApproversInput = z.infer<typeof syncApproversSchema>;

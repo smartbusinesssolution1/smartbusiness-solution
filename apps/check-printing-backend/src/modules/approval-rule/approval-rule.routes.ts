@@ -6,19 +6,21 @@ import { AuditService } from "../../shared/services/audit.service.js";
 import { validate } from "../../middleware/validate.js";
 import { requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
+import { checkPrintingSettingsService } from "../check-printing-settings/check-printing-settings.routes.js";
 import {
   createApprovalRuleSchema,
   updateApprovalRuleSchema,
   listApprovalRulesQuerySchema,
   addApproverSchema,
   syncApproversSchema,
+  approvalToggleSchema,
 } from "./approval-rule.schemas.js";
 
 // ─── Composition Root ──────────────────────────────────────
 
 const repository = new ApprovalRuleRepository();
 const auditService = new AuditService();
-const service = new ApprovalRuleService(repository, auditService);
+const service = new ApprovalRuleService(repository, auditService, checkPrintingSettingsService);
 const controller = new ApprovalRuleController(service);
 
 // ─── Router ────────────────────────────────────────────────
@@ -31,6 +33,7 @@ router.use(requirePermission(P.WORKSPACE_MANAGE));
 // ── Master Switch ──
 router.patch(
   "/settings/approval-toggle",
+  validate(approvalToggleSchema),
   controller.toggleApproval,
 );
 

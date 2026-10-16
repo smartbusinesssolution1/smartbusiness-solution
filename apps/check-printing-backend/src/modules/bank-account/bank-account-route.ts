@@ -41,6 +41,10 @@ router.put("/:bid", canManage, validate(updateBankAccountSchema), bankAccountCon
 // /api/v1/workspaces/:wid/bank-accounts/:bid
 router.delete("/:bid", canManage, bankAccountController.delete);
 
+// /api/v1/workspaces/:wid/bank-accounts/:bid/restore
+// A deleted account comes back with its check numbering where it was (never re-added from scratch).
+router.post("/:bid/restore", canManage, bankAccountController.restore);
+
 // Signature: admins only, including viewing (the image alone is enough to forge checks).
 // Permission is checked BEFORE the upload is read, so nobody else can even send a file.
 router.put("/:bid/signature", canManage, signatureUpload, bankAccountController.uploadSignature);

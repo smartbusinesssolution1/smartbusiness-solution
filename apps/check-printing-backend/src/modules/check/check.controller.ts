@@ -6,7 +6,7 @@ import {
   sendCreated,
   sendNoContent,
 } from "../../shared/utils/response.js";
-import type { ListChecksQuery, PrintCheckInput } from "./check.schemas.js";
+import type { PrintCheckInput } from "./check.schemas.js";
 
 export class CheckController {
   constructor(private checkService: CheckService) {}
@@ -26,14 +26,6 @@ export class CheckController {
       this.auditCtx(req),
     );
     sendCreated(res, check);
-  };
-
-  list = async (req: Request, res: Response) => {
-    const result = await this.checkService.listChecks(
-      req.params.wid as string,
-      req.query as unknown as ListChecksQuery,
-    );
-    sendSuccess(res, result.items, 200, result.meta);
   };
 
   approvalQueue = async (req: Request, res: Response) => {

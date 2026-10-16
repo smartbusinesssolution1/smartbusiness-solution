@@ -205,32 +205,8 @@ export class ApprovalRuleRepository {
     return count > 0;
   }
 
-  // ─── Find Check Printing Settings ────────────────────────
-  //
-  // Loads the approvalEnabled master switch for a workspace.
-  // Used by the list endpoint to surface the switch status
-  // in the response meta.
-  // ═════════════════════════════════════════════════════════
-
-  async findSettings(workspaceId: string) {
-    return prisma.checkPrintingSettings.findUnique({
-      where: { workspaceId },
-    });
-  }
-
-  // ─── Update Approval Enabled ─────────────────────────────
-  //
-  // Toggles the master switch on CheckPrintingSettings.
-  // This is part of the approval-rule module because the
-  // master switch controls whether rules take effect.
-  // ═════════════════════════════════════════════════════════
-
-  async setApprovalEnabled(workspaceId: string, enabled: boolean) {
-    return prisma.checkPrintingSettings.update({
-      where: { workspaceId },
-      data: { approvalEnabled: enabled },
-    });
-  }
+  // The approval master switch lives in check-printing settings and is read and
+  // written through CheckPrintingSettingsService.
 
   // ═══════════════════════════════════════════════════════════
   // APPROVER MANAGEMENT

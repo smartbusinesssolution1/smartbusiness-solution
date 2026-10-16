@@ -1,6 +1,13 @@
 import "dotenv/config";
 import { createCipheriv, randomBytes } from "crypto";
 import { prisma } from "../src/index.js";
+import { decideSeed } from "./seed-guard.js";
+import { bankAccountFingerprint } from "../src/bank-fingerprint.js";
+
+// The same fingerprint the API stores (R-08), so seeded accounts are protected from duplicates too.
+function seedFingerprint(routingNumber: string, accountNumber: string): string {
+  return bankAccountFingerprint(process.env.ENCRYPTION_KEY ?? "", routingNumber, accountNumber);
+}
 
 // ============================================================================
 // ENCRYPTION HELPER — mirrors EncryptionService from check-printing-backend
@@ -115,33 +122,20 @@ function d(daysAgo: number, hours = 9, minutes = 0): Date {
 // ============================================================================
 // CLEANUP — Delete everything in reverse FK dependency order
 // ============================================================================
+// Empties every application table in ONE statement, so the wipe is all or nothing: a list
+// of deletes stops halfway on the first foreign key it did not expect (a password-reset
+// link pointing at a user, for example), leaving checks deleted and users still there.
+// Listing the tables from the database also covers tables added after this file was written.
 async function cleanup() {
   console.log("🧹 Cleaning up existing data...");
-  await prisma.auditLog.deleteMany();
-  await prisma.approvalRecord.deleteMany();
-  await prisma.approvalWorkflowApprover.deleteMany();
-  await prisma.approvalWorkflowRule.deleteMany();
-  await prisma.checkAttachment.deleteMany();
-  await prisma.checkStatusHistory.deleteMany();
-  await prisma.check.deleteMany();
-  await prisma.calibrationProfile.deleteMany();
-  await prisma.checkTemplate.deleteMany();
-  await prisma.payee.deleteMany();
-  await prisma.bankAccount.deleteMany();
-  await prisma.checkPrintingSettings.deleteMany();
-  await prisma.workspaceMemberRole.deleteMany();
-  await prisma.workspaceMember.deleteMany();
-  await prisma.workspace.deleteMany();
-  await prisma.productSubscription.deleteMany();
-  await prisma.rolePermission.deleteMany();
-  await prisma.role.deleteMany();
-  await prisma.permission.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.tenantMember.deleteMany();
-  await prisma.user.deleteMany();
-  await prisma.tenant.deleteMany();
-  console.log("✅ Cleanup complete\n");
+  const tables = await prisma.$queryRaw<{ tablename: string }[]>`
+    SELECT tablename FROM pg_tables
+    WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+  if (tables.length > 0) {
+    const list = tables.map((t) => `"public"."${t.tablename}"`).join(", ");
+    await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list} RESTART IDENTITY CASCADE`);
+  }
+  console.log(`✅ Cleanup complete (${tables.length} tables emptied)\n`);
 }
 
 // ============================================================================
@@ -443,6 +437,7 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       routingNumberLast4: "0025",
       accountNumberEncrypted: seedEncrypt("987654321012"),
       accountNumberLast4: "1012",
+      accountFingerprint: seedFingerprint("111000025", "987654321012"),
       accountType: "CHECKING",
       nextCheckNumber: 5009,
       checkNumberPadding: 6,
@@ -460,6 +455,7 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       routingNumberEncrypted: seedEncrypt("026009593"),
       routingNumberLast4: "9593",
       accountNumberEncrypted: seedEncrypt("123456785678"),
+      accountFingerprint: seedFingerprint("026009593", "123456785678"),
       accountNumberLast4: "5678",
       accountType: "CHECKING",
       nextCheckNumber: 1002,
@@ -736,6 +732,7 @@ async function seedSunshinePool(productId: string, roleMap: Map<string, string>)
       routingNumberEncrypted: seedEncrypt("121000248"),
       routingNumberLast4: "0248",
       accountNumberEncrypted: seedEncrypt("555666777999"),
+      accountFingerprint: seedFingerprint("121000248", "555666777999"),
       accountNumberLast4: "9999",
       accountType: "CHECKING",
       nextCheckNumber: 2003,
@@ -787,6 +784,14 @@ async function main() {
   console.log("║   SmartBusiness — Complete Seed Data                ║");
   console.log("║   RBAC + 2 Tenants + Users + Checks + Full Flow    ║");
   console.log("╚══════════════════════════════════════════════════════╝\n");
+
+  // Decided before any connection is opened: this erases every table (seed-guard.ts).
+  const decision = decideSeed(process.env.DATABASE_URL, process.env);
+  if (!decision.allowed) {
+    console.error(`\n❌ ${decision.message}\n`);
+    process.exit(1);
+  }
+  console.log(`⚠️  Erasing all data in "${decision.target.database}" on ${decision.target.host} (${decision.reason})\n`);
 
   await cleanup();
 

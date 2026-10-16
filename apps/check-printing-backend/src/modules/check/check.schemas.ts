@@ -22,7 +22,8 @@ const memoSchema = z
 // The payee is a legal name on a negotiable instrument, so it is never truncated on the
 // check. A name that does not fit even at the minimum font size is rejected here, early,
 // so the user can abbreviate it consciously.
-const payeeNameSchema = z
+// Also used by the payee directory, so every vendor in it can be written on a check.
+export const payeeNameSchema = z
   .string()
   .trim()
   .min(1, "Payee name is required")
@@ -150,48 +151,3 @@ export const clearCheckSchema = z.object({
 });
 
 export type ClearCheckInput = z.infer<typeof clearCheckSchema>;
-
-// ═══════════════════════════════════════════════════════════════
-// LIST CHECKS QUERY SCHEMA
-//
-// Validates GET /checks query parameters.
-//
-// Why z.coerce? Express delivers query params as strings.
-// ?page=2 arrives as req.query.page === "2" (string).
-// z.coerce.number() converts "2" → 2 at validation time,
-// so the controller receives properly typed values.
-//
-// The .default() values ensure pagination works even if the
-// client sends no query params at all.
-// ═══════════════════════════════════════════════════════════════
-
-export const listChecksQuerySchema = z.object({
-  status: z
-    .enum([
-      "NEW",
-      "PENDING_APPROVAL",
-      "APPROVED",
-      "REJECTED",
-      "PRINTED",
-      "CLEARED",
-      "VOID",
-    ])
-    .optional(),
-  search: z.string().trim().max(200).optional(),
-  bankAccountId: z.string().uuid().optional(),
-  dateFrom: z.coerce.date().optional(),
-  dateTo: z.coerce.date().optional(),
-  // Printed checks whose outcome (OK / spoiled) nobody has reported yet
-  printUnconfirmed: z
-    .enum(["true", "false"])
-    .transform((v) => v === "true")
-    .optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  sortBy: z
-    .enum(["checkDate", "amount", "createdAt", "checkNumber", "payeeName"])
-    .default("createdAt"),
-  sortOrder: z.enum(["asc", "desc"]).default("desc"),
-});
-
-export type ListChecksQuery = z.infer<typeof listChecksQuerySchema>;

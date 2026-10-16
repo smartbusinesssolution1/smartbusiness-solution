@@ -19,6 +19,9 @@ const zipCodeField = z
   .string()
   .regex(ZIP_CODE_REGEX, "ZIP code must be 5 digits or ZIP+4 format (e.g., 78701 or 78701-1234)");
 const phoneField = z.string().regex(PHONE_REGEX, "Invalid phone number format").optional().or(z.literal(""));
+// A field that is no longer accepted here: any value is refused with where it moved.
+const movedTo = (endpoint: string) =>
+  z.never({ error: `This setting moved: use ${endpoint} under this workspace` }).optional();
 
 // ─── Param Validators ───────────────────────────────────
 export const workspaceIdParam = z.object({
@@ -50,10 +53,13 @@ export const updateWorkspaceSchema = z.object({
   state: z.string().regex(US_STATE_REGEX).transform((s) => s.toUpperCase()).optional(),
   zipCode: z.string().regex(ZIP_CODE_REGEX).optional(),
   phone: z.string().regex(PHONE_REGEX).optional().or(z.literal("")),
-  // No check can exceed $999,999.99 (the amount the check can spell out), so neither can the limit.
-  maxCheckAmount: z.number().positive().max(999999.99).optional(),
-  maxPastDays: z.number().int().min(0).max(365).optional(),
-  maxFutureDays: z.number().int().min(0).max(365).optional(),
+  // A workspace is a platform concept shared by every product; product settings have
+  // their own endpoints. These fields used to live here, so a client still sending them
+  // gets a pointer instead of having them silently dropped.
+  maxCheckAmount: movedTo("PUT /check-printing-settings"),
+  maxPastDays: movedTo("PUT /check-printing-settings"),
+  maxFutureDays: movedTo("PUT /check-printing-settings"),
+  approvalEnabled: movedTo("PATCH /approval-rules/settings/approval-toggle"),
 });
 
 // ─── Add Member ─────────────────────────────────────────

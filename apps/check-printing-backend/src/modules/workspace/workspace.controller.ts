@@ -41,6 +41,7 @@ export class WorkspaceController {
     const workspaces = await this.workspaceService.listWorkspaces(
       req.user!.userId,
       req.tenant!.tenantId,
+      req.product!.productId,
     );
     sendSuccess(res, workspaces);
   };
@@ -77,6 +78,7 @@ export class WorkspaceController {
   listMembers = async (req: Request, res: Response): Promise<void> => {
     const members = await this.workspaceService.listMembers(
       req.params.wid as string,
+      req.product!.productId,
     );
     sendSuccess(res, members);
   };
@@ -109,6 +111,7 @@ export class WorkspaceController {
       req.params.wid as string,
       req.tenant!.tenantId,
       req.params.mid as string,
+      req.product!.productId,
       this.auditCtx(req),
     );
     sendNoContent(res);

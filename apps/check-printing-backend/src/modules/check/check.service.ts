@@ -17,7 +17,6 @@ import type {
   CreateCheckInput,
   UpdateCheckInput,
   ClearCheckInput,
-  ListChecksQuery,
   PrintCheckInput,
   PrintOutcomeInput,
 } from "./check.schemas.js";
@@ -29,6 +28,8 @@ import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData, SheetPosition } from "../pdf/pdf.types.js";
 import type { ObjectStorage } from "../../shared/storage/index.js";
+import type { CheckPrintingSettingsService } from "../check-printing-settings/check-printing-settings.service.js";
+import { ruleLabel } from "../approval-rule/rule-satisfiability.js";
 import { formatAttachment } from "./attachment.service.js";
 import { Prisma } from "@smartbusiness/database";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
@@ -54,6 +55,7 @@ export class CheckService {
     private calibrationService: CalibrationService,
     private encryptionService: EncryptionService,
     private fileStorage: ObjectStorage,
+    private settingsService: CheckPrintingSettingsService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -150,30 +152,6 @@ export class CheckService {
       throw new NotFoundError("Check");
     }
     return this.formatCheck(check);
-  }
-
-  // ═════════════════════════════════════════════════════════════
-  // LIST CHECKS
-  // ═════════════════════════════════════════════════════════════
-
-  async listChecks(workspaceId: string, query: ListChecksQuery) {
-    const { items, total } = await this.checkRepository.list({
-      workspaceId,
-      ...query,
-    });
-
-    const totalPages = Math.ceil(total / query.limit);
-
-    return {
-      items: items.map((item: any) => this.formatCheckListItem(item)),
-      meta: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        totalPages,
-        hasMore: query.page < totalPages,
-      },
-    };
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -634,6 +612,7 @@ export class CheckService {
     }
 
     assertTransition(check.status, "PRINTED");
+    const approval = await this.approvalForPrint(check);
 
     const bankAccount = await this.requireActiveBankAccount(
       check.bankAccountId,
@@ -765,6 +744,7 @@ export class CheckService {
       entityId: checkId,
       details: {
         checkNumber: check.checkNumber,
+        approval,
         pdfStorageKey: stored.key,
         pdfSha256: stored.sha256,
         printer: {
@@ -1120,11 +1100,11 @@ export class CheckService {
       );
     }
 
-    const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
+    const settings = await this.settingsService.forWorkspace(workspaceId);
     const initialStatus = await this.determineInitialStatus(
       workspaceId,
       Number(check.amount),
-      settings?.approvalEnabled ?? false,
+      settings.approvalEnabled,
     );
 
     const newCheck = await this.checkRepository.createReissue(
@@ -1257,14 +1237,9 @@ export class CheckService {
     return bankAccount;
   }
 
+  // Created with the defaults on first use, so a new workspace can write checks at once.
   private async requireSettings(workspaceId: string) {
-    const settings = await this.checkRepository.findCheckPrintingSettings(workspaceId);
-    if (!settings) {
-      throw new ValidationError("Workspace check printing settings not configured", {
-        workspace: ["Please configure check printing settings first"],
-      });
-    }
-    return settings;
+    return this.settingsService.forWorkspace(workspaceId);
   }
 
   private assertAmountWithinLimit(amount: number, settings: { maxCheckAmount: unknown }) {
@@ -1299,6 +1274,33 @@ export class CheckService {
     if (await this.checkRepository.hasUserDecided(check.id, check.approvalRound, userId)) {
       throw new ConflictError("You have already submitted a decision on this check");
     }
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // PRIVATE: DOES THIS CHECK NEED APPROVAL BEFORE PRINTING? (R-03)
+  //
+  // Approval is needed only when the workflow is ON and an active rule matches the amount.
+  // An APPROVED check has it; a draft (NEW) that needs none prints directly, so a one-person
+  // business can create and print. Decided now, at print time, not when the draft was made:
+  // approval switched on later, or an amount edited above a threshold, still requires it.
+  // The result is recorded on the CHECK_PRINTED audit entry.
+  // ═════════════════════════════════════════════════════════════
+
+  private async approvalForPrint(check: { status: CheckStatus; workspaceId: string; amount: unknown; checkNumber: number }) {
+    if (check.status === "APPROVED") return { required: true, reason: "APPROVED" } as const;
+
+    const settings = await this.settingsService.forWorkspace(check.workspaceId);
+    if (!settings.approvalEnabled) return { required: false, reason: "APPROVAL_WORKFLOW_OFF" } as const;
+
+    const rule = await this.findMatchingRule(check.workspaceId, Number(check.amount));
+    if (!rule) return { required: false, reason: "NO_MATCHING_RULE" } as const;
+
+    throw new AppError(
+      `Check #${check.checkNumber} needs approval before it can be printed (approval rule for ` +
+        `${ruleLabel(rule.minAmount, rule.maxAmount)}). Submit it for approval first.`,
+      409,
+      "APPROVAL_REQUIRED",
+    );
   }
 
   private async findMatchingRule(workspaceId: string, amount: number) {

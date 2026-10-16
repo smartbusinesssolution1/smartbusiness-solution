@@ -17,12 +17,22 @@ export function createApp(): Express {
 
   app.set("trust proxy", 1);
 
+  // CORS is what the BROWSER is told it may do; curl and server-to-server calls ignore it.
+  // Before a cross-origin request with custom headers the browser asks (a preflight), and a
+  // header missing from allowedHeaders makes it cancel the request without sending it.
   app.use(
     corsMiddleware({
+      // Exact origins from CORS_ORIGIN; the request's Origin is echoed only if it is listed.
       origin: corsConfig.origin,
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id"],
+      // Idempotency-Key: the duplicate protection on creating and printing checks.
+      // X-Request-Id: lets the app tag its own requests so logs can be matched to them.
+      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "Idempotency-Key", "X-Request-Id"],
+      // Response headers the app's JavaScript may read (only a few basic ones are readable otherwise).
+      exposedHeaders: ["X-Request-Id", "Idempotent-Replayed", "Retry-After", "Content-Disposition"],
+      // The browser may reuse a preflight answer for 10 minutes instead of asking before every request.
+      maxAge: 600,
     }),
   );
 

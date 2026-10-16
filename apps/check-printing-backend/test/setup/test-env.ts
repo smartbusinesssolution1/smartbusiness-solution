@@ -63,5 +63,6 @@ export function applyTestEnv(): void {
   // The development font is a trial with defective glyphs; tests check layout, not the font.
   process.env.E13B_FONT_STRICT = "false";
   process.env.RATE_LIMIT_MAX = "1000000";
-  process.env.CORS_ORIGIN = "http://localhost:5173";
+  // Two frontends, as on the platform (the check-printing app and the customer portal).
+  process.env.CORS_ORIGIN = "http://localhost:5173, http://localhost:5174";
 }

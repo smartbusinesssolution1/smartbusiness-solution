@@ -6,12 +6,15 @@ import {
   isValidRoutingNumber,
   lookupRoutingNumber,
 } from "../../shared/utils/routing-validator.js";
-import { BankAccountRepository } from "./bank-account.repository.js";
+import { BankAccountRepository, type LegacyMatcher, type SameAccountRecord } from "./bank-account.repository.js";
+import { AppError } from "../../shared/errors/index.js";
+import { config } from "../../config/index.js";
+import { logger } from "../../shared/services/logger.js";
 import {
   CreateBankAccountInput,
   UpdateBankAccountInput,
 } from "./bank-account.schema.js";
-import { prisma } from "@smartbusiness/database";
+import { bankAccountFingerprint, prisma } from "@smartbusiness/database";
 import { randomUUID } from "crypto";
 import { StorageNotFoundError, type ObjectStorage } from "../../shared/storage/index.js";
 import { cleanSignatureImage, SignatureImageError } from "./signature-image.js";
@@ -176,17 +179,25 @@ export class BankAccountService {
     const routingNumberLast4 = data.routingNumber.slice(-4);
     const accountNumberLast4 = data.accountNumber.slice(-4);
 
-    //5.create the bank account
-    const bankAccount = await this.bankAccountRepository.create({
-      workspaceId: workspaceId,
-      bankName: bankName,
-      routingNumberEncrypted: routingNumberEncrypted,
-      routingNumberLast4: routingNumberLast4,
-      accountNumberEncrypted: accountNumberEncrypted,
-      accountNumberLast4: accountNumberLast4,
-      accountType: data.accountType,
-      nextCheckNumber: data.startingCheckNumber,
-    });
+    //5.create the bank account, unless the same real account already has a record in this
+    // company: two records would keep two check counters and issue the same check number twice.
+    const result = await this.bankAccountRepository.createUnlessDuplicate(
+      {
+        workspaceId: workspaceId,
+        bankName: bankName,
+        routingNumberEncrypted: routingNumberEncrypted,
+        routingNumberLast4: routingNumberLast4,
+        accountNumberEncrypted: accountNumberEncrypted,
+        accountNumberLast4: accountNumberLast4,
+        accountFingerprint: bankAccountFingerprint(config.ENCRYPTION_KEY, data.routingNumber, data.accountNumber),
+        accountType: data.accountType,
+        nextCheckNumber: data.startingCheckNumber,
+      },
+      ctx.tenantId,
+      holdsNumbers(data.routingNumber, data.accountNumber),
+    );
+    if (result.kind === "duplicate") throw duplicateAccountError(result.duplicate, workspaceId);
+    const bankAccount = result.created;
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -284,6 +295,43 @@ export class BankAccountService {
     });
   }
 
+  // A deleted account comes back with its check counter where it was: adding it again as a
+  // new record would restart the numbering and reissue numbers the bank has already seen.
+  async restoreBankAccount(bankAccountId: string, workspaceId: string, ctx: AuditContext) {
+    const deleted = await this.bankAccountRepository.findDeletedById(bankAccountId, workspaceId);
+    if (!deleted) throw new NotFoundError("Deleted bank account");
+
+    const routingNumber = encryptionService.decrypt(deleted.routingNumberEncrypted);
+    const accountNumber = encryptionService.decrypt(deleted.accountNumberEncrypted);
+
+    const result = await this.bankAccountRepository.restoreUnlessDuplicate(
+      bankAccountId,
+      workspaceId,
+      ctx.tenantId,
+      {
+        accountFingerprint: bankAccountFingerprint(config.ENCRYPTION_KEY, routingNumber, accountNumber),
+        routingNumberLast4: deleted.routingNumberLast4,
+        accountNumberLast4: deleted.accountNumberLast4,
+      },
+      holdsNumbers(routingNumber, accountNumber),
+    );
+    if (result.kind === "notFound") throw new NotFoundError("Deleted bank account");
+    if (result.kind === "duplicate") throw duplicateAccountError(result.duplicate, workspaceId);
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "BANK_ACCOUNT_RESTORED",
+      entityType: "BankAccount",
+      entityId: bankAccountId,
+      details: { bankName: result.restored.bankName, nextCheckNumber: result.restored.nextCheckNumber },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return this.formattedAccountDetails(result.restored);
+  }
+
   // ── Used internally by the PDF service (NOT exposed via API) ──
   async getDecryptedBankData(bankAccountId: string, workspaceId: string) {
     const account = await this.bankAccountRepository.findById(
@@ -322,4 +370,54 @@ export class BankAccountService {
       createdAt: data.createdAt,
     };
   }
+}
+
+// For records created before fingerprints existed: do they hold these exact numbers?
+// A record that cannot be decrypted (wrong key, damaged) is reported as "not the same",
+// and logged, rather than blocking the request.
+function holdsNumbers(routingNumber: string, accountNumber: string): LegacyMatcher {
+  return (row) => {
+    try {
+      return (
+        encryptionService.decrypt(row.accountNumberEncrypted) === accountNumber &&
+        encryptionService.decrypt(row.routingNumberEncrypted) === routingNumber
+      );
+    } catch (err) {
+      logger.error({ err }, "Could not decrypt a bank account while checking for duplicates");
+      return false;
+    }
+  };
+}
+
+// The answer when the real account already has a record in this company. Same company, so
+// naming the other workspace reveals nothing new; other companies are never checked.
+function duplicateAccountError(existing: SameAccountRecord, workspaceId: string): AppError {
+  const account = `${existing.bankName} ****${existing.accountNumberLast4}`;
+
+  if (existing.workspaceId !== workspaceId) {
+    return new AppError(
+      `This bank account (${account}) is already set up in workspace "${existing.workspaceName}"` +
+        `${existing.deletedAt ? " (removed there)" : ""}. A bank account can belong to only one workspace, ` +
+        "so its check numbers never repeat.",
+      409,
+      "BANK_ACCOUNT_IN_OTHER_WORKSPACE",
+    );
+  }
+  if (existing.deletedAt) {
+    return new AppError(
+      `This bank account (${account}) was removed from this workspace on ${existing.deletedAt.toISOString().slice(0, 10)}. ` +
+        `Restore it with POST /bank-accounts/${existing.id}/restore so its check numbers continue at ` +
+        `#${existing.nextCheckNumber}; adding it again would reuse check numbers the bank has already seen.`,
+      409,
+      "BANK_ACCOUNT_DELETED",
+    );
+  }
+  if (!existing.isActive) {
+    return new AppError(
+      `This bank account (${account}) is already set up in this workspace but deactivated. Reactivate it instead of adding it again.`,
+      409,
+      "BANK_ACCOUNT_INACTIVE",
+    );
+  }
+  return new AppError(`This bank account (${account}) is already set up in this workspace.`, 409, "BANK_ACCOUNT_EXISTS");
 }

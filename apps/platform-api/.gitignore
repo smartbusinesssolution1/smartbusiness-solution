@@ -1,0 +1,20 @@
+# platform-api: identity, sessions, password reset, email worker
+
+# Secrets: JWT_SECRET, DATABASE_URL, REDIS_URL. Never commit; copy by hand (see HANDOFF).
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules
+dist
+*.tsbuildinfo
+
+# Development emails written by the "file" email sender (EMAIL_FILE_DIRECTORY, default ./tmp/emails)
+tmp/
+
+# Test and debug output
+coverage
+*.log
+
+.DS_Store

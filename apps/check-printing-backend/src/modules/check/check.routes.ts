@@ -9,12 +9,17 @@ import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { idempotency } from "../../middleware/idempotency.js";
 import { pdfService } from "../pdf/index.js";
 import { calibrationService } from "../calibration/calibration.routes.js";
+import { checkPrintingSettingsService } from "../check-printing-settings/check-printing-settings.routes.js";
 import { encryptionService } from "../../shared/services/encryption.service.js";
 import { fileStorage } from "../../shared/storage/instance.js";
 import { singleFileUpload } from "../../middleware/file-upload.js";
 import { AttachmentRepository, ATTACHMENT_LIMITS } from "./attachment.repository.js";
 import { AttachmentService } from "./attachment.service.js";
 import { AttachmentController } from "./attachment.controller.js";
+import { CheckRegisterRepository } from "./check-register.repository.js";
+import { CheckRegisterService } from "./check-register.service.js";
+import { CheckRegisterController } from "./check-register.controller.js";
+import { agingQuerySchema, checkFilterQuerySchema, numberIntegrityQuerySchema, viewsQuerySchema } from "./check-filter.js";
 import {
   createCheckSchema,
   updateCheckSchema,
@@ -22,7 +27,6 @@ import {
   voidCheckSchema,
   printOutcomeSchema,
   clearCheckSchema,
-  listChecksQuerySchema,
   printCheckSchema,
 } from "./check.schemas.js";
 
@@ -39,12 +43,16 @@ const checkService = new CheckService(
   calibrationService,
   encryptionService,
   fileStorage,
+  checkPrintingSettingsService,
 );
 const checkController = new CheckController(checkService);
 const attachmentController = new AttachmentController(
   new AttachmentService(new AttachmentRepository(), auditService, fileStorage),
 );
 const attachmentUpload = singleFileUpload("file", ATTACHMENT_LIMITS.maxFileBytes, "10 MB");
+const registerController = new CheckRegisterController(
+  new CheckRegisterService(new CheckRegisterRepository(), checkRepository, checkService, checkPrintingSettingsService),
+);
 
 // ═════════════════════════════════════════════════════════════
 // ROUTER
@@ -66,11 +74,18 @@ router.get(
   checkController.approvalQueue,
 );
 
+// ── The check register (F06): BEFORE /:checkId so these paths are not read as ids ──
+// Readable by every Check Printing member (the workspace middleware already requires a
+// Check Printing role); views that act on someone's work check their own permission.
+router.get("/views", validate(viewsQuerySchema, "query"), registerController.views);
+router.get("/number-integrity", validate(numberIntegrityQuerySchema, "query"), registerController.numberIntegrity);
+router.get("/aging", validate(agingQuerySchema, "query"), registerController.aging);
+
 // ── List / Search Checks ──
 router.get(
   "/",
-  validate(listChecksQuerySchema, "query"),
-  checkController.list,
+  validate(checkFilterQuerySchema, "query"),
+  registerController.list,
 );
 
 // ── Create Check ──

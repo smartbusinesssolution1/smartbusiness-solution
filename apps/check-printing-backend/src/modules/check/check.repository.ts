@@ -145,20 +145,6 @@ interface StatusChangeData {
   userAgent?: string | null;
 }
 
-interface ListChecksParams {
-  workspaceId: string;
-  status?: string;
-  search?: string;
-  bankAccountId?: string;
-  dateFrom?: Date;
-  dateTo?: Date;
-  printUnconfirmed?: boolean;
-  page: number;
-  limit: number;
-  sortBy: string;
-  sortOrder: "asc" | "desc";
-}
-
 export class CheckRepository {
 
   // ═════════════════════════════════════════════════════════════
@@ -288,69 +274,6 @@ export class CheckRepository {
       },
       include: CHECK_INCLUDE,
     });
-  }
-
-  // ═════════════════════════════════════════════════════════════
-  // LIST WITH FILTERING, SEARCH, AND PAGINATION
-  //
-  // The WHERE clause is built dynamically based on which filters
-  // the client provides. This is the Prisma equivalent of a
-  // query builder — conditions are added only when present.
-  //
-  // The search uses `contains` with `mode: "insensitive"` which
-  // translates to PostgreSQL's ILIKE operator. For large datasets,
-  // this won't use a standard B-tree index. If performance becomes
-  // an issue, consider a GIN trigram index.
-  //
-  // Pagination uses offset-based (page * limit) rather than
-  // cursor-based. Offset is simpler and works well for up to
-  // ~100k records. For larger datasets, cursor-based pagination
-  // (using the last item's createdAt + id) would be better.
-  // ═════════════════════════════════════════════════════════════
-
-  async list(params: ListChecksParams) {
-    const where: Prisma.CheckWhereInput = {
-      workspaceId: params.workspaceId,
-      deletedAt: null,
-    };
-
-    if (params.status) {
-      where.status = params.status as any;
-    }
-
-    if (params.bankAccountId) {
-      where.bankAccountId = params.bankAccountId;
-    }
-
-    if (params.search) {
-      where.payeeName = { contains: params.search, mode: "insensitive" };
-    }
-
-    if (params.dateFrom || params.dateTo) {
-      where.checkDate = {};
-      if (params.dateFrom) where.checkDate.gte = params.dateFrom;
-      if (params.dateTo) where.checkDate.lte = params.dateTo;
-    }
-
-    if (params.printUnconfirmed) {
-      where.status = "PRINTED";
-      where.printConfirmedAt = null;
-    }
-
-    const skip = (params.page - 1) * params.limit;
-
-    const [items, total] = await Promise.all([
-      prisma.check.findMany({
-        where,
-        include: CHECK_LIST_INCLUDE,
-        orderBy: { [params.sortBy]: params.sortOrder },
-        skip,
-        take: params.limit,
-      }),
-      prisma.check.count({ where }),
-    ]);
-
-    return { items, total };
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -671,12 +594,6 @@ export class CheckRepository {
         workspaceId,
         deletedAt: null,
       },
-    });
-  }
-
-  async findCheckPrintingSettings(workspaceId: string) {
-    return prisma.checkPrintingSettings.findUnique({
-      where: { workspaceId },
     });
   }
 

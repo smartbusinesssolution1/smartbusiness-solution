@@ -5,12 +5,10 @@ node_modules
 .pnp
 .pnp.js
 
-# Local env files
+# Local env files: every .env variant holds secrets; only templates are committed
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Testing
 coverage
@@ -36,6 +34,8 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+*.key
+*.log
 
 project-docs/
 
@@ -48,9 +48,6 @@ uploads/
 
 # Prisma
 prisma/migrations/migration_lock.toml 
-
-# Generated check PDFs
-uploads/
 
 # Local test output
 /*.pdf

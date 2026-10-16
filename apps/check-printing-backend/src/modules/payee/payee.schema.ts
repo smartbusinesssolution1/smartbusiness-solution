@@ -1,14 +1,12 @@
 import { z } from "zod";
+import { payeeNameSchema } from "../check/check.schemas.js";
 
 const usStateRegex = /^[A-Z]{2}$/;
 const zipCodeRegex = /^\d{5}(-\d{4})?$/;
 
 export const createPayeeSchema = z.object({
-    name: z
-        .string()
-        .min(1, { error: "Payee name is required" })
-        .max(255)
-        .trim(),
+    // The same rule as a check's payee name: a vendor that cannot fit on a check is useless here.
+    name: payeeNameSchema,
 
     defaultMemo: z.string().max(255).trim().optional().or(z.literal("")),
 
@@ -25,7 +23,7 @@ export const createPayeeSchema = z.object({
 // ─── Update Payee ───────────────────────────────────────
 // All fields optional — partial update
 export const updatePayeeSchema = z.object({
-    name: z.string().min(1).max(255).trim().optional(),
+    name: payeeNameSchema.optional(),
     defaultMemo: z.string().max(255).trim().optional().or(z.literal("")),
     addressLine1: z.string().max(255).trim().optional().or(z.literal("")),
     addressLine2: z.string().max(255).trim().optional().or(z.literal("")),

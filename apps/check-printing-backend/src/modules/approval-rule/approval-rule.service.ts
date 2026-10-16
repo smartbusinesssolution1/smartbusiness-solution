@@ -1,5 +1,8 @@
 import { ApprovalRuleRepository } from "./approval-rule.repository.js";
 import { AuditService } from "../../shared/services/audit.service.js";
+import type { CheckPrintingSettingsService } from "../check-printing-settings/check-printing-settings.service.js";
+import { availableApprovers, eligibleApproverIds, ruleLabel } from "./rule-satisfiability.js";
+import { prisma } from "@smartbusiness/database";
 import {
   ValidationError,
   NotFoundError,
@@ -45,6 +48,7 @@ export class ApprovalRuleService {
   constructor(
     private repository: ApprovalRuleRepository,
     private auditService: AuditService,
+    private settingsService: CheckPrintingSettingsService,
   ) {}
 
   // ─── CREATE RULE ─────────────────────────────────────────
@@ -72,6 +76,9 @@ export class ApprovalRuleService {
         `An approval rule with this amount range already exists`,
       );
     }
+
+    // A new rule is active and names no approvers yet: anyone who can approve counts.
+    await this.assertSatisfiable(workspaceId, input.requiredApprovals ?? 1, [], ruleLabel(input.minAmount, input.maxAmount ?? null));
 
     const rule = await this.repository.create({
       workspaceId,
@@ -131,14 +138,14 @@ export class ApprovalRuleService {
   ): Promise<ApprovalRuleListResponse> {
     const [{ items, total }, settings] = await Promise.all([
       this.repository.list(workspaceId, includeInactive),
-      this.repository.findSettings(workspaceId),
+      this.settingsService.forWorkspace(workspaceId),
     ]);
 
     return {
       items: items.map((rule) => this.formatRule(rule)),
       meta: {
         total,
-        approvalEnabled: settings?.approvalEnabled ?? false,
+        approvalEnabled: settings.approvalEnabled,
       },
     };
   }
@@ -202,6 +209,15 @@ export class ApprovalRuleService {
     if (input.requiredApprovals !== undefined) updateData.requiredApprovals = input.requiredApprovals;
     if (input.allowSelfApproval !== undefined) updateData.allowSelfApproval = input.allowSelfApproval;
 
+    if (existing.isActive) {
+      await this.assertSatisfiable(
+        workspaceId,
+        input.requiredApprovals ?? existing.requiredApprovals,
+        await this.designatedIds(ruleId),
+        ruleLabel(newMin, newMax),
+      );
+    }
+
     const updated = await this.repository.update(ruleId, updateData);
 
     await this.auditService.log({
@@ -234,6 +250,8 @@ export class ApprovalRuleService {
     if (rule.isActive) {
       throw new ValidationError("This rule is already active");
     }
+
+    await this.assertSatisfiable(workspaceId, rule.requiredApprovals, await this.designatedIds(ruleId), ruleLabel(rule.minAmount, rule.maxAmount));
 
     const updated = await this.repository.setActive(ruleId, true);
 
@@ -354,14 +372,8 @@ export class ApprovalRuleService {
     enabled: boolean,
     ctx: AuditContext,
   ): Promise<{ approvalEnabled: boolean }> {
-    const settings = await this.repository.findSettings(workspaceId);
-    if (!settings) {
-      throw new ValidationError("Workspace check printing settings not configured", {
-        workspace: ["Please configure check printing settings first"],
-      });
-    }
-
-    await this.repository.setApprovalEnabled(workspaceId, enabled);
+    // The settings are created with their defaults if this workspace has none yet.
+    await this.settingsService.setApprovalEnabled(workspaceId, enabled);
 
     await this.auditService.log({
       tenantId: ctx.tenantId,
@@ -403,12 +415,17 @@ export class ApprovalRuleService {
     userId: string,
     ctx: AuditContext,
   ): Promise<ApproverResponse> {
-    await this.findRuleOrThrow(ruleId, workspaceId);
+    const rule = await this.findRuleOrThrow(ruleId, workspaceId);
     await this.validateApproverEligibility(workspaceId, userId);
 
     const existing = await this.repository.findApprover(ruleId, userId);
     if (existing) {
       throw new ConflictError("This user is already a designated approver for this rule");
+    }
+
+    // Naming a first approver narrows the rule from "anyone who can approve" to that person.
+    if (rule.isActive) {
+      await this.assertSatisfiable(workspaceId, rule.requiredApprovals, [...(await this.designatedIds(ruleId)), userId], ruleLabel(rule.minAmount, rule.maxAmount));
     }
 
     const approver = await this.repository.addApprover(ruleId, userId);
@@ -433,11 +450,16 @@ export class ApprovalRuleService {
     userId: string,
     ctx: AuditContext,
   ): Promise<void> {
-    await this.findRuleOrThrow(ruleId, workspaceId);
+    const rule = await this.findRuleOrThrow(ruleId, workspaceId);
 
     const existing = await this.repository.findApprover(ruleId, userId);
     if (!existing) {
       throw new NotFoundError("Approver assignment");
+    }
+
+    if (rule.isActive) {
+      const remaining = (await this.designatedIds(ruleId)).filter((id) => id !== userId);
+      await this.assertSatisfiable(workspaceId, rule.requiredApprovals, remaining, ruleLabel(rule.minAmount, rule.maxAmount));
     }
 
     await this.repository.removeApprover(ruleId, userId);
@@ -462,12 +484,16 @@ export class ApprovalRuleService {
     userIds: string[],
     ctx: AuditContext,
   ): Promise<ApproverResponse[]> {
-    await this.findRuleOrThrow(ruleId, workspaceId);
+    const rule = await this.findRuleOrThrow(ruleId, workspaceId);
 
     const uniqueIds = [...new Set(userIds)];
 
     for (const userId of uniqueIds) {
       await this.validateApproverEligibility(workspaceId, userId);
+    }
+
+    if (rule.isActive) {
+      await this.assertSatisfiable(workspaceId, rule.requiredApprovals, uniqueIds, ruleLabel(rule.minAmount, rule.maxAmount));
     }
 
     const approvers = await this.repository.syncApprovers(ruleId, uniqueIds);
@@ -517,6 +543,24 @@ export class ApprovalRuleService {
   //
   // The helper eliminates that duplication.
   // ═════════════════════════════════════════════════════════
+
+  // R-20: refuses a change that would leave an active rule needing more approvals than there
+  // are people who can give them (checks matching it would wait forever).
+  private async assertSatisfiable(workspaceId: string, requiredApprovals: number, designatedIds: string[], label: string) {
+    const available = availableApprovers(designatedIds, await eligibleApproverIds(prisma, workspaceId));
+    if (available < requiredApprovals) {
+      const who = designatedIds.length > 0 ? "of its designated approvers can approve" : "people in this workspace can approve checks";
+      throw new ValidationError(
+        `The rule for ${label} needs ${requiredApprovals} approvals but only ${available} ${who}, so checks matching it could never be approved. ` +
+          "Add approvers (members with the Approver or Admin role) or lower the required approvals.",
+        { requiredApprovals: [`At most ${available} approval(s) possible`] },
+      );
+    }
+  }
+
+  private async designatedIds(ruleId: string): Promise<string[]> {
+    return (await this.repository.listApprovers(ruleId)).map((a) => a.userId);
+  }
 
   private async findRuleOrThrow(ruleId: string, workspaceId: string) {
     const rule = await this.repository.findById(ruleId);

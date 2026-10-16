@@ -1,5 +1,19 @@
+# check-printing-backend
+
+# Secrets (DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY, STORAGE_ENCRYPTION_KEY, AWS keys). Never commit.
 .env
-.env.example
+.env.*
+# The template IS committed: it tells teammates which variables to set (no values in it).
+!.env.example
+
+# Licensed MICR fonts (per installation) and generated check PDFs / local file storage
+micr/
+fonts/
+uploads/
+
 dist
 node_modules
+*.tsbuildinfo
+coverage
+*.log
 .DS_Store

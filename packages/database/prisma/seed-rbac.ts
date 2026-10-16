@@ -110,16 +110,19 @@ async function main() {
       },
     });
 
-    await prisma.rolePermission.deleteMany({
-      where: { roleId: role.id },
-    });
-
-    await prisma.rolePermission.createMany({
-      data: roleDef.permissions.map((action) => ({
-        roleId: role.id,
-        permissionId: permissionMap.get(action)!,
-      })),
-    });
+    // Replace the role's permissions in one transaction: done as two separate steps, a
+    // request arriving in between (or a crash) would see the role with no permissions.
+    await prisma.$transaction([
+      prisma.rolePermission.deleteMany({
+        where: { roleId: role.id },
+      }),
+      prisma.rolePermission.createMany({
+        data: roleDef.permissions.map((action) => ({
+          roleId: role.id,
+          permissionId: permissionMap.get(action)!,
+        })),
+      }),
+    ]);
 
     console.log(`  ✅ ${roleDef.slug} (${roleDef.permissions.length} permissions)`);
   }

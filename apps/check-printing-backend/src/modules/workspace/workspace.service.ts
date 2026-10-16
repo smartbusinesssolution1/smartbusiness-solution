@@ -1,4 +1,5 @@
-import { WorkspaceRepository, type WorkspaceWithSettings, type MemberWithRoles } from "./workspace.repository.js";
+import type { Workspace } from "@smartbusiness/database";
+import { WorkspaceRepository, type MemberWithRoles } from "./workspace.repository.js";
 import {
   ValidationError,
   NotFoundError,
@@ -6,7 +7,6 @@ import {
 } from "../../shared/errors/index.js";
 import { PasswordService } from "@smartbusiness/auth";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { ROLES } from "../../shared/constants/rbac.js";
 import type {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
@@ -90,10 +90,11 @@ export class WorkspaceService {
     return this.formatWorkspace(workspace);
   }
 
-  async listWorkspaces(userId: string, tenantId: string) {
+  async listWorkspaces(userId: string, tenantId: string, productId: string) {
     const workspaces = await this.workspaceRepository.findUserWorkspaces(
       userId,
       tenantId,
+      productId,
     );
     return workspaces.map((w) => this.formatWorkspace(w));
   }
@@ -146,9 +147,9 @@ export class WorkspaceService {
   // MEMBER MANAGEMENT
   // ═══════════════════════════════════════════════════════
 
-  async listMembers(workspaceId: string) {
-    const members = await this.workspaceRepository.findMembers(workspaceId);
-    return members.map((m) => this.formatMember(m));
+  async listMembers(workspaceId: string, productId: string) {
+    const members = await this.workspaceRepository.findMembers(workspaceId, productId);
+    return members.map((m) => this.formatMember(m, productId));
   }
 
   async addMember(
@@ -158,19 +159,7 @@ export class WorkspaceService {
     productId: string,
     ctx: AuditContext,
   ) {
-    const roles = await this.workspaceRepository.findRolesByProductAndSlugs(
-      productId,
-      input.roleSlugs,
-    );
-
-    if (roles.length !== input.roleSlugs.length) {
-      const found = new Set(roles.map((r) => r.slug));
-      const invalid = input.roleSlugs.filter((s) => !found.has(s));
-      throw new ValidationError(
-        `Invalid role(s): ${invalid.join(", ")}`,
-        { roleSlugs: [`Unknown roles: ${invalid.join(", ")}`] },
-      );
-    }
+    const roles = await this.resolveRoles(productId, input.roleSlugs);
 
     const existingUser =
       await this.workspaceRepository.findUserByEmail(input.email);
@@ -198,7 +187,10 @@ export class WorkspaceService {
           existingUser.id,
         );
 
-      if (existingMember) {
+      // Someone in the workspace only through another product can be given roles here;
+      // someone who already has Check Printing roles is changed with PUT, not added twice.
+      const hasRolesHere = existingMember?.assignedRoles.some((ar) => ar.role.productId === productId);
+      if (hasRolesHere) {
         throw new ConflictError(
           "This user is already a member of this workspace",
         );
@@ -223,6 +215,7 @@ export class WorkspaceService {
     const member = await this.workspaceRepository.addMemberInTransaction(
       userData,
       { workspaceId, userId },
+      productId,
       roles.map((r) => r.id),
       ctx.userId,
     );
@@ -237,12 +230,12 @@ export class WorkspaceService {
       details: {
         memberEmail: input.email,
         newUserCreated: needsUserCreation,
-        roleSlugs: input.roleSlugs,
+        roleSlugs: roles.map((r) => r.slug),
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatMember(member);
+    return this.formatMember(member, productId);
   }
 
   async updateMember(
@@ -263,41 +256,14 @@ export class WorkspaceService {
       throw new NotFoundError("Member");
     }
 
-    const roles = await this.workspaceRepository.findRolesByProductAndSlugs(
+    const roles = await this.resolveRoles(productId, input.roleSlugs);
+
+    // The last-admin rule is checked inside the repository's locked transaction.
+    const { member: updated, previousRoleSlugs } = await this.workspaceRepository.setMemberRoles(
+      memberId,
+      workspaceId,
       productId,
-      input.roleSlugs,
-    );
-
-    if (roles.length !== input.roleSlugs.length) {
-      const found = new Set(roles.map((r) => r.slug));
-      const invalid = input.roleSlugs.filter((s) => !found.has(s));
-      throw new ValidationError(
-        `Invalid role(s): ${invalid.join(", ")}`,
-        { roleSlugs: [`Unknown roles: ${invalid.join(", ")}`] },
-      );
-    }
-
-    const hadAdmin = await this.workspaceRepository.memberHasRole(
-      memberId,
-      ROLES.ADMIN,
-    );
-    const willHaveAdmin = input.roleSlugs.includes(ROLES.ADMIN);
-
-    if (hadAdmin && !willHaveAdmin) {
-      const adminCount =
-        await this.workspaceRepository.countAdmins(workspaceId);
-
-      if (adminCount <= 1) {
-        throw new ValidationError(
-          "Cannot remove the last Admin. Promote another member first.",
-          { roleSlugs: ["At least one Admin is required"] },
-        );
-      }
-    }
-
-    const updated = await this.workspaceRepository.setMemberRoles(
-      memberId,
-      roles.map((r) => r.id),
+      roles,
       ctx.userId,
     );
 
@@ -310,18 +276,20 @@ export class WorkspaceService {
       entityId: memberId,
       details: {
         memberEmail: updated.user.email,
-        roleSlugs: input.roleSlugs,
+        previousRoleSlugs,
+        roleSlugs: roles.map((r) => r.slug),
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatMember(updated);
+    return this.formatMember(updated, productId);
   }
 
   async removeMember(
     workspaceId: string,
     tenantId: string,
     memberId: string,
+    productId: string,
     ctx: AuditContext,
   ) {
     const member = await this.workspaceRepository.findMemberById(memberId);
@@ -341,26 +309,13 @@ export class WorkspaceService {
       );
     }
 
-    const isAdmin = await this.workspaceRepository.memberHasRole(
+    // Removes this product's roles (and the membership, when no product role is left).
+    // The last-admin rule is checked inside the repository's locked transaction.
+    const { removedRoleSlugs, leftWorkspace } = await this.workspaceRepository.removeFromProduct(
       memberId,
-      ROLES.ADMIN,
+      workspaceId,
+      productId,
     );
-
-    if (isAdmin) {
-      const adminCount =
-        await this.workspaceRepository.countAdmins(workspaceId);
-
-      if (adminCount <= 1) {
-        throw new ValidationError(
-          "Cannot remove the last Admin. Promote another member first.",
-          { member: ["At least one Admin is required"] },
-        );
-      }
-    }
-
-    await this.workspaceRepository.removeMember(memberId);
-
-    const memberRoleSlugs = member.assignedRoles.map((ar) => ar.role.slug);
 
     await this.auditService.log({
       tenantId,
@@ -371,7 +326,8 @@ export class WorkspaceService {
       entityId: memberId,
       details: {
         removedUserEmail: member.user.email,
-        roleSlugs: memberRoleSlugs,
+        roleSlugs: removedRoleSlugs,
+        leftWorkspace,
       },
       ipAddress: ctx.ipAddress,
     });
@@ -381,9 +337,25 @@ export class WorkspaceService {
   // PRIVATE HELPERS
   // ═══════════════════════════════════════════════════════
 
-  private formatWorkspace(workspace: WorkspaceWithSettings) {
-    const settings = workspace.checkPrintingSettings;
+  // The product's roles for these slugs. A slug listed twice counts once; an unknown slug
+  // is named in the error.
+  private async resolveRoles(productId: string, roleSlugs: string[]) {
+    const slugs = [...new Set(roleSlugs)];
+    const roles = await this.workspaceRepository.findRolesByProductAndSlugs(productId, slugs);
 
+    if (roles.length !== slugs.length) {
+      const found = new Set(roles.map((r) => r.slug));
+      const invalid = slugs.filter((s) => !found.has(s));
+      throw new ValidationError(
+        `Invalid role(s): ${invalid.join(", ")}`,
+        { roleSlugs: [`Unknown roles: ${invalid.join(", ")}`] },
+      );
+    }
+    return roles;
+  }
+
+  // Platform fields only. Check-printing settings: GET /workspaces/:wid/check-printing-settings.
+  private formatWorkspace(workspace: Workspace) {
     return {
       id: workspace.id,
       businessName: workspace.businessName,
@@ -394,19 +366,18 @@ export class WorkspaceService {
       zipCode: workspace.zipCode,
       phone: workspace.phone,
       logoUrl: workspace.logoUrl,
-      approvalEnabled: settings?.approvalEnabled ?? false,
-      maxCheckAmount: settings?.maxCheckAmount?.toString() ?? "999999.99",
-      maxPastDays: settings?.maxPastDays ?? 30,
-      maxFutureDays: settings?.maxFutureDays ?? 90,
       createdAt: workspace.createdAt,
     };
   }
 
-  private formatMember(member: MemberWithRoles) {
-    const roleSlugs = member.assignedRoles.map((ar) => ar.role.slug);
+  // This product's view of a member: only its roles and their permissions. Roles the
+  // member holds in other products of the platform are not shown here.
+  private formatMember(member: MemberWithRoles, productId: string) {
+    const productRoles = member.assignedRoles.filter((ar) => ar.role.productId === productId);
+    const roleSlugs = productRoles.map((ar) => ar.role.slug);
 
     const permissionSet = new Set<string>();
-    for (const ar of member.assignedRoles) {
+    for (const ar of productRoles) {
       for (const rp of ar.role.rolePermissions) {
         permissionSet.add(rp.permission.action);
       }

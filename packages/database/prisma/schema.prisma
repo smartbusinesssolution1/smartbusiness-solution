@@ -301,6 +301,10 @@ model BankAccount {
   routingNumberLast4     String      @map("routing_number_last4") @db.VarChar(4)
   accountNumberEncrypted String      @map("account_number_encrypted")
   accountNumberLast4     String      @map("account_number_last4") @db.VarChar(4)
+  // HMAC of routing + account number (see src/bank-fingerprint.ts): the same real account
+  // always has the same value, so it can be refused twice although the numbers are encrypted.
+  // Null for accounts created before it existed, until the backfill script fills it.
+  accountFingerprint     String?     @map("account_fingerprint") @db.Char(64)
   accountType            AccountType @default(CHECKING) @map("account_type")
   nextCheckNumber        Int         @map("next_check_number")
   checkNumberPadding     Int         @default(6) @map("check_number_padding")
@@ -320,7 +324,12 @@ model BankAccount {
 
   checks Check[]
 
+  // One record per real account in a workspace (deleted records included, so a removed
+  // account is restored with its check numbering instead of added again from #1).
+  @@unique([workspaceId, accountFingerprint])
   @@index([workspaceId])
+  // The same account in another workspace of the same company is looked up by fingerprint.
+  @@index([accountFingerprint])
   @@map("bank_accounts")
 }
 
@@ -445,6 +454,12 @@ model Check {
   @@index([workspaceId, checkDate])
   @@index([bankAccountId])
   @@index([workspaceId, payeeName])
+  // The check register (F06): number and amount ranges, the default newest-first sort, and the
+  // outstanding / stale / aging views (status PRINTED ordered by print time).
+  @@index([workspaceId, checkNumber])
+  @@index([workspaceId, amount])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, status, printedAt])
   @@map("checks")
 }
 

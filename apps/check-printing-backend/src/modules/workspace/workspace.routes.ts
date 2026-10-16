@@ -21,6 +21,7 @@ import { payeeRouter } from "../payee/payee.route.js";
 import { checkRouter } from "../check/check.routes.js";
 import { approvalRuleRouter } from "../approval-rule/approval-rule.routes.js";
 import { calibrationRouter } from "../calibration/calibration.routes.js";
+import { checkPrintingSettingsRouter } from "../check-printing-settings/check-printing-settings.routes.js";
 
 // ─── Composition Root ──────────────────────────────────────────
 
@@ -111,5 +112,7 @@ router.use("/:wid/checks", workspaceMiddleware, checkRouter);
 router.use("/:wid/approval-rules", workspaceMiddleware, approvalRuleRouter);
 
 router.use("/:wid/calibration", workspaceMiddleware, calibrationRouter);
+
+router.use("/:wid/check-printing-settings", workspaceMiddleware, checkPrintingSettingsRouter);
 
 export default router;

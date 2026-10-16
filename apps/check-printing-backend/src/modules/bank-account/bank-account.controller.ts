@@ -65,6 +65,15 @@ export class BankAccountController {
     sendNoContent(res);
   };
 
+  restore = async (req: Request, res: Response): Promise<void> => {
+    const account = await this.bankAccountService.restoreBankAccount(
+      req.params.bid as string,
+      req.params.wid as string,
+      this.auditCtx(req),
+    );
+    sendSuccess(res, account);
+  };
+
   uploadSignature = async (req: Request, res: Response): Promise<void> => {
     const account = await this.bankAccountService.uploadSignature(
       req.params.bid as string,

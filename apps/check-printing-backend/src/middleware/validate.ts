@@ -10,7 +10,7 @@ export function validate(schema: z.ZodType, target: ValidationTarget = "body") {
         const result = schema.safeParse(req[target]);
 
         if (!result.success) {
-            const fieldErrors = z.flattenError(result.error).fieldErrors;
+            const { fieldErrors, formErrors } = z.flattenError(result.error);
 
             const formattedErrors: Record<string, string[]> = {};
 
@@ -18,6 +18,11 @@ export function validate(schema: z.ZodType, target: ValidationTarget = "body") {
                 if (Array.isArray(messages)) {
                     formattedErrors[field] = messages
                 }
+            }
+
+            // Errors about the request as a whole (e.g. an unknown filter name) have no field.
+            if (formErrors.length > 0) {
+                formattedErrors._errors = formErrors;
             }
 
             throw new ValidationError("Validation Failed", formattedErrors);

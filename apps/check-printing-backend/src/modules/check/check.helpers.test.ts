@@ -104,6 +104,9 @@ describe("status transitions", () => {
   const allowed: Array<[string, string]> = [
     ["NEW", "PENDING_APPROVAL"],
     ["NEW", "APPROVED"],
+    // R-03: a draft that needs no approval (workflow off, or no rule matches) prints directly;
+    // the service decides at print time whether approval is needed.
+    ["NEW", "PRINTED"],
     ["PENDING_APPROVAL", "APPROVED"],
     ["PENDING_APPROVAL", "REJECTED"],
     ["PENDING_APPROVAL", "VOID"],

@@ -16,6 +16,9 @@
     "db:migrate:reset": "prisma migrate reset",
     "db:push": "prisma db push",
     "db:seed": "prisma db seed",
+    "test": "tsx --test prisma/seed-guard.test.ts src/bank-fingerprint.test.ts",
+    "test:seed": "tsx --test --test-concurrency=1 prisma/seed.e2e.test.ts prisma/backfill-bank-fingerprints.e2e.test.ts",
+    "backfill:bank-fingerprints": "tsx prisma/backfill-bank-fingerprints.ts",
     "db:studio": "prisma studio"
   },
   "exports": {

@@ -14,7 +14,9 @@ import { ValidationError } from "../../shared/errors/index.js";
 //                             │         ↓                                ↓
 //                             │      REJECTED ──→ (back to PENDING)    VOID ──→ (reissue creates new check)
 //                             │
-//                             └──→ PRINTED (if no approval required)
+//                             └──→ PRINTED (if no approval required: workflow off, or no active
+//                                           rule matches the amount; CheckService.printCheck
+//                                           decides this at print time)
 //
 // Terminal states: CLEARED and VOID. Once a check reaches these,
 // no further transitions are possible.
@@ -37,7 +39,7 @@ type CheckStatus =
 // Any check that has a number but is not finished can be voided, so none gets stuck.
 // NEW drafts are deleted instead; CLEARED and VOID are final.
 const ALLOWED_TRANSITIONS: Record<CheckStatus, CheckStatus[]> = {
-  NEW: ["PENDING_APPROVAL", "APPROVED"],
+  NEW: ["PENDING_APPROVAL", "APPROVED", "PRINTED"],
   PENDING_APPROVAL: ["APPROVED", "REJECTED", "VOID"],
   APPROVED: ["PRINTED", "VOID"],
   REJECTED: ["PENDING_APPROVAL", "VOID"],

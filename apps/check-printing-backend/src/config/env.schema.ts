@@ -8,6 +8,21 @@ import { z } from "zod"
 
 const HEX_KEY = /^[0-9a-fA-F]{64}$/;
 
+// "https://app.example.com" or "https://app.example.com/" → "https://app.example.com".
+// Anything with a path, query, credentials or a scheme other than http(s) → null.
+function toOrigin(entry: string): string | null {
+    let url: URL;
+    try {
+        url = new URL(entry);
+    } catch {
+        return null;
+    }
+    const isOriginOnly =
+        (url.protocol === "http:" || url.protocol === "https:") &&
+        url.pathname === "/" && !url.search && !url.hash && !url.username && !url.password;
+    return isOriginOnly ? url.origin : null;
+}
+
 export const envSchema = z.object({
     NODE_ENV: z
         .enum(["development", "test", "staging", "production"])
@@ -46,9 +61,38 @@ export const envSchema = z.object({
         .default("100")
         .transform((val) => parseInt(val, 10)),
 
-    CORS_ORIGIN: z.string().default("http://localhost:5173"),
+    // The frontends allowed to call this API from a browser, comma-separated (the platform
+    // has several: this product's app, the customer portal). Requests carry login cookies,
+    // so every entry must be an exact origin we own; "*" is refused.
+    CORS_ORIGIN: z
+        .string()
+        .default("http://localhost:5173")
+        .transform((value, ctx) => {
+            const entries = value.split(",").map((s) => s.trim()).filter(Boolean);
+            if (entries.length === 0) {
+                ctx.addIssue({ code: "custom", message: "CORS_ORIGIN must list at least one origin" });
+                return z.NEVER;
+            }
+            const origins: string[] = [];
+            for (const entry of entries) {
+                const origin = toOrigin(entry);
+                if (!origin) {
+                    ctx.addIssue({
+                        code: "custom",
+                        message: `"${entry}" is not an origin: use scheme://host[:port], e.g. https://checks.example.com`,
+                    });
+                    continue;
+                }
+                origins.push(origin);
+            }
+            return origins;
+        }),
 
-    ENCRYPTION_KEY: z.string().min(64, { error: "encryption key must be a 64 character string." }),
+    // Decrypts every stored bank account number: an AES-256 key is exactly 32 bytes, i.e. 64 hex
+    // characters. Anything else used to pass startup and only fail on the first bank operation.
+    ENCRYPTION_KEY: z
+        .string({ error: "ENCRYPTION_KEY is required" })
+        .regex(HEX_KEY, "ENCRYPTION_KEY must be exactly 64 hex characters (0-9, a-f)"),
 
     E13B_FONT_PATH: z
         .string()
