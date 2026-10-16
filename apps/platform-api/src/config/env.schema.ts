@@ -41,10 +41,17 @@ export const envSchema = z
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(1)),
 
-  // Sign-in, sign-up and refresh attempts per IP per 15 minutes (brute-force protection).
+  // Sign-in, sign-up and password-reset attempts per IP per 15 minutes (brute-force protection).
   AUTH_RATE_LIMIT_MAX: z
     .string()
     .default("10")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1)),
+  // Session refreshes per IP per 15 minutes: a separate budget, so routine refreshes never
+  // use up the sign-in attempts above.
+  REFRESH_RATE_LIMIT_MAX: z
+    .string()
+    .default("300")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(1)),
 

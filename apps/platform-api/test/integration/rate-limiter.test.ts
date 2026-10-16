@@ -21,4 +21,25 @@ describe("auth rate limiter", () => {
     expect(blocked.body.error.code).toBe("RATE_LIMIT_EXCEEDED");
     expect(blocked.headers["retry-after"]).toBeDefined();
   });
+
+  it("session refreshes have their own budget and never use up sign-in attempts", async () => {
+    // The real app refreshes on every visit after the access token expires; with one
+    // shared counter, a few page loads locked people out of signing in.
+    const app = express();
+    const signIn = createAuthRateLimiter(3);
+    const refresh = createAuthRateLimiter(50);
+    app.post("/login", signIn, (_req, res) => { res.json({ ok: true }); });
+    app.post("/refresh", refresh, (_req, res) => { res.json({ ok: true }); });
+
+    for (let i = 0; i < 20; i++) {
+      expect((await request(app).post("/refresh")).status).toBe(200);
+    }
+    expect((await request(app).post("/login")).status).toBe(200);
+  });
+
+  it("the auth routes use the separate refresh limiter for /refresh", async () => {
+    const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../../src/modules/auth/auth.routes.ts", import.meta.url), "utf8"));
+    expect(source).toMatch(/router\.post\("\/refresh", refreshRateLimiter,/);
+    expect(source).toMatch(/router\.post\(\s*"\/login",\s*authRateLimiter,/);
+  });
 });

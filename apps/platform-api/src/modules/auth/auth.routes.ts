@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { authRateLimiter } from "../../middleware/rate-limiter.js";
+import { authRateLimiter, refreshRateLimiter } from "../../middleware/rate-limiter.js";
 import { validate } from "../../middleware/validate.js";
 import { forgotPasswordSchema, loginSchema, registerSchema, resetPasswordSchema } from "./auth.schema.js";
 import { authController, authMiddleware } from "./auth.module.js";
@@ -21,7 +21,7 @@ router.post(
   validate(loginSchema),
   authController.login,
 );
-router.post("/refresh", authRateLimiter, authController.refresh);
+router.post("/refresh", refreshRateLimiter, authController.refresh);
 router.post("/forgot-password", authRateLimiter, validate(forgotPasswordSchema), authController.forgotPassword);
 router.post("/reset-password", authRateLimiter, validate(resetPasswordSchema), authController.resetPassword);
 

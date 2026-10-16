@@ -59,6 +59,7 @@ export const jobs = {
 export const rateLimits = {
   globalPerMinute: config.RATE_LIMIT_MAX,
   authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,
+  refreshPer15Minutes: config.REFRESH_RATE_LIMIT_MAX,
 } as const;
 
 export const cors = {

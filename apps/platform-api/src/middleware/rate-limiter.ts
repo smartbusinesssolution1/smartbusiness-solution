@@ -37,3 +37,9 @@ export function createAuthRateLimiter(limit: number) {
 
 export const globalRateLimiter = createGlobalRateLimiter(rateLimits.globalPerMinute);
 export const authRateLimiter = createAuthRateLimiter(rateLimits.authPer15Minutes);
+
+// Session refresh has its own counter. The app refreshes on every visit after the 15-minute
+// access token expires; sharing the sign-in budget would let ordinary page loads (or a whole
+// office behind one IP) lock people out of signing in. A refresh token is 256 random bits,
+// so this limit only stops floods, not guessing.
+export const refreshRateLimiter = createAuthRateLimiter(rateLimits.refreshPer15Minutes);
