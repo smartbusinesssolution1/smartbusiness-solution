@@ -1,5 +1,0 @@
-/* 
- * App-specific styles only.
- * Shared design tokens are imported via index.css → @smartbusiness/tailwind-config
- * Do NOT re-import the shared config here — it causes duplicate CSS generation.
- */
