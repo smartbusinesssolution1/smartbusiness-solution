@@ -43,22 +43,3 @@ yarn-error.log*
 
 # project-docs
 project-docs/
-
-
-.agents
-
-PROJECT_KNOWLEDGE.md 
-STRICT_GUIDELINES.md 
-
-# project-context-docs
-ATTENDANCE_API_ENDPOINTS.md 
-CHECKPOINT_BACKEND_REVIEW.md
-
-
-apps/clockInClockOut-backend/README.md
-apps/clockInClockOut-frontend/README.md
-apps/portal-website/README.md
-apps/smartbusiness/README.md
-apps/smartbusiness-client/README.md
-apps/smartbusiness-admin/README.md
-apps/smartbusiness-portal/README.md
