@@ -121,6 +121,7 @@ export const EmployeeList: React.FC = () => {
         workspaceId: activeWorkspaceId || undefined,
       }),
     enabled: Boolean(user && activeWorkspaceId),
+    refetchOnMount: 'always',
   });
 
   // Filter out self user as an extra guarantee (also excluded on the backend)
@@ -149,8 +150,8 @@ export const EmployeeList: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => employeeService.deleteEmployee(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminEmployees'] });
-      queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'] });
+      queryClient.invalidateQueries({ queryKey: ['adminEmployees'], refetchType: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'], refetchType: 'all' });
       setSnackbar({
         open: true,
         message: 'Employee record deleted successfully.',
@@ -207,7 +208,7 @@ export const EmployeeList: React.FC = () => {
           onClick={() => navigate('/admin/employees/new')}
           sx={{ borderRadius: 2, py: 1, px: 2.5 }}
         >
-          Add Employee
+          Add
         </Button>
       </Box>
 
@@ -403,14 +404,14 @@ export const EmployeeList: React.FC = () => {
                                 <EditIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
-                            
+
                             <Tooltip
                               title={
                                 emp.id === user?.id
                                   ? "Cannot delete your own account"
                                   : emp.role === 'admin' && !isOwner
-                                  ? "Only organization owners can delete administrator accounts"
-                                  : "Delete Employee"
+                                    ? "Only organization owners can delete administrator accounts"
+                                    : "Delete Employee"
                               }
                             >
                               <span>

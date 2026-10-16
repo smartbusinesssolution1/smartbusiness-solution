@@ -196,10 +196,12 @@ export const EditEmployee: React.FC = () => {
   // Update Mutation
   const updateMutation = useMutation({
     mutationFn: (formData: FormData) => employeeService.updateEmployee(id || '', formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminEmployees'] });
-      queryClient.invalidateQueries({ queryKey: ['adminEmployee', id] });
-      queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['adminEmployees'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['adminEmployee', id] }),
+        queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'], refetchType: 'all' }),
+      ]);
       navigate('/admin/employees');
     },
     onError: (err: any) => {

@@ -16,7 +16,7 @@ export const globalRateLimiter = rateLimit({
 
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 10,
+  limit: process.env.NODE_ENV === "development" ? 1000 : 10,
   message: {
     success: false,
     error: {
@@ -26,3 +26,4 @@ export const authRateLimiter = rateLimit({
     },
   },
 });
+

@@ -37,4 +37,10 @@ export const env = {
     },
 
     portalLoginUrl: parsedEnv.PORTAL_LOGIN_URL,
+    aws: {
+        region: parsedEnv.AWS_REGION,
+        accessKeyId: parsedEnv.AWS_ACCESS_KEY_ID,
+        secretAccessKey: parsedEnv.AWS_SECRET_ACCESS_KEY,
+        bucketName: parsedEnv.AWS_S3_BUCKET_NAME,
+    },
 } as const;

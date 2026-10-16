@@ -83,6 +83,12 @@ export const envSchema = z.object({
     SMTP_PASS: z.string().optional(),
     SMTP_FROM: z.string().optional(),
     PORTAL_LOGIN_URL: z.string().default("http://localhost:5173/login"),
+
+    // AWS S3
+    AWS_REGION: z.string().default("us-east-1"),
+    AWS_ACCESS_KEY_ID: z.string().optional(),
+    AWS_SECRET_ACCESS_KEY: z.string().optional(),
+    AWS_S3_BUCKET_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

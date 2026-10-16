@@ -128,6 +128,8 @@ export const AdminDashboard: React.FC = () => {
     queryKey: ['adminDashboardMetrics', activeWorkspaceId],
     queryFn: () => attendanceService.getAdminDashboardMetrics(activeWorkspaceId || undefined),
     enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 60_000,
+    gcTime: 300_000,
   });
 
   // Fetch recent attendance logs for real-time pulse stream
@@ -139,6 +141,8 @@ export const AdminDashboard: React.FC = () => {
     queryKey: ['adminAttendanceStream', activeWorkspaceId],
     queryFn: () => attendanceService.getAllAttendance({ workspaceId: activeWorkspaceId || undefined }),
     enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   // Fetch employees directory to support dynamic department analytics
@@ -150,6 +154,8 @@ export const AdminDashboard: React.FC = () => {
     queryKey: ['adminEmployeesList', activeWorkspaceId],
     queryFn: () => employeeService.getEmployees({ workspaceId: activeWorkspaceId || undefined }),
     enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 60_000,
+    gcTime: 300_000,
   });
 
   const employees: User[] = useMemo(() => {

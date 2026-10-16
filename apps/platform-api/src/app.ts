@@ -18,12 +18,20 @@ export function createApp(): Express {
 
   app.use(
     corsMiddleware({
-      origin: corsConfig.origin,
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (
+          origin === corsConfig.origin ||
+          /^http:\/\/(localhost|127\.0\.0\.1):(5173|5174|3000|3001)$/.test(origin)
+        ) {
+          return callback(null, true);
+        }
+        return callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
-      methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id"],
     }),
-
   );
 
   app.use(

@@ -3,6 +3,8 @@ import { env } from "./config/index.js"
 import { prisma } from "@smartbusiness/database"
 import { logger } from "./shared/services/logger.js"
 
+// Reload trigger: S3 storage active - Mumbai ap-south-1
+
 async function startServer() {
     try {
         logger.info("Connecting to Database...")
@@ -13,7 +15,39 @@ async function startServer() {
 
         // Start Server
         const server = app.listen(env.server.port, () => {
-            logger.info({ port: env.server.port, environment: env.server.nodeEnv }, "Server started" )
+            logger.info({ port: env.server.port, environment: env.server.nodeEnv }, "Server started" );
+
+            // Pre-warm caches in background so admin users experience instant 1ms response on first load
+            setTimeout(async () => {
+                try {
+                    const { AdminAttendanceRepository } = await import("./modules/admin/attendance/admin-attendance.repository.js");
+                    const { AdminAttendanceService } = await import("./modules/admin/attendance/admin-attendance.service.js");
+                    const repo = new AdminAttendanceRepository();
+                    const service = new AdminAttendanceService(repo);
+
+                    const activeTenants = await prisma.tenant.findMany({
+                        where: { status: "ACTIVE" },
+                        select: { id: true },
+                        take: 5,
+                    });
+                    for (const t of activeTenants) {
+                        await service.getSummary(t.id);
+                    }
+                    logger.info("Admin cache pre-warming completed");
+                } catch (err) {
+                    logger.warn({ err }, "Cache pre-warm skipped");
+                }
+            }, 100);
+
+            // Keep Neon serverless PostgreSQL connection pool awake
+            const dbKeepAlive = setInterval(async () => {
+                try {
+                    await prisma.$queryRaw`SELECT 1`;
+                } catch {
+                    // non-fatal keepalive
+                }
+            }, 45000);
+            dbKeepAlive.unref();
         })
 
         // Graceful Shutdown

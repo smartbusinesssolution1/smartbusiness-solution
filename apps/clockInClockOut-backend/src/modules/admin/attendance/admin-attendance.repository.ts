@@ -129,23 +129,19 @@ export class AdminAttendanceRepository {
       },
     });
 
-    const existingRecords = await prisma.attendanceRecord.findMany({
-      where: {
-        employee: {
-          deletedAt: null,
-          workspaceMember: {
-            deletedAt: null,
-            workspace: {
-              tenantId,
-              deletedAt: null,
-              ...(workspaceId ? { id: workspaceId } : {}),
+    const activeEmpIds = activeEmployees.map((e) => e.id);
+
+    const existingRecords =
+      activeEmpIds.length > 0
+        ? await prisma.attendanceRecord.findMany({
+            where: {
+              employeeId: { in: activeEmpIds },
+              clockInDate: targetDateObj,
             },
-          },
-        },
-        clockInDate: targetDateObj,
-      },
-      select: { employeeId: true },
-    });
+            select: { employeeId: true },
+          })
+        : [];
+
 
     const recordedEmpIds = new Set(existingRecords.map((r) => r.employeeId));
     let missingEmployees = activeEmployees.filter((emp) => !recordedEmpIds.has(emp.id));
@@ -200,50 +196,44 @@ export class AdminAttendanceRepository {
     }
 
     if (query.date && syntheticAbsents.length > 0) {
-      const [dbItems, dbSummaryRecords] = await Promise.all([
-        prisma.attendanceRecord.findMany({
-          where,
-          include: {
-            employee: {
-              include: {
-                workspaceMember: {
-                  include: {
-                    user: {
-                      select: {
-                        id: true,
-                        fullName: true,
-                        email: true,
-                      },
+      const dbItems = await prisma.attendanceRecord.findMany({
+        where,
+        include: {
+          employee: {
+            include: {
+              workspaceMember: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      fullName: true,
+                      email: true,
                     },
-                    workspace: {
-                      select: {
-                        id: true,
-                        businessName: true,
-                      },
+                  },
+                  workspace: {
+                    select: {
+                      id: true,
+                      businessName: true,
                     },
                   },
                 },
               },
             },
           },
-          orderBy: [{ clockInDate: "desc" }, { clockInTime: "desc" }],
-        }),
-        prisma.attendanceRecord.findMany({
-          where,
-          select: {
-            status: true,
-            workingHours: true,
-            clockInTime: true,
-            clockOutTime: true,
-          },
-        }),
-      ]);
+        },
+        orderBy: [{ clockInDate: "desc" }, { clockInTime: "desc" }],
+      });
 
       const allItems = [...dbItems, ...syntheticAbsents];
       const total = allItems.length;
       const paginatedItems = allItems.slice(skip, skip + take);
       const allSummaryRecords = [
-        ...dbSummaryRecords,
+        ...dbItems.map((r) => ({
+          status: r.status,
+          workingHours: r.workingHours,
+          clockInTime: r.clockInTime,
+          clockOutTime: r.clockOutTime,
+        })),
         ...syntheticAbsents.map((s) => ({
           status: s.status,
           workingHours: s.workingHours,
@@ -400,52 +390,47 @@ export class AdminAttendanceRepository {
     const minDate = new Date(`${minDateStr}T00:00:00.000Z`);
     const maxDate = new Date(`${maxDateStr}T23:59:59.999Z`);
 
-    // 2. Query active employees and attendance records concurrently
-    const [activeEmployees, weeklyRecords] = await Promise.all([
-      prisma.attendanceEmployeeDetails.findMany({
-        where: {
+    // 2. Query active employees and attendance records using direct composite index lookups
+    const activeEmployees = await prisma.attendanceEmployeeDetails.findMany({
+      where: {
+        deletedAt: null,
+        isActive: true,
+        workspaceMember: {
           deletedAt: null,
-          isActive: true,
-          workspaceMember: {
+          workspace: {
+            tenantId,
             deletedAt: null,
-            workspace: {
-              tenantId,
-              deletedAt: null,
-              ...(workspaceId ? { id: workspaceId } : {}),
-            },
+            ...(workspaceId ? { id: workspaceId } : {}),
           },
         },
-        select: {
-          id: true,
-          department: true,
-        },
-      }),
-      prisma.attendanceRecord.findMany({
-        where: {
-          employee: {
-            deletedAt: null,
-            workspaceMember: {
-              deletedAt: null,
-              workspace: {
-                tenantId,
-                deletedAt: null,
-                ...(workspaceId ? { id: workspaceId } : {}),
+      },
+      select: {
+        id: true,
+        department: true,
+      },
+    });
+
+    const activeEmpIds = activeEmployees.map((e) => e.id);
+
+    const weeklyRecords =
+      activeEmpIds.length > 0
+        ? await prisma.attendanceRecord.findMany({
+            where: {
+              employeeId: { in: activeEmpIds },
+              clockInDate: {
+                gte: minDate,
+                lte: maxDate,
               },
             },
-          },
-          clockInDate: {
-            gte: minDate,
-            lte: maxDate,
-          },
-        },
-        select: {
-          id: true,
-          clockInDate: true,
-          status: true,
-          employeeId: true,
-        },
-      }),
-    ]);
+            select: {
+              id: true,
+              clockInDate: true,
+              status: true,
+              employeeId: true,
+            },
+          })
+        : [];
+
 
     const totalEmployees = activeEmployees.length;
 

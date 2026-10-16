@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import { envSchema, type Env } from "./env.schema.js";
 
 function parseEnv(): Env {

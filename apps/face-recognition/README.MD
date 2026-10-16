@@ -1,7 +1,14 @@
 # Face Recognition API
 
-A FastAPI-based identity verification service for dating apps.
+A FastAPI-based identity verification service for attendance and identity validation.
 Compares reference photos against multiple selfie angles to confirm it's the same person using **Facenet** + **RetinaFace**.
+
+---
+
+## 🧭 Navigation
+- ⬅️ [Monorepo Master Index (README.md)](../../README.md)
+- ⚙️ [Attendance Backend Integration (`clockInClockOut-backend`)](../clockInClockOut-backend/README.md)
+- 📋 [Attendance REST API Specification](../clockInClockOut-backend/ATTENDANCE_API_ENDPOINTS.md)
 
 ---
 

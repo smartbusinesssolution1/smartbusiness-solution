@@ -113,6 +113,7 @@ model TenantMember {
   @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
+  @@index([tenantId, userId, deletedAt])
   @@map("tenant_members")
 }
 
@@ -153,6 +154,7 @@ model ProductSubscription {
 
   @@unique([tenantId, productId])
   @@index([tenantId])
+  @@index([tenantId, status])
   @@map("product_subscriptions")
 }
 
@@ -638,6 +640,7 @@ model AttendanceEmployeeDetails {
 
   @@index([workspaceMemberId])
   @@index([deletedAt])
+  @@index([workspaceMemberId, isActive, deletedAt])
   @@map("employees")
 }
 
@@ -670,5 +673,8 @@ model AttendanceRecord {
 
   @@index([employeeId])
   @@index([clockInDate])
+  @@index([employeeId, clockInDate])
+  @@index([clockInDate, status])
+  @@index([clockInDate(sort: Desc), clockInTime(sort: Desc)])
   @@map("attendance_records")
 }

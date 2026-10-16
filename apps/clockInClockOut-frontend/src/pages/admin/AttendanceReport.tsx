@@ -90,6 +90,9 @@ export const AttendanceReport: React.FC = () => {
         workspaceId: activeWorkspaceId || undefined,
       }),
     enabled: Boolean(user && activeWorkspaceId),
+    placeholderData: (previousData) => previousData,
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 
   const records = reportData?.items || [];

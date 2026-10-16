@@ -168,9 +168,11 @@ export const CreateEmployee: React.FC = () => {
   // Create Mutation
   const mutation = useMutation({
     mutationFn: (formData: FormData) => employeeService.createEmployee(formData),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['adminEmployees'] });
-      queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['adminEmployees'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'], refetchType: 'all' }),
+      ]);
       navigate('/admin/employees');
     },
     onError: (err: any) => {
@@ -251,7 +253,7 @@ export const CreateEmployee: React.FC = () => {
       {/* Header */}
       <Box sx={{ mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 800 }}>
-          Onboard New Employee
+          Onboard Member
         </Typography>
         <Typography variant="body2" color="text.secondary">
           Register a new corporate identity, assign departments, roles, and setup baseline permissions.

@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 import PDFDocument from "pdfkit";
 import { UPLOADS_DIR } from "../../../shared/utils/uploadDir.js";
 import { AdminAttendanceRepository } from "./admin-attendance.repository.js";
+import { memoryCache } from "../../../shared/services/cache.service.js";
 import type {
   AdminAttendanceQueryInput,
   AdminAttendanceExportInput,
@@ -82,6 +83,12 @@ export class AdminAttendanceService {
    * Fetch paginated attendance records and aggregated report metrics
    */
   async getAttendanceReport(tenantId: string, query: AdminAttendanceQueryInput) {
+    const cacheKey = `admin:report:${tenantId}:${query.workspaceId || "all"}:${query.page}:${query.limit}:${query.date || ""}:${query.startDate || ""}:${query.endDate || ""}:${query.status || ""}:${(query.search || "").trim()}`;
+    const cached = memoryCache.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const { items, total, allSummaryRecords, page, limit, totalPages } =
       await this.repo.findAttendanceRecords(tenantId, query);
 
@@ -139,7 +146,7 @@ export class AdminAttendanceService {
       absentCount,
     };
 
-    return {
+    const responsePayload = {
       items: formattedItems,
       pagination: {
         total,
@@ -149,13 +156,24 @@ export class AdminAttendanceService {
       },
       summary,
     };
+
+    memoryCache.set(cacheKey, responsePayload, 30);
+    return responsePayload;
   }
 
   /**
    * Fetch quick summary metrics for organization
    */
   async getSummary(tenantId: string, workspaceId?: string) {
-    return this.repo.getSummaryMetrics(tenantId, workspaceId);
+    const cacheKey = `admin:summary:${tenantId}:${workspaceId || "all"}`;
+    const cached = memoryCache.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const data = await this.repo.getSummaryMetrics(tenantId, workspaceId);
+    memoryCache.set(cacheKey, data, 60);
+    return data;
   }
 
   /**

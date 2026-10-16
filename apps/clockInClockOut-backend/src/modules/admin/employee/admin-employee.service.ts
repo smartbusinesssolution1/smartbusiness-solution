@@ -4,12 +4,15 @@ import { PasswordService } from "@smartbusiness/auth";
 import { AdminEmployeeRepository } from "./admin-employee.repository.js";
 import { NotFoundError, ValidationError, AppError, ForbiddenError } from "../../../shared/errors/index.js";
 import { emailService } from "../../../shared/services/email.service.js";
+import { memoryCache } from "../../../shared/services/cache.service.js";
+import { storageService } from "../../../shared/services/storage.service.js";
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
   EmployeeListQueryInput,
   DayShiftConfig,
 } from "./admin-employee.schema.js";
+
 
 /**
  * Builds standard 7-day schedule array (Mon-Fri work, Sat-Sun off)
@@ -196,7 +199,10 @@ export class AdminEmployeeService {
       throw new ValidationError("Corporate portrait photograph is mandatory for biometric face registration.");
     }
 
-    const biometricPhotoUrl = `/uploads/avatars/${avatarFile.filename}`;
+    const { url: biometricPhotoUrl } = await storageService.uploadAvatar({
+      tenantId,
+      file: avatarFile,
+    });
 
     // 3. Determine employee code (user-provided or smart sequential e.g. EMP-GA004...)
     const employeeCode = await this.determineEmployeeCode(tenantId, workspaceId, input.employeeId);
@@ -253,6 +259,10 @@ export class AdminEmployeeService {
       console.error("[AdminEmployeeService] Failed to dispatch welcome email:", emailErr);
     }
 
+    // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+
     return this.formatEmployeeDto(newEmployee);
   }
 
@@ -293,7 +303,12 @@ export class AdminEmployeeService {
 
     let newAvatarUrl: string | undefined;
     if (avatarFile) {
-      newAvatarUrl = `/uploads/avatars/${avatarFile.filename}`;
+      const uploadRes = await storageService.uploadAvatar({ tenantId, file: avatarFile });
+      newAvatarUrl = uploadRes.url;
+      // Clean up previous avatar if it exists
+      if (existing.biometricPhotoUrl) {
+        await storageService.deleteAvatar(existing.biometricPhotoUrl);
+      }
     }
 
     // If shiftType is set to general and no custom schedule is provided, populate organization general schedule
@@ -317,6 +332,10 @@ export class AdminEmployeeService {
       throw new NotFoundError("Employee");
     }
 
+    // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+
     return this.formatEmployeeDto(updated);
   }
 
@@ -335,6 +354,16 @@ export class AdminEmployeeService {
     }
 
     await this.employeeRepo.deleteEmployee(employeeId, tenantId);
+
+    // Clean up avatar image
+    if (existing.biometricPhotoUrl) {
+      await storageService.deleteAvatar(existing.biometricPhotoUrl);
+    }
+
+    // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+
     return { success: true, message: "Employee profile removed successfully." };
   }
 }
