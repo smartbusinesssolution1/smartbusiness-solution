@@ -86,6 +86,7 @@ export async function workspaceMiddleware(
       permissionSet.add(rp.permission.action);
     }
   }
+  req.roles = membership.assignedRoles.map((ar) => ar.role.slug);
   req.permissions = [...permissionSet];
 
   next();

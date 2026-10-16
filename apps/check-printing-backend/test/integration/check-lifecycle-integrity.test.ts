@@ -48,6 +48,10 @@ describe("draft edits and deletes", () => {
 
   it("an edit racing a submit never changes a submitted check", async () => {
     const checkId = await createDraft();
+    // Submitting only makes sense when the check needs approval (a check no rule covers is
+    // refused: no approver would ever see it). Turn approval on after the draft exists.
+    await prisma.checkPrintingSettings.update({ where: { workspaceId: world.workspaceId }, data: { approvalEnabled: true } });
+    await createApprovalRule(world, { minAmount: 0, approvers: [world.approver1] });
     const editor = checksApi(world, world.editor);
     const original = await prisma.check.findUniqueOrThrow({ where: { id: checkId } });
 

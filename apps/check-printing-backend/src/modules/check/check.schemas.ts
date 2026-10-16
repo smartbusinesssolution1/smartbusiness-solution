@@ -72,6 +72,9 @@ export const createCheckSchema = z.object({
   memo: memoSchema.optional(),
   invoiceItems: z.array(invoiceItemSchema).max(50).optional(),
   idempotencyKey: z.string().uuid().optional(),
+  // Keep the check as a draft (NEW) even when it needs approval, so its creator can
+  // attach invoices before submitting it. Attachments freeze on submission.
+  saveAsDraft: z.boolean().optional(),
 });
 
 export type CreateCheckInput = z.infer<typeof createCheckSchema>;

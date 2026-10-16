@@ -51,7 +51,12 @@ export class WorkspaceController {
       req.params.wid as string,
       req.tenant!.tenantId,
     );
-    sendSuccess(res, workspace);
+    // What the caller may do here, so the app shows only the actions they can take.
+    // Members without member:view cannot read the members list to find this out.
+    sendSuccess(res, {
+      ...workspace,
+      myAccess: { roles: req.roles ?? [], permissions: req.permissions ?? [] },
+    });
   };
 
   update = async (req: Request, res: Response): Promise<void> => {

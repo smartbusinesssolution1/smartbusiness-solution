@@ -99,11 +99,13 @@ export class CheckService {
 
     const words = amountToWords(input.amount);
 
-    const initialStatus = await this.determineInitialStatus(
+    const routedStatus = await this.determineInitialStatus(
       workspaceId,
       input.amount,
       settings.approvalEnabled,
     );
+    // A draft waits for its creator to submit it (after attaching invoices).
+    const initialStatus: CheckStatus = input.saveAsDraft ? "NEW" : routedStatus;
 
     const check = await this.checkRepository.createWithAtomicNumber(
       {
@@ -134,12 +136,13 @@ export class CheckService {
         amount: input.amount,
         payeeName: input.payeeName,
         initialStatus,
+        savedAsDraft: Boolean(input.saveAsDraft),
         bankAccountId: input.bankAccountId,
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatCheck(check);
+    return this.withApprovalRequirement(this.formatCheck(check), workspaceId);
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -151,7 +154,20 @@ export class CheckService {
     if (!check) {
       throw new NotFoundError("Check");
     }
-    return this.formatCheck(check);
+    return this.withApprovalRequirement(this.formatCheck(check), workspaceId);
+  }
+
+  // For a NEW check: does its amount need approval before it can be printed? The app shows
+  // "Submit for approval" or "Print" from this. null for every other status.
+  private async withApprovalRequirement<T extends { status: string; amount: string }>(check: T, workspaceId: string) {
+    if (check.status !== "NEW") return { ...check, approvalRequired: null };
+    return { ...check, approvalRequired: await this.needsApproval(workspaceId, Number(check.amount)) };
+  }
+
+  private async needsApproval(workspaceId: string, amount: number): Promise<boolean> {
+    const settings = await this.settingsService.forWorkspace(workspaceId);
+    if (!settings.approvalEnabled) return false;
+    return (await this.findMatchingRule(workspaceId, amount)) !== null;
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -306,7 +322,7 @@ export class CheckService {
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatCheck(updated);
+    return this.withApprovalRequirement(this.formatCheck(updated), workspaceId);
   }
 
   // ═════════════════════════════════════════════════════════════
@@ -330,6 +346,16 @@ export class CheckService {
     }
 
     assertTransition(check.status, "PENDING_APPROVAL");
+
+    // No rule covers this amount, so no approver would ever see it in their queue: it
+    // would wait forever. It can be printed as it is.
+    if (!(await this.needsApproval(workspaceId, Number(check.amount)))) {
+      throw new AppError(
+        `Check #${check.checkNumber} doesn't need approval, so it can't wait for one. Print it directly.`,
+        409,
+        "APPROVAL_NOT_REQUIRED",
+      );
+    }
 
     const updated = await this.checkRepository.updateStatus(
       checkId,
@@ -690,8 +716,14 @@ export class CheckService {
       verticalOffsetPts: printer.verticalOffsetPts,
       signatureImage: await this.loadSignature(bankAccount.signatureStorageKey),
       template: templateForPrinter({ ...printer, position: position ?? undefined }),
-      invoiceItems: check.invoiceTableJson as
-        Array<{ description: string; amount: string }> | null,
+      // The API stores line amounts as JSON numbers (older rows may hold strings); the PDF
+      // prints them as "1650.00", so normalise here rather than trust the stored type.
+      invoiceItems: Array.isArray(check.invoiceTableJson)
+        ? (check.invoiceTableJson as Array<{ description: string; amount: number | string }>).map((item) => ({
+            description: String(item.description ?? ""),
+            amount: Number(item.amount).toFixed(2),
+          }))
+        : null,
     };
 
     const stored = await this.pdfService.generateCheckPdf(

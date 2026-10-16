@@ -25,6 +25,8 @@ declare namespace Express {
       businessName: string;
     };
 
+    // This product's roles and permissions in the workspace (set by workspaceMiddleware)
+    roles?: string[];
     permissions?: string[];
   }
 }
