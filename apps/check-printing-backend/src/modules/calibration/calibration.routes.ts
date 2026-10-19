@@ -10,6 +10,7 @@ import { CalibrationService } from "./calibration.service.js";
 import { CalibrationController } from "./calibration.controller.js";
 import {
   adjustmentSchema,
+  copyCalibrationSchema,
   createCalibrationSchema,
   testPageQuerySchema,
   updateCalibrationSchema,
@@ -49,6 +50,10 @@ calibrationRouter.put(
 );
 
 calibrationRouter.patch("/:id/default", controller.setDefault);
+
+// A second profile for the same printer and paper size, for other check paper:
+// the calibration is reused, the copy is verified on its own paper.
+calibrationRouter.post("/:id/copy", validate(copyCalibrationSchema), controller.copy);
 
 // Verification: print a VOID sample check with this profile, measure it, then
 // confirm (or fine-adjust and print again).

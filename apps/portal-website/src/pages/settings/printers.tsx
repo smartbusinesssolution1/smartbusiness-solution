@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   Check,
   CircleAlert,
+  Copy,
   MoreHorizontal,
   Plus,
   Printer,
@@ -24,6 +25,7 @@ import {
   fetchCalibrationSheet,
   fetchVerificationSample,
   useAdjustPrinter,
+  useCopyPrinter,
   useCreatePrinter,
   useDeletePrinter,
   usePrinter,
@@ -475,6 +477,7 @@ export function PrinterDetailPage() {
   const update = useUpdatePrinter(wid, pid!);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [layoutDialog, setLayoutDialog] = React.useState(false);
+  const [copyDialog, setCopyDialog] = React.useState(false);
 
   if (isPending) return <Page><Skeleton className="h-8 w-64" /><Skeleton className="h-96 rounded-[var(--radius-card)]" /></Page>;
   if (error) return <Page><ErrorState error={error} onRetry={() => refetch()} /></Page>;
@@ -497,6 +500,7 @@ export function PrinterDetailPage() {
             <MenuTrigger asChild><Button variant="secondary" size="icon" aria-label="More actions"><MoreHorizontal /></Button></MenuTrigger>
             <MenuContent>
               {!profile.isDefault && <MenuItem onSelect={() => setDefault.mutate(profile.id, { onSuccess: () => toast.success("Default printer set") })}><Star /> Make default</MenuItem>}
+              {!profile.needsRecalibration && <MenuItem onSelect={() => setCopyDialog(true)}><Copy /> Copy for other check paper</MenuItem>}
               <MenuItem onSelect={() => setLayoutDialog(true)}><Wrench /> Change check layout</MenuItem>
               <MenuSeparator />
               <MenuItem destructive onSelect={() => setConfirmDelete(true)}><Trash2 /> Delete printer</MenuItem>
@@ -528,6 +532,9 @@ export function PrinterDetailPage() {
               <div className="col-span-2 text-xs text-muted">Calibrated {when(profile.calibratedAt)}{profile.verification.verifiedAt && ` · verified ${when(profile.verification.verifiedAt)}`}</div>
             </dl>
           </Panel>
+          {!profile.needsRecalibration && (
+            <Button variant="secondary" onClick={() => setCopyDialog(true)}><Copy /> Copy for other check paper</Button>
+          )}
           <Button variant="secondary" asChild>
             <Link to={`/w/${wid}/settings/printers/new`}><RefreshCw /> Calibrate another printer</Link>
           </Button>
@@ -547,6 +554,12 @@ export function PrinterDetailPage() {
       <Dialog open={layoutDialog} onOpenChange={setLayoutDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader icon={<Wrench />} title="Change check layout" description="Different paper needs a new verification sample, so changing the layout clears this printer's verification." />
+          {!profile.needsRecalibration && (
+            <div className="mx-6 flex flex-wrap items-center gap-3 rounded-xl border border-primary-500/20 bg-primary-50/60 px-4 py-3 text-sm text-primary-900">
+              <span className="min-w-0 flex-1">Using both kinds of paper? Copy this printer instead, so each paper keeps its own verification.</span>
+              <Button size="sm" variant="secondary" onClick={() => { setLayoutDialog(false); setCopyDialog(true); }}><Copy /> Copy instead</Button>
+            </div>
+          )}
           <div role="radiogroup" aria-label="Check layout" className="grid grid-cols-2 gap-3 px-6 py-4">
             {LAYOUTS.map((l) => (
               <ChoiceCard
@@ -568,7 +581,86 @@ export function PrinterDetailPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <CopyPrinterDialog key={`${profile.layout}-${profile.stockType}-${profile.tray ?? ""}`} profile={profile} open={copyDialog} onOpenChange={setCopyDialog} />
     </Page>
+  );
+}
+
+// The same printer, other check paper: keeps the calibration, needs only a sample check.
+function CopyPrinterDialog({ profile, open, onOpenChange }: { profile: PrinterProfile; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { wid } = useWorkspaceContext();
+  const navigate = useNavigate();
+  const copy = useCopyPrinter(wid, profile.id);
+  const firstOther = LAYOUTS.find((l) => l.value !== profile.layout)!.value;
+  const [layout, setLayout] = React.useState<CheckLayout>(firstOther);
+  const [stock, setStock] = React.useState<StockType>(profile.stockType);
+  const [tray, setTray] = React.useState(profile.tray ?? "");
+  // The name follows the layout until the person types their own.
+  const [customName, setCustomName] = React.useState<string | null>(null);
+  const suggested = `${profile.profileName} · ${layoutLabel(layout)}`.slice(0, 100);
+  const name = customName ?? suggested;
+  const duplicate = layout === profile.layout && stock === profile.stockType;
+
+  const submit = () =>
+    copy.mutate(
+      { profileName: name.trim(), layout, stockType: stock, tray: tray.trim() || null },
+      {
+        onSuccess: (p) => {
+          onOpenChange(false);
+          toast.success(`${p.profileName} created`, { description: "Print one sample check to verify it." });
+          navigate(`/w/${wid}/settings/printers/${p.id}?verify=1`);
+        },
+        onError: (e) => toast.error(errorMessage(e)),
+      },
+    );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader
+          icon={<Copy />}
+          title="Copy for other check paper"
+          description="Same printer, different check paper. The copy keeps this printer's calibration, so you only print one sample check to verify it."
+        />
+        <div className="flex flex-col gap-4 overflow-y-auto px-6 py-4">
+          <div className="flex flex-col gap-2">
+            <span className="text-[0.8125rem] font-medium text-ink-soft">Check layout of the other paper</span>
+            <div role="radiogroup" aria-label="Check layout of the copy" className="grid grid-cols-2 gap-3">
+              {LAYOUTS.map((l) => (
+                <ChoiceCard key={l.value} selected={layout === l.value} onClick={() => setLayout(l.value)} className="items-center text-center">
+                  <div className="w-10"><PaperDiagram layout={l.value} paper={profile.paperSize} /></div>
+                  <span className="text-sm font-semibold">{l.label}</span>
+                  {l.value === profile.layout && <span className="text-[0.6875rem] text-muted">This printer now</span>}
+                </ChoiceCard>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-[0.8125rem] font-medium text-ink-soft">Paper type</span>
+            <div role="radiogroup" aria-label="Paper type of the copy" className="grid grid-cols-2 gap-3">
+              <ChoiceCard selected={stock === "PLAIN_PAPER"} onClick={() => setStock("PLAIN_PAPER")}>
+                <span className="text-sm font-semibold">Plain paper</span>
+              </ChoiceCard>
+              <ChoiceCard selected={stock === "PERFORATED_STOCK"} onClick={() => setStock("PERFORATED_STOCK")}>
+                <span className="text-sm font-semibold">Perforated stock</span>
+              </ChoiceCard>
+            </div>
+          </div>
+          <Field label="Name" htmlFor="copy-name">
+            <Input id="copy-name" maxLength={100} value={name} onChange={(e) => setCustomName(e.target.value)} />
+          </Field>
+          <Field label="Tray" htmlFor="copy-tray" optional hint="The tray this paper goes in, if it differs.">
+            <Input id="copy-tray" maxLength={50} value={tray} onChange={(e) => setTray(e.target.value)} placeholder="Tray 1" />
+          </Field>
+          <p className="text-xs text-muted">Paper size stays {profile.paperSize === "LETTER" ? "Letter" : "A4"}: the calibration was measured on it. For the other size, calibrate a new printer.</p>
+          {duplicate && <InlineAlert tone="warning">This printer is already set up for this paper. Choose a different layout or paper type.</InlineAlert>}
+        </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={duplicate || !name.trim()} loading={copy.isPending} onClick={submit}><Copy /> Create copy</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

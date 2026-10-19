@@ -44,6 +44,16 @@ export class CalibrationController {
     sendSuccess(res, profile);
   };
 
+  copy = async (req: Request, res: Response) => {
+    const profile = await this.service.copyProfile(
+      req.params.id as string,
+      req.params.wid as string,
+      req.body,
+      this.auditCtx(req),
+    );
+    sendCreated(res, profile);
+  };
+
   update = async (req: Request, res: Response) => {
     const profile = await this.service.updateProfile(
       req.params.id as string,

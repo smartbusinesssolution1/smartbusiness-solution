@@ -153,6 +153,17 @@ export function useUpdatePrinter(wid: string, pid: string) {
   });
 }
 
+// A second profile for the same printer and paper size, for other check paper. It keeps
+// the calibration; only a verification sample is needed.
+export function useCopyPrinter(wid: string, pid: string) {
+  const invalidate = usePrinterInvalidation(wid);
+  return useMutation({
+    mutationFn: async (input: { profileName: string; layout: CheckLayout; stockType: StockType; tray: string | null }) =>
+      (await api<PrinterProfile>(`/workspaces/${wid}/calibration/${pid}/copy`, { method: "POST", body: input })).data,
+    onSuccess: () => invalidate(),
+  });
+}
+
 export function useVerifyPrinter(wid: string, pid: string) {
   const invalidate = usePrinterInvalidation(wid);
   return useMutation({

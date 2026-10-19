@@ -63,6 +63,36 @@ export class CalibrationRepository {
     });
   }
 
+  // A new profile with the source's calibration, exactly as measured (same offsets,
+  // measurements, calibrator and date) for other check paper. It starts unverified
+  // and is never the default.
+  async copy(
+    source: { id: string; workspaceId: string },
+    data: { profileName: string; layout: CheckLayout; stockType: "PLAIN_PAPER" | "PERFORATED_STOCK"; tray: string | null },
+  ) {
+    const s = await prisma.calibrationProfile.findFirstOrThrow({ where: { id: source.id, workspaceId: source.workspaceId } });
+    return prisma.calibrationProfile.create({
+      data: {
+        workspaceId: s.workspaceId,
+        profileName: data.profileName,
+        layout: data.layout,
+        stockType: data.stockType,
+        tray: data.tray,
+        paperSize: s.paperSize,
+        horizontalOffsetPts: s.horizontalOffsetPts,
+        verticalOffsetPts: s.verticalOffsetPts,
+        scaleX: s.scaleX,
+        scaleY: s.scaleY,
+        measurementsJson: s.measurementsJson ?? Prisma.JsonNull,
+        refVersion: s.refVersion,
+        calibratedById: s.calibratedById,
+        calibratedAt: s.calibratedAt,
+        isDefault: false,
+        ...CLEARED_VERIFICATION,
+      },
+    });
+  }
+
   async findById(id: string, workspaceId: string) {
     return prisma.calibrationProfile.findFirst({
       where: { id, workspaceId },

@@ -33,6 +33,21 @@ export const createCalibrationSchema = z.object({
   measurements: measurementsSchema,
 });
 
+// A copy of a printer profile for other check paper in the same printer: the printer's
+// calibration is kept (same paper size), the layout and paper type are new.
+export const copyCalibrationSchema = z.object({
+  profileName: z
+    .string()
+    .min(1, "Profile name is required")
+    .max(100, "Profile name cannot exceed 100 characters")
+    .trim(),
+  layout: layoutSchema,
+  stockType: stockTypeSchema.optional(),
+  tray: z.string().trim().max(50).nullable().optional(),
+});
+
+export type CopyCalibrationInput = z.infer<typeof copyCalibrationSchema>;
+
 // Changing the paper size invalidates the old measurements, so it requires new ones.
 export const updateCalibrationSchema = z
   .object({

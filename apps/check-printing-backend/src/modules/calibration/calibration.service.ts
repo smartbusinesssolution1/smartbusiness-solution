@@ -18,6 +18,7 @@ import type {
 } from "./calibration.types.js";
 import type {
   AdjustmentInput,
+  CopyCalibrationInput,
   CreateCalibrationInput,
   UpdateCalibrationInput,
   VerificationInput,
@@ -86,6 +87,70 @@ export class CalibrationService {
     });
 
     return { ...this.formatProfile(profile), warnings: result.warnings };
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // COPY FOR OTHER PAPER
+  //
+  // Calibration measures the printer (how far it shifts ink), not the check paper, so
+  // a second profile for the same printer and paper size reuses it. Verification is
+  // about where the check lands on that paper, so the copy must be verified on its own.
+  // Switching one profile back and forth between layouts would clear its verification
+  // every time; two profiles each stay verified.
+  // ═════════════════════════════════════════════════════════════
+
+  async copyProfile(
+    profileId: string,
+    workspaceId: string,
+    input: CopyCalibrationInput,
+    ctx: AuditContext,
+  ): Promise<CalibrationProfileResponse> {
+    const source = await this.findOrThrow(profileId, workspaceId);
+
+    if (source.refVersion < CALIBRATION_REF.version) {
+      throw new ValidationError(
+        `"${source.profileName}" was calibrated with an older calibration sheet. Set it up again before copying it, so the copy doesn't inherit the old calibration.`,
+        { source: ["Recalibrate this printer first"] },
+      );
+    }
+
+    const stockType = input.stockType ?? (source.stockType as StockType);
+    if (input.layout === source.layout && stockType === source.stockType) {
+      throw new ValidationError(
+        `"${source.profileName}" is already set up for this paper. Choose a different check layout or paper type for the copy.`,
+        { layout: ["Choose a different layout or paper type"] },
+      );
+    }
+
+    const copy = await this.repo.copy(source, {
+      profileName: input.profileName,
+      layout: input.layout,
+      stockType,
+      tray: input.tray === undefined ? source.tray : input.tray,
+    });
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "CALIBRATION_COPIED",
+      entityType: "CalibrationProfile",
+      entityId: copy.id,
+      details: {
+        sourceProfileId: source.id,
+        sourceProfileName: source.profileName,
+        profileName: copy.profileName,
+        paperSize: copy.paperSize,
+        layout: copy.layout,
+        stockType: copy.stockType,
+        tray: copy.tray,
+        horizontalOffsetPts: copy.horizontalOffsetPts.toString(),
+        verticalOffsetPts: copy.verticalOffsetPts.toString(),
+      },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return this.formatProfile(copy);
   }
 
   async listProfiles(workspaceId: string): Promise<CalibrationListResponse> {
