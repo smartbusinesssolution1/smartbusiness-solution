@@ -140,6 +140,10 @@ export class CalibrationRepository {
     });
   }
 
+  async setNextSlot(id: string, workspaceId: string, nextSlot: number): Promise<{ count: number }> {
+    return prisma.calibrationProfile.updateMany({ where: { id, workspaceId }, data: { nextSlot } });
+  }
+
   async setDefault(id: string, workspaceId: string) {
     return prisma.$transaction(async (tx) => {
       await tx.calibrationProfile.updateMany({

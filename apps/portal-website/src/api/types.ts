@@ -198,6 +198,44 @@ export interface RegisterItem {
   createdAt: string;
 }
 
+// A print job: several checks in one PDF.
+export interface PrintBatchSummary {
+  id: string;
+  checkCount: number;
+  sheetCount: number;
+  paperSize: PaperSize;
+  layout: CheckLayout;
+  startPosition: number | null;
+  nextPosition: number | null;
+  calibrationProfileId: string | null;
+  createdAt: string;
+}
+
+export interface PrintBatchResult {
+  batch: PrintBatchSummary;
+  checks: Array<Check & { sheet: number }>;
+  notice: string | null;
+}
+
+export interface PrintBatch extends PrintBatchSummary {
+  createdBy: PersonRef;
+  // False once any check in it is void or cleared: printing the PDF again would duplicate it.
+  pdfAvailable: boolean;
+  checks: Array<{
+    id: string;
+    checkNumber: number;
+    status: CheckStatus;
+    payeeName: string;
+    amount: string;
+    checkDate: string;
+    bankAccount: { id: string; bankName: string; accountNumber: string; accountType: string };
+    printedAt: string | null;
+    printConfirmedAt: string | null;
+    voidType: VoidType | null;
+    position: number | null;
+  }>;
+}
+
 export interface RegisterMeta {
   limit: number;
   hasMore: boolean;
@@ -327,6 +365,9 @@ export interface PrinterProfile {
   calibratedById: string;
   calibratedAt: string;
   isDefault: boolean;
+  // Three-per-page paper: the slot the next check goes into (the sheet in the tray may be
+  // partly used). Always 1 for other layouts.
+  nextSlot: 1 | 2 | 3;
   createdAt: string;
   updatedAt: string;
   warnings?: string[];

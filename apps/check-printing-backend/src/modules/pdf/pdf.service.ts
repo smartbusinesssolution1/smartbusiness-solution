@@ -56,12 +56,29 @@ export class PdfService {
     workspaceId: string,
     checkId: string,
   ): Promise<StoredPdf> {
-    const pdfBuffer = await this.renderer.render(data);
+    return this.storeCheckPdf(await this.renderer.render(data), workspaceId, checkId);
+  }
 
+  // Stores an already rendered one-check PDF (a print job renders all of its checks
+  // first, so a check that cannot be drawn stops the job before anything is stored).
+  async storeCheckPdf(pdfBuffer: Buffer, workspaceId: string, checkId: string): Promise<StoredPdf> {
     // Keyed by check id: check numbers repeat across bank accounts in one workspace.
     const key = path.posix.join("checks", workspaceId, `check-${checkId}-${randomUUID()}.pdf`);
     await this.storage.put(key, pdfBuffer, "application/pdf");
 
+    return { key, sha256: sha256Hex(pdfBuffer) };
+  }
+
+  // Renders a print job of several checks (one page per sheet) and stores it like a
+  // check PDF: encrypted, under its own key, with the SHA-256 for later downloads.
+  async generateBatchPdf(
+    sheets: CheckPdfData[][],
+    workspaceId: string,
+    batchId: string,
+  ): Promise<StoredPdf> {
+    const pdfBuffer = await this.renderer.renderSheets(sheets);
+    const key = path.posix.join("checks", workspaceId, "batches", `batch-${batchId}-${randomUUID()}.pdf`);
+    await this.storage.put(key, pdfBuffer, "application/pdf");
     return { key, sha256: sha256Hex(pdfBuffer) };
   }
 

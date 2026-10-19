@@ -12,6 +12,8 @@ import type {
   Check,
   InvoiceItem,
   NumberIntegrity,
+  PrintBatch,
+  PrintBatchResult,
   RegisterItem,
   RegisterMeta,
   ViewCount,
@@ -189,12 +191,59 @@ export function usePrintCheck(wid: string) {
           headers: { "Idempotency-Key": idempotencyKey },
         })
       ).data,
-    onSuccess: (_data, { checkId }) => invalidateChecks(qc, wid, checkId),
+    onSuccess: (_data, { checkId }) => {
+      invalidateChecks(qc, wid, checkId);
+      // The printer's next blank slot moved on.
+      qc.invalidateQueries({ queryKey: ["printers", wid] });
+    },
   });
 }
 
 export function fetchCheckPdf(wid: string, checkId: string): Promise<Blob> {
   return apiBlob(`/workspaces/${wid}/checks/${checkId}/pdf`);
+}
+
+// The most checks in one print job (the server enforces the same limit).
+export const PRINT_BATCH_MAX = 30;
+
+export function usePrintBatch(wid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      checkIds,
+      calibrationProfileId,
+      startPosition,
+      idempotencyKey,
+    }: {
+      checkIds: string[];
+      calibrationProfileId: string;
+      startPosition?: number;
+      idempotencyKey: string;
+    }) =>
+      (
+        await api<PrintBatchResult>(`/workspaces/${wid}/checks/print-batches`, {
+          method: "POST",
+          body: { checkIds, calibrationProfileId, ...(startPosition ? { startPosition } : {}) },
+          headers: { "Idempotency-Key": idempotencyKey },
+        })
+      ).data,
+    onSuccess: () => {
+      invalidateChecks(qc, wid);
+      qc.invalidateQueries({ queryKey: ["printers", wid] });
+    },
+  });
+}
+
+export function usePrintBatchJob(wid: string, batchId: string | undefined) {
+  return useQuery({
+    queryKey: ["print-batch", wid, batchId],
+    queryFn: async () => (await api<PrintBatch>(`/workspaces/${wid}/checks/print-batches/${batchId}`)).data,
+    enabled: Boolean(batchId),
+  });
+}
+
+export function fetchBatchPdf(wid: string, batchId: string): Promise<Blob> {
+  return apiBlob(`/workspaces/${wid}/checks/print-batches/${batchId}/pdf`);
 }
 
 // ─── Attachments ───────────────────────────────────────────

@@ -25,6 +25,8 @@ const CheckDetailPage = page(() => import("@/pages/checks/check-detail"), "Check
 const ApprovalsPage = page(() => import("@/pages/approvals"), "ApprovalsPage");
 const PrintQueuePage = page(() => import("@/pages/print"), "PrintQueuePage");
 const PrintStationPage = page(() => import("@/pages/print"), "PrintStationPage");
+const BatchSetupPage = page(() => import("@/pages/print-batch"), "BatchSetupPage");
+const BatchJobPage = page(() => import("@/pages/print-batch"), "BatchJobPage");
 const PayeesPage = page(() => import("@/pages/payees"), "PayeesPage");
 const ReportsPage = page(() => import("@/pages/reports"), "ReportsPage");
 const BankAccountsPage = page(() => import("@/pages/settings/bank-accounts"), "BankAccountsPage");
@@ -110,6 +112,8 @@ export const router = createBrowserRouter([
               { path: "checks/:checkId/edit", element: g(["check:create"], <WriteCheckPage />) },
               { path: "approvals", element: g(["check:approve"], <ApprovalsPage />) },
               { path: "print", element: g(["check:print"], <PrintQueuePage />) },
+              { path: "print/batch", element: g(["check:print"], <BatchSetupPage />) },
+              { path: "print/batches/:batchId", element: g(["check:print"], <BatchJobPage />) },
               { path: "print/:checkId", element: g(["check:print"], <PrintStationPage />) },
               { path: "payees", element: g(["check:create", "payee:write", "payee:manage"], <PayeesPage />) },
               { path: "reports", element: g(["report:view"], <ReportsPage />) },

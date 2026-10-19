@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { CheckRepository } from "./check.repository.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import {
@@ -18,13 +19,15 @@ import type {
   UpdateCheckInput,
   ClearCheckInput,
   PrintCheckInput,
+  PrintBatchInput,
   PrintOutcomeInput,
 } from "./check.schemas.js";
 import type { AuditContext } from "./check.types.js";
-import type { PdfService } from "../pdf/pdf.service.js";
+import type { PdfService, StoredPdf } from "../pdf/pdf.service.js";
 import type { CalibrationService } from "../calibration/calibration.service.js";
+import type { PrintCalibration } from "../calibration/calibration.types.js";
 import type { EncryptionService } from "../../shared/services/encryption.service.js";
-import { templateForPrinter } from "../pdf/pdf.templates.js";
+import { planSheets, templateForPrinter } from "../pdf/pdf.templates.js";
 import { assertMicrPrintable } from "../../shared/utils/micr-validation.js";
 import type { CheckPdfData, SheetPosition } from "../pdf/pdf.types.js";
 import type { ObjectStorage } from "../../shared/storage/index.js";
@@ -42,6 +45,44 @@ function stopPaymentNotice(checkNumber: number): string {
 // Shown when a print is reported spoiled: one number, one paper, always.
 function spoiledNotice(checkNumber: number): string {
   return `Destroy the spoiled paper for check #${checkNumber}. To pay this payee, reissue the check: it gets a new number.`;
+}
+
+// "Check #1042 is ___": why a check is not (or no longer) printable.
+const STATUS_WORDS: Record<CheckStatus, string> = {
+  NEW: "a draft",
+  PENDING_APPROVAL: "waiting for approval",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  PRINTED: "already printed",
+  VOID: "void",
+  CLEARED: "cleared",
+};
+
+// Print order: check number, then bank account (numbers repeat across accounts).
+function byCheckNumber(a: { checkNumber: number; bankAccountId: string }, b: { checkNumber: number; bankAccountId: string }) {
+  return a.checkNumber - b.checkNumber || a.bankAccountId.localeCompare(b.bankAccountId);
+}
+
+// A print job's PDF holds every check in it: handing it out again is safe only while
+// each of them is still PRINTED (not void, not cleared, not deleted).
+function batchPdfAvailable(batch: { checkCount: number; checks: Array<{ status: CheckStatus }> }): boolean {
+  return batch.checks.length === batch.checkCount && batch.checks.every((c) => c.status === "PRINTED");
+}
+
+// What one bank account contributes to every check of a print job.
+interface PrintAccount {
+  bankName: string;
+  checkNumberPadding: number;
+  routingNumber: string;
+  accountNumber: string;
+  signatureImage: Buffer | null;
+}
+
+// Shared by every check of one print (single or batch).
+interface PrintSetup {
+  workspace: NonNullable<Awaited<ReturnType<CheckRepository["findWorkspace"]>>>;
+  printer: PrintCalibration;
+  accounts: Map<string, PrintAccount>;
 }
 
 // A check can be edited only before it enters approval, or after a rejection.
@@ -615,15 +656,12 @@ export class CheckService {
   // Generates the check PDF and transitions to PRINTED.
   //
   // Pipeline:
-  // 1. Load check and validate transition
-  // 2. Load bank account (for MICR: routing, account numbers)
-  // 3. Decrypt sensitive bank data
-  // 4. Load workspace (for company header on check face)
-  // 5. Resolve the printer profile (chosen, else workspace default):
-  //    paper size + calibration offsets
-  // 6. Build CheckPdfData and generate PDF via PdfService
-  // 7. Update check status to PRINTED with PDF path and print snapshot
-  // 8. Audit log
+  // 1. Load check and validate transition, and that it needs no (more) approval
+  // 2. Resolve the printer profile (chosen, else workspace default):
+  //    paper size + calibration offsets, and the slot on three-per-page paper
+  // 3. Build CheckPdfData (bank account decrypted, MICR line checked) and render
+  // 4. Update check status to PRINTED with PDF path and print snapshot
+  // 5. Audit log
   // ═════════════════════════════════════════════════════════════
 
   async printCheck(
@@ -640,43 +678,390 @@ export class CheckService {
     assertTransition(check.status, "PRINTED");
     const approval = await this.approvalForPrint(check);
 
-    const bankAccount = await this.requireActiveBankAccount(
-      check.bankAccountId,
+    const setup = await this.printSetup(workspaceId, input.calibrationProfileId);
+    const { printer } = setup;
+    const isThreePerPage = printer.layout === "THREE_PER_PAGE";
+    this.assertSlotAllowed(printer, input.position);
+    // Slots exist only on three-per-page paper; there the default is the top slot.
+    const position = isThreePerPage ? ((input.position ?? 1) as SheetPosition) : null;
+
+    const pdfData = await this.pdfDataFor(check, position, setup);
+    const stored = await this.pdfService.generateCheckPdf(pdfData, workspaceId, checkId);
+
+    let updated;
+    try {
+      updated = await this.checkRepository.updateStatus(
+        checkId,
+        workspaceId,
+        "PRINTED",
+        {
+          checkId,
+          fromStatus: check.status,
+          toStatus: "PRINTED",
+          changedById: ctx.userId,
+          ipAddress: ctx.ipAddress,
+        },
+        this.printedFields(printer, position, stored, ctx.userId),
+      );
+    } catch (err) {
+      // Another request printed this check first (or the update failed): this
+      // attempt's PDF was never recorded, so it must not linger on disk.
+      await this.pdfService.deleteStoredPdf(stored.key).catch((cleanupErr: unknown) => {
+        logger.error({ err: cleanupErr, checkId }, "Failed to remove PDF of an unrecorded print attempt");
+      });
+      throw err;
+    }
+
+    if (position) {
+      await this.calibrationService.recordNextSlot(workspaceId, printer.profileId, ((position % 3) + 1) as SheetPosition);
+    }
+
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
       workspaceId,
-      `print check #${check.checkNumber}`,
-    );
+      action: "CHECK_PRINTED",
+      entityType: "Check",
+      entityId: checkId,
+      details: {
+        checkNumber: check.checkNumber,
+        approval,
+        pdfStorageKey: stored.key,
+        pdfSha256: stored.sha256,
+        printer: this.printerDetails(printer, position),
+      },
+      ipAddress: ctx.ipAddress,
+    });
 
-    const routingNumber = this.encryptionService.decrypt(
-      bankAccount.routingNumberEncrypted,
-    );
-    const accountNumber = this.encryptionService.decrypt(
-      bankAccount.accountNumberEncrypted,
-    );
+    // Three-per-page paper has no stubs, so invoice lines have nowhere to go.
+    const invoiceLines = (check.invoiceTableJson as unknown[] | null)?.length ?? 0;
+    const notice =
+      isThreePerPage && invoiceLines > 0
+        ? "This printer's paper has no stubs, so the invoice lines were not printed. Send the invoice to the payee separately if they need it."
+        : null;
 
+    return { ...this.formatCheck(updated), notice };
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // PRINT A BATCH (several checks, one PDF)
+  //
+  // All or nothing, because a print job is one stack of paper:
+  // 1. Every check is validated first (status, approval, bank account, MICR line,
+  //    payee fits) and rendered on its own. If any one cannot print, nothing is
+  //    stored or changed, and the error lists every problem by check number.
+  // 2. Checks are printed in check-number order. On three-per-page paper they fill
+  //    the sheet in the tray from `startPosition`, then carry on onto fresh sheets.
+  // 3. Each check keeps its own one-check PDF (so it can be downloaded alone), and
+  //    the job gets one PDF with every sheet.
+  // 4. One transaction records the batch and moves every check to PRINTED; if any
+  //    check was changed meanwhile, it rolls back and the stored PDFs are deleted.
+  // 5. Each check's print is confirmed (or reported spoiled) afterwards, one by one,
+  //    exactly like a single print.
+  // ═════════════════════════════════════════════════════════════
+
+  async printBatch(workspaceId: string, input: PrintBatchInput, ctx: AuditContext) {
+    const found = await this.checkRepository.findManyForPrint(input.checkIds, workspaceId);
+    if (found.length !== input.checkIds.length) {
+      throw new NotFoundError("One or more of the chosen checks");
+    }
+    const checks = [...found].sort(byCheckNumber);
+
+    const setup = await this.printSetup(workspaceId, input.calibrationProfileId);
+    const { printer } = setup;
+    this.assertSlotAllowed(printer, input.startPosition, "startPosition");
+    const isThreePerPage = printer.layout === "THREE_PER_PAGE";
+    const startPosition = isThreePerPage ? ((input.startPosition ?? 1) as SheetPosition) : null;
+    const plan = planSheets(checks.length, printer.layout, startPosition ?? 1);
+
+    // 1. Validate and render every check before anything is stored.
+    const problems: Record<string, string[]> = {};
+    const prepared: Array<{
+      check: (typeof checks)[number];
+      approval: Awaited<ReturnType<CheckService["approvalForPrint"]>>;
+      pdfData: CheckPdfData;
+      pdf: Buffer;
+      position: SheetPosition | null;
+      sheet: number;
+    }> = [];
+    for (const [i, check] of checks.entries()) {
+      const { position, sheet } = plan.placements[i]!;
+      try {
+        if (check.status !== "APPROVED" && check.status !== "NEW") {
+          throw new ConflictError(`Check #${check.checkNumber} is ${STATUS_WORDS[check.status]}, so it can't be printed.`);
+        }
+        const approval = await this.approvalForPrint(check);
+        const pdfData = await this.pdfDataFor(check, position, setup);
+        const pdf = await this.pdfService.renderCheck(pdfData);
+        prepared.push({ check, approval, pdfData, pdf, position, sheet });
+      } catch (err) {
+        // A problem with this check (4xx); anything else (a server fault) stops the job.
+        if (!(err instanceof AppError) || err.statusCode >= 500) throw err;
+        // Every message names its check, so the person can find it in the list.
+        const named = err.message.includes(`#${check.checkNumber}`);
+        problems[check.id] = [named ? err.message : `Check #${check.checkNumber}: ${err.message}`];
+      }
+    }
+    const problemCount = Object.keys(problems).length;
+    if (problemCount > 0) {
+      throw new ValidationError(
+        `${problemCount} of the ${checks.length} checks can't be printed, so nothing was printed. ` +
+          "Fix them or leave them out, then print again.",
+        problems,
+      );
+    }
+
+    // 2–3. Store each check's own PDF and the job's PDF.
+    const batchId = randomUUID();
+    const storedKeys: string[] = [];
+    const cleanUp = async () => {
+      await Promise.all(
+        storedKeys.map((key) =>
+          this.pdfService.deleteStoredPdf(key).catch((cleanupErr: unknown) => {
+            logger.error({ err: cleanupErr, batchId, key }, "Failed to remove PDF of an unrecorded print job");
+          }),
+        ),
+      );
+    };
+
+    let batchPdf: StoredPdf;
+    const perCheck: StoredPdf[] = [];
+    try {
+      for (const p of prepared) {
+        const stored = await this.pdfService.storeCheckPdf(p.pdf, workspaceId, p.check.id);
+        storedKeys.push(stored.key);
+        perCheck.push(stored);
+      }
+      const sheets: CheckPdfData[][] = Array.from({ length: plan.sheetCount }, () => []);
+      for (const p of prepared) sheets[p.sheet]!.push(p.pdfData);
+      batchPdf = await this.pdfService.generateBatchPdf(sheets, workspaceId, batchId);
+      storedKeys.push(batchPdf.key);
+    } catch (err) {
+      await cleanUp();
+      throw err;
+    }
+
+    // 4. Record the job and every check, all or nothing.
+    const printedAt = new Date();
+    let updated;
+    try {
+      updated = await this.checkRepository.recordBatchPrint(
+        {
+          id: batchId,
+          workspaceId,
+          calibrationProfileId: printer.profileId,
+          checkCount: prepared.length,
+          sheetCount: plan.sheetCount,
+          paperSize: printer.paperSize,
+          layout: printer.layout,
+          startPosition,
+          nextPosition: plan.nextPosition,
+          pdfStorageUrl: batchPdf.key,
+          pdfSha256: batchPdf.sha256,
+          createdById: ctx.userId,
+        },
+        prepared.map((p, i) => ({
+          checkId: p.check.id,
+          checkNumber: p.check.checkNumber,
+          fromStatus: p.check.status,
+          data: { ...this.printedFields(printer, p.position, perCheck[i]!, ctx.userId), printedAt },
+        })),
+        { changedById: ctx.userId, ipAddress: ctx.ipAddress },
+      );
+    } catch (err) {
+      await cleanUp();
+      throw err;
+    }
+
+    if (plan.nextPosition) {
+      await this.calibrationService.recordNextSlot(workspaceId, printer.profileId, plan.nextPosition);
+    }
+
+    // 5. Audit: one entry per check (each is a negotiable instrument) and one for the job.
+    for (const [i, p] of prepared.entries()) {
+      await this.auditService.log({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        workspaceId,
+        action: "CHECK_PRINTED",
+        entityType: "Check",
+        entityId: p.check.id,
+        details: {
+          checkNumber: p.check.checkNumber,
+          approval: p.approval,
+          pdfStorageKey: perCheck[i]!.key,
+          pdfSha256: perCheck[i]!.sha256,
+          printBatchId: batchId,
+          sheet: p.sheet + 1,
+          printer: this.printerDetails(printer, p.position),
+        },
+        ipAddress: ctx.ipAddress,
+      });
+    }
+    await this.auditService.log({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "PRINT_BATCH_CREATED",
+      entityType: "PrintBatch",
+      entityId: batchId,
+      details: {
+        checkNumbers: prepared.map((p) => p.check.checkNumber),
+        sheetCount: plan.sheetCount,
+        startPosition,
+        nextPosition: plan.nextPosition,
+        pdfStorageKey: batchPdf.key,
+        pdfSha256: batchPdf.sha256,
+        printer: this.printerDetails(printer, null),
+      },
+      ipAddress: ctx.ipAddress,
+    });
+
+    const byId = new Map(updated.map((c) => [c.id, c]));
+    const withInvoiceLines = isThreePerPage
+      ? prepared.filter((p) => ((p.check.invoiceTableJson as unknown[] | null)?.length ?? 0) > 0)
+      : [];
+    const notice =
+      withInvoiceLines.length > 0
+        ? `This printer's paper has no stubs, so the invoice lines of ${withInvoiceLines
+            .map((p) => `#${p.check.checkNumber}`)
+            .join(", ")} were not printed. Send those invoices to the payees separately if they need them.`
+        : null;
+
+    return {
+      batch: {
+        id: batchId,
+        checkCount: prepared.length,
+        sheetCount: plan.sheetCount,
+        paperSize: printer.paperSize,
+        layout: printer.layout,
+        startPosition,
+        nextPosition: plan.nextPosition,
+        calibrationProfileId: printer.profileId,
+        createdAt: printedAt,
+      },
+      checks: prepared.map((p) => ({ ...this.formatCheck(byId.get(p.check.id)), sheet: p.sheet + 1 })),
+      notice,
+    };
+  }
+
+  // A print job and its checks, for the page that reports how each one came out.
+  async getPrintBatch(batchId: string, workspaceId: string) {
+    const batch = await this.checkRepository.findPrintBatch(batchId, workspaceId);
+    if (!batch) {
+      throw new NotFoundError("Print job");
+    }
+    const checks = [...batch.checks].sort(byCheckNumber);
+    return {
+      id: batch.id,
+      checkCount: batch.checkCount,
+      sheetCount: batch.sheetCount,
+      paperSize: batch.paperSize,
+      layout: batch.layout,
+      startPosition: batch.startPosition,
+      nextPosition: batch.nextPosition,
+      calibrationProfileId: batch.calibrationProfileId,
+      createdBy: batch.createdBy,
+      createdAt: batch.createdAt,
+      // The job's PDF is handed out only while every check in it is still PRINTED.
+      pdfAvailable: batchPdfAvailable(batch),
+      checks: checks.map((c) => ({
+        ...this.formatCheckListItem(c),
+        printedAt: c.printedAt,
+        printConfirmedAt: c.printConfirmedAt,
+        voidType: c.voidType,
+        position: c.printPosition,
+      })),
+    };
+  }
+
+  // The job's PDF, under the same rules as a single check's: verified against its
+  // SHA-256, audited before it leaves, and refused once any check in it is void or
+  // has cleared (printing the job again would duplicate that check).
+  async downloadBatchPdf(batchId: string, workspaceId: string, ctx: AuditContext) {
+    const batch = await this.checkRepository.findPrintBatch(batchId, workspaceId);
+    if (!batch) {
+      throw new NotFoundError("Print job");
+    }
+
+    if (!batchPdfAvailable(batch)) {
+      const named = batch.checks
+        .filter((c) => c.status !== "PRINTED")
+        .sort(byCheckNumber)
+        .map((c) => `#${c.checkNumber} is ${STATUS_WORDS[c.status]}`)
+        .join(", ");
+      throw new AppError(
+        `This print job's PDF can no longer be downloaded${named ? ` (${named})` : ""}. ` +
+          "Download the checks that are still printed one at a time from their own pages.",
+        409,
+        "PRINT_BATCH_PDF_UNAVAILABLE",
+      );
+    }
+
+    const buffer = await this.pdfService.readVerifiedPdf(batch.pdfStorageUrl, batch.pdfSha256);
+
+    // Written before the bytes leave the server: no audit row, no download.
+    await this.auditService.logOrRefuse({
+      tenantId: ctx.tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "PRINT_BATCH_PDF_DOWNLOADED",
+      entityType: "PrintBatch",
+      entityId: batchId,
+      details: { checkNumbers: batch.checks.map((c) => c.checkNumber).sort((a, b) => a - b), pdfSha256: batch.pdfSha256 },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return buffer;
+  }
+
+  // The printer, and everything about the workspace that every check of a job shares.
+  private async printSetup(workspaceId: string, calibrationProfileId?: string): Promise<PrintSetup> {
     const workspace = await this.checkRepository.findWorkspace(workspaceId);
     if (!workspace) {
       throw new NotFoundError("Workspace");
     }
+    const printer = await this.calibrationService.resolveForPrint(workspaceId, calibrationProfileId);
+    return { workspace, printer, accounts: new Map() };
+  }
 
-    const printer = await this.calibrationService.resolveForPrint(
-      workspaceId,
-      input.calibrationProfileId,
-    );
-
-    // Slots exist only on three-per-page paper; there the default is the top slot.
-    const isThreePerPage = printer.layout === "THREE_PER_PAGE";
-    if (input.position !== undefined && !isThreePerPage) {
+  private assertSlotAllowed(printer: PrintCalibration, slot: number | undefined, field = "position") {
+    if (slot !== undefined && printer.layout !== "THREE_PER_PAGE") {
       throw new ValidationError(
         `"${printer.profileName}" prints one check per sheet, so there is no slot to choose.`,
-        { position: ["Only printers with three-per-page paper have slots"] },
+        { [field]: ["Only printers with three-per-page paper have slots"] },
       );
     }
-    const position = isThreePerPage ? ((input.position ?? 1) as SheetPosition) : null;
+  }
 
-    const paddedCheckNumber = String(check.checkNumber).padStart(
-      bankAccount.checkNumberPadding ?? 6,
-      "0",
-    );
+  // The bank account of a print: loaded, decrypted and its signature read once per job.
+  private async printAccount(bankAccountId: string, workspaceId: string, checkNumber: number, setup: PrintSetup) {
+    const cached = setup.accounts.get(bankAccountId);
+    if (cached) return cached;
+
+    const bankAccount = await this.requireActiveBankAccount(bankAccountId, workspaceId, `print check #${checkNumber}`);
+    const account: PrintAccount = {
+      bankName: bankAccount.bankName,
+      checkNumberPadding: bankAccount.checkNumberPadding ?? 6,
+      routingNumber: this.encryptionService.decrypt(bankAccount.routingNumberEncrypted),
+      accountNumber: this.encryptionService.decrypt(bankAccount.accountNumberEncrypted),
+      signatureImage: await this.loadSignature(bankAccount.signatureStorageKey),
+    };
+    setup.accounts.set(bankAccountId, account);
+    return account;
+  }
+
+  // Everything drawn on one check, in the slot it goes into.
+  private async pdfDataFor(
+    check: NonNullable<Awaited<ReturnType<CheckRepository["findById"]>>>,
+    position: SheetPosition | null,
+    setup: PrintSetup,
+  ): Promise<CheckPdfData> {
+    const { workspace, printer } = setup;
+    const account = await this.printAccount(check.bankAccountId, check.workspaceId, check.checkNumber, setup);
+    const { routingNumber, accountNumber } = account;
+
+    const paddedCheckNumber = String(check.checkNumber).padStart(account.checkNumberPadding, "0");
 
     assertMicrPrintable({ routingNumber, accountNumber, checkNumber: paddedCheckNumber });
 
@@ -698,7 +1083,7 @@ export class CheckService {
     const companyCityStateZip =
       `${workspace.city}, ${workspace.state} ${workspace.zipCode}`;
 
-    const pdfData: CheckPdfData = {
+    return {
       checkNumber: paddedCheckNumber,
       payeeName: check.payeeName,
       amount: formattedAmount,
@@ -707,14 +1092,14 @@ export class CheckService {
       memo: check.memo,
       routingNumber,
       accountNumber,
-      bankName: bankAccount.bankName,
-      checkNumberPadding: bankAccount.checkNumberPadding ?? 6,
+      bankName: account.bankName,
+      checkNumberPadding: account.checkNumberPadding,
       companyName: workspace.businessName,
       companyAddress,
       companyCityStateZip,
       horizontalOffsetPts: printer.horizontalOffsetPts,
       verticalOffsetPts: printer.verticalOffsetPts,
-      signatureImage: await this.loadSignature(bankAccount.signatureStorageKey),
+      signatureImage: account.signatureImage,
       template: templateForPrinter({ ...printer, position: position ?? undefined }),
       // The API stores line amounts as JSON numbers (older rows may hold strings); the PDF
       // prints them as "1650.00", so normalise here rather than trust the stored type.
@@ -725,81 +1110,34 @@ export class CheckService {
           }))
         : null,
     };
+  }
 
-    const stored = await this.pdfService.generateCheckPdf(
-      pdfData,
-      workspaceId,
-      checkId,
-    );
+  // The print snapshot stored on a printed check.
+  private printedFields(printer: PrintCalibration, position: SheetPosition | null, stored: StoredPdf, userId: string) {
+    return {
+      printedAt: new Date(),
+      printedById: userId,
+      pdfStorageUrl: stored.key,
+      pdfSha256: stored.sha256,
+      calibrationProfileId: printer.profileId,
+      printOffsetXPts: printer.horizontalOffsetPts,
+      printOffsetYPts: printer.verticalOffsetPts,
+      printPaperSize: printer.paperSize,
+      printLayout: printer.layout,
+      printPosition: position,
+    };
+  }
 
-    let updated;
-    try {
-      updated = await this.checkRepository.updateStatus(
-        checkId,
-        workspaceId,
-        "PRINTED",
-        {
-          checkId,
-          fromStatus: check.status,
-          toStatus: "PRINTED",
-          changedById: ctx.userId,
-          ipAddress: ctx.ipAddress,
-        },
-        {
-          printedAt: new Date(),
-          printedById: ctx.userId,
-          pdfStorageUrl: stored.key,
-          pdfSha256: stored.sha256,
-          calibrationProfileId: printer.profileId,
-          printOffsetXPts: printer.horizontalOffsetPts,
-          printOffsetYPts: printer.verticalOffsetPts,
-          printPaperSize: printer.paperSize,
-          printLayout: printer.layout,
-          printPosition: position,
-        },
-      );
-    } catch (err) {
-      // Another request printed this check first (or the update failed): this
-      // attempt's PDF was never recorded, so it must not linger on disk.
-      await this.pdfService.deleteStoredPdf(stored.key).catch((cleanupErr: unknown) => {
-        logger.error({ err: cleanupErr, checkId }, "Failed to remove PDF of an unrecorded print attempt");
-      });
-      throw err;
-    }
-
-    await this.auditService.log({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      workspaceId,
-      action: "CHECK_PRINTED",
-      entityType: "Check",
-      entityId: checkId,
-      details: {
-        checkNumber: check.checkNumber,
-        approval,
-        pdfStorageKey: stored.key,
-        pdfSha256: stored.sha256,
-        printer: {
-          profileId: printer.profileId,
-          profileName: printer.profileName,
-          paperSize: printer.paperSize,
-          layout: printer.layout,
-          position,
-          horizontalOffsetPts: printer.horizontalOffsetPts,
-          verticalOffsetPts: printer.verticalOffsetPts,
-        },
-      },
-      ipAddress: ctx.ipAddress,
-    });
-
-    // Three-per-page paper has no stubs, so invoice lines have nowhere to go.
-    const invoiceLines = (check.invoiceTableJson as unknown[] | null)?.length ?? 0;
-    const notice =
-      isThreePerPage && invoiceLines > 0
-        ? "This printer's paper has no stubs, so the invoice lines were not printed. Send the invoice to the payee separately if they need it."
-        : null;
-
-    return { ...this.formatCheck(updated), notice };
+  private printerDetails(printer: PrintCalibration, position: SheetPosition | null) {
+    return {
+      profileId: printer.profileId,
+      profileName: printer.profileName,
+      paperSize: printer.paperSize,
+      layout: printer.layout,
+      position,
+      horizontalOffsetPts: printer.horizontalOffsetPts,
+      verticalOffsetPts: printer.verticalOffsetPts,
+    };
   }
 
   // ═════════════════════════════════════════════════════════════

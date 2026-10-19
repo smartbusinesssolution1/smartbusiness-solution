@@ -48,6 +48,7 @@ import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const MM_PER_IN = 25.4;
+const PAPER_WIDTH_MM: Record<PaperSize, number> = { LETTER: 215.9, A4: 210 };
 
 // Where the calibration sheet's reference lines are, in inches (CALIBRATION_REF v2).
 const REF: Record<PaperSize, CalibrationSheet> = {
@@ -205,6 +206,19 @@ export function NewPrinterPage() {
   const sheetComplete = (s: SheetDraft) => (Object.values(s) as string[]).every((v) => v !== "" && Number(v) > 0);
   const allMeasured = sheets.every(sheetComplete);
 
+  // The paper's own width catches the most common setup mistake (A4 in a Letter profile, or
+  // the reverse) before any sheet is measured: on the wrong size nothing can ever verify.
+  const [paperWidth, setPaperWidth] = React.useState("");
+  const otherPaper: PaperSize = paper === "LETTER" ? "A4" : "LETTER";
+  const widthMm = paperWidth ? Number(paperWidth) * (unit === "in" ? MM_PER_IN : 1) : NaN;
+  const widthCheck: "empty" | "ok" | "other" | "unknown" = !Number.isFinite(widthMm)
+    ? "empty"
+    : Math.abs(widthMm - PAPER_WIDTH_MM[paper]) <= 2
+      ? "ok"
+      : Math.abs(widthMm - PAPER_WIDTH_MM[otherPaper]) <= 2
+        ? "other"
+        : "unknown";
+
   const next = () => {
     if (step === 0) {
       if (!name.trim()) return setNameError("Give this printer a name, e.g. “Office HP, tray 2”");
@@ -320,6 +334,24 @@ export function NewPrinterPage() {
               />
               <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
                 <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2 rounded-xl border border-line bg-subtle/50 p-3">
+                    <div className="flex flex-wrap items-end gap-3">
+                      <Field label="First, the width of the paper itself" htmlFor="paperWidth" hint={`${paper === "LETTER" ? "US Letter" : "A4"} is ${unit === "mm" ? PAPER_WIDTH_MM[paper].toFixed(1) + " mm" : (PAPER_WIDTH_MM[paper] / MM_PER_IN).toFixed(2) + " in"} wide.`} className="w-56">
+                        <Input inputMode="decimal" value={paperWidth} onChange={(e) => setPaperWidth(e.target.value.replace(",", "."))} placeholder={unit === "mm" ? PAPER_WIDTH_MM[paper].toFixed(1) : (PAPER_WIDTH_MM[paper] / MM_PER_IN).toFixed(2)} className="h-9 font-mono" trailing={<span className="pr-1 text-xs">{unit}</span>} />
+                      </Field>
+                      {widthCheck === "ok" && <span className="pb-6 text-xs font-medium text-success-700">Matches {paper === "LETTER" ? "US Letter" : "A4"}.</span>}
+                    </div>
+                    {widthCheck === "other" && (
+                      <InlineAlert
+                        tone="danger"
+                        title={`This is ${otherPaper === "A4" ? "A4" : "US Letter"} paper, not ${paper === "LETTER" ? "US Letter" : "A4"}`}
+                        action={<Button size="sm" onClick={() => { setPaper(otherPaper); setPaperWidth(""); setSheets([emptySheet(), emptySheet(), emptySheet()]); setPrinted(false); setStep(1); }}>Switch to {otherPaper === "A4" ? "A4" : "Letter"} and print its sheet</Button>}
+                      >
+                        Measurements on the wrong paper size can never verify. Switch the profile to the paper that's in the tray, or load {paper === "LETTER" ? "Letter" : "A4"} paper.
+                      </InlineAlert>
+                    )}
+                    {widthCheck === "unknown" && <InlineAlert tone="warning">That doesn't match US Letter (215.9 mm) or A4 (210 mm). Measure the paper again, edge to edge.</InlineAlert>}
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[30rem] text-sm">
                       <thead>
@@ -403,7 +435,7 @@ export function NewPrinterPage() {
       <div className="flex items-center justify-between gap-3">
         <Button variant="ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}><ArrowLeft /> Back</Button>
         {step < 3 ? (
-          <Button onClick={next} disabled={(step === 2 && !allMeasured) || (step === 1 && !printed)}>
+          <Button onClick={next} disabled={(step === 2 && (!allMeasured || widthCheck !== "ok")) || (step === 1 && !printed)}>
             {step === 1 && !printed ? "Open the sheet first" : "Continue"} <ArrowRight />
           </Button>
         ) : (
@@ -660,7 +692,18 @@ function VerificationPanel({ profile, startOpen }: { profile: PrinterProfile; st
                   </div>
                 </motion.div>
               ) : (
-                <InlineAlert tone="warning" title="Not accurate enough yet">{outcome.suggestedAdjustment ? outcome.suggestedAdjustment.description : "These readings point to a scaling or setup problem that a shift can't fix."}</InlineAlert>
+                outcome.suggestedAdjustment ? (
+                  <InlineAlert tone="warning" title="Not accurate enough yet">{outcome.suggestedAdjustment.description}</InlineAlert>
+                ) : (
+                  // No shift can fix it: lead with the reason (wrong paper size, scaling, font).
+                  <InlineAlert
+                    tone="danger"
+                    title={/ paper,? but this printer profile| paper isn't the size/.test(outcome.notes.join(" ")) ? "Wrong paper size for this printer profile" : "A shift can't fix this"}
+                    action={/A4|Letter/.test(outcome.notes.join(" ")) && <Button size="sm" variant="secondary" asChild><Link to={`/w/${wid}/settings/printers/new`}>Set up a profile for this paper</Link></Button>}
+                  >
+                    {outcome.notes[0] ?? "These readings point to a scaling or setup problem that moving the page can't fix."}
+                  </InlineAlert>
+                )
               )}
               <div className="overflow-hidden rounded-xl border border-line">
                 <table className="w-full text-sm">
@@ -685,9 +728,9 @@ function VerificationPanel({ profile, startOpen }: { profile: PrinterProfile; st
                   </tbody>
                 </table>
               </div>
-              {outcome.notes.length > 0 && (
+              {outcome.notes.slice(outcome.passed || outcome.suggestedAdjustment ? 0 : 1).length > 0 && (
                 <ul className="flex flex-col gap-1.5 text-xs text-muted">
-                  {outcome.notes.map((n) => <li key={n} className="flex gap-1.5"><Info className="mt-0.5 size-3.5 shrink-0" /> {n}</li>)}
+                  {outcome.notes.slice(outcome.passed || outcome.suggestedAdjustment ? 0 : 1).map((n) => <li key={n} className="flex gap-1.5"><Info className="mt-0.5 size-3.5 shrink-0" /> {n}</li>)}
                 </ul>
               )}
               <div className="flex flex-wrap justify-end gap-2">

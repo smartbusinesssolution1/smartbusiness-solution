@@ -132,6 +132,23 @@ export const printCheckSchema = z
 
 export type PrintCheckInput = z.infer<typeof printCheckSchema>;
 
+// Ten sheets of three-per-page paper. Larger jobs are split by the client: a jam in a
+// long job spoils more checks, and the whole job is rendered within one request.
+export const PRINT_BATCH_MAX_CHECKS = 30;
+
+export const printBatchSchema = z.object({
+  checkIds: z
+    .array(z.uuid("Each check id must be a UUID"))
+    .min(1, "Choose at least one check to print")
+    .max(PRINT_BATCH_MAX_CHECKS, `Print at most ${PRINT_BATCH_MAX_CHECKS} checks at a time`)
+    .refine((ids) => new Set(ids).size === ids.length, "A check can appear only once in a print job"),
+  calibrationProfileId: z.uuid().optional(),
+  // Three-per-page paper: the first blank slot on the sheet in the tray (1 = top).
+  startPosition: z.number().int().min(1, "Slot must be 1, 2 or 3").max(3, "Slot must be 1, 2 or 3").optional(),
+});
+
+export type PrintBatchInput = z.infer<typeof printBatchSchema>;
+
 // What came out of the printer. SPOILED needs a reason: auditors will ask what
 // happened to check #1005, and "Paper jam" answers it.
 export const printOutcomeSchema = z.discriminatedUnion("outcome", [

@@ -94,3 +94,41 @@ describe("evaluateVerification", () => {
     expect(evaluateVerification(expectations, "in", inches).suggestedAdjustment?.horizontalMm).toBeCloseTo(-1.2, 1);
   });
 });
+
+// A real support case: an HP set up as a Letter, three-per-page printer with A4 paper in the
+// tray. Left-edge readings and right-edge readings disagreed by about 6 mm on every sample,
+// and the old averaged "move left 3.44 mm" suggestion could never make them agree.
+describe("paper narrower or wider than the profile says", () => {
+  const letter = verificationExpectations(templateForPrinter({ paperSize: "LETTER", stockType: "PLAIN_PAPER", layout: "THREE_PER_PAGE" }));
+
+  it.each([
+    ["first sample", { upperTearLine: 88, lowerTearLine: 176, micrBottom: 4.8, micrRightEdge: 43, amountBoxLeft: 170 }],
+    ["after the suggested adjustment", { upperTearLine: 88.9, lowerTearLine: 178, micrBottom: 4.8, micrRightEdge: 47.5, amountBoxLeft: 165 }],
+  ])("recognises A4 paper in a Letter profile (%s) instead of suggesting a shift", (_label, readings) => {
+    const outcome = evaluateVerification(letter, "mm", readings, "LETTER");
+    expect(outcome.passed).toBe(false);
+    expect(outcome.suggestedAdjustment).toBeNull();
+    expect(outcome.notes.join(" ")).toMatch(/A4 \(210 x 297 mm\) paper/);
+    expect(outcome.notes.join(" ")).toMatch(/set up for US Letter/);
+  });
+
+  it("recognises Letter paper in an A4 profile", () => {
+    const a4 = verificationExpectations(templateForPrinter({ paperSize: "A4", stockType: "PLAIN_PAPER", layout: "CHECK_MIDDLE" }));
+    const exact = Object.fromEntries(a4.map((e) => [e.item, e.expectedPts / PTS_PER_MM])) as Record<VerificationItem, number>;
+    const outcome = evaluateVerification(a4, "mm", { ...exact, micrRightEdge: exact.micrRightEdge + 5.9 }, "A4");
+    expect(outcome.suggestedAdjustment).toBeNull();
+    expect(outcome.notes.join(" ")).toMatch(/US Letter/);
+  });
+
+  it("says so in general terms for any other disagreement", () => {
+    const outcome = evaluateVerification(expectations, "mm", measured(0, 0, { micrRightEdge: expectedMm.micrRightEdge - 3 }), "A4");
+    expect(outcome.suggestedAdjustment).toBeNull();
+    expect(outcome.notes.join(" ")).toMatch(/disagree by 3 mm/);
+  });
+
+  it("still corrects a real shift, where both edges agree", () => {
+    const outcome = evaluateVerification(expectations, "mm", measured(1.2, 0.8), "A4");
+    expect(outcome.notes).toEqual([]);
+    expect(outcome.suggestedAdjustment).toMatchObject({ horizontalMm: -1.2, verticalMm: -0.8 });
+  });
+});

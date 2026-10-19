@@ -29,6 +29,8 @@ export interface CalibrationProfileResponse {
   calibratedById: string | null;
   calibratedAt: string;
   isDefault: boolean;
+  // Three-per-page paper: the slot the next check goes into (always 1 for other layouts)
+  nextSlot: 1 | 2 | 3;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,4 +56,5 @@ export interface PrintCalibration {
   layout: CheckLayout;
   horizontalOffsetPts: number;
   verticalOffsetPts: number;
+  nextSlot: 1 | 2 | 3;
 }

@@ -1,5 +1,5 @@
 import { PAPER } from "./pdf.types.js";
-import type { CheckLayout, CheckTemplate, PaperSize, SheetPosition, StockType } from "./pdf.types.js";
+import type { CheckLayout, CheckTemplate, CutLine, PaperSize, SheetPosition, StockType, StubZone } from "./pdf.types.js";
 
 /**
  * The template for a printer profile. Real checks and calibration samples both use
@@ -34,8 +34,13 @@ const LAYOUT_NAMES: Record<CheckLayout, string> = {
 //   CHECK_TOP       check 0–3.5 in, stubs below, lines at 3.5 and 7.0 in
 //   CHECK_MIDDLE    stub, check 3.5–7.0 in, stub, lines at 3.5 and 7.0 in
 //   CHECK_BOTTOM    two stubs, check on the bottom 3.5 in of the sheet
-//   THREE_PER_PAGE  three checks of 3.5 in from the top, in slot 1, 2 or 3; no stubs
-function zonesFor(layout: CheckLayout, pageHeight: number, position: SheetPosition) {
+//   THREE_PER_PAGE  three checks of 3.5 in from the top, in slot 1, 2 or 3; no stubs;
+//                   lines at 3.5, 7.0 and 10.5 in
+function zonesFor(
+  layout: CheckLayout,
+  pageHeight: number,
+  position: SheetPosition,
+): { checkTop: number; stubs: StubZone[]; cutLines: CutLine[] } {
   switch (layout) {
     case "CHECK_TOP":
       return {
@@ -45,8 +50,8 @@ function zonesFor(layout: CheckLayout, pageHeight: number, position: SheetPositi
           { top: 504, height: pageHeight - 504, label: "EMPLOYER COPY" },
         ],
         cutLines: [
-          { y: 252, labelAbove: false },
-          { y: 504, labelAbove: false },
+          { y: 252, label: "below" },
+          { y: 504, label: "below" },
         ],
       };
     case "CHECK_MIDDLE":
@@ -57,8 +62,8 @@ function zonesFor(layout: CheckLayout, pageHeight: number, position: SheetPositi
           { top: 504, height: pageHeight - 504, label: "EMPLOYER COPY" },
         ],
         cutLines: [
-          { y: 252, labelAbove: true },
-          { y: 504, labelAbove: false },
+          { y: 252, label: "above" },
+          { y: 504, label: "below" },
         ],
       };
     case "CHECK_BOTTOM": {
@@ -71,22 +76,23 @@ function zonesFor(layout: CheckLayout, pageHeight: number, position: SheetPositi
           { top: stubHeight, height: stubHeight, label: "EMPLOYER COPY" },
         ],
         cutLines: [
-          { y: stubHeight, labelAbove: false },
-          { y: checkTop, labelAbove: true },
+          { y: stubHeight, label: "below" },
+          { y: checkTop, label: "above" },
         ],
       };
     }
     case "THREE_PER_PAGE": {
-      const checkTop = (position - 1) * CHECK_HEIGHT;
-      const checkBottom = checkTop + CHECK_HEIGHT;
+      // Every slot can hold a check (printed now, earlier, or later on the same sheet),
+      // so the lines between slots carry no label: on either side it would land on a
+      // check, possibly in its MICR clear band. Only the last line has room below it.
       return {
-        checkTop,
+        checkTop: (position - 1) * CHECK_HEIGHT,
         stubs: [],
-        cutLines: [252, 504, 756].map((y) => ({
-          y,
-          // Never on the printed check: above its top line, below its bottom line.
-          labelAbove: y === checkTop ? true : y === checkBottom ? false : y < checkTop,
-        })),
+        cutLines: [
+          { y: 252, label: null },
+          { y: 504, label: null },
+          { y: 756, label: "below" },
+        ],
       };
     }
   }
@@ -144,5 +150,33 @@ export function buildCheckTemplate(
       signature:      { x: right - 216, y: y(160), width: 206, height: 28 },
       micr:           { x: 0, y: 0, fontSize: 10 },
     },
+  };
+}
+
+export interface SheetPlan {
+  // Per check, in print order: its sheet (0-based) and slot (null: one check per sheet)
+  placements: Array<{ sheet: number; position: SheetPosition | null }>;
+  sheetCount: number;
+  // Three-per-page: the first blank slot after the job (1 when the last sheet is full)
+  nextPosition: SheetPosition | null;
+}
+
+// Where each check of a print job goes. On three-per-page paper the checks fill the
+// sheet in the tray from `start` (its first blank slot) downwards, then carry on onto
+// fresh sheets. Every other layout prints one check per sheet.
+export function planSheets(count: number, layout: CheckLayout, start: SheetPosition = 1): SheetPlan {
+  if (layout !== "THREE_PER_PAGE") {
+    return {
+      placements: Array.from({ length: count }, (_, i) => ({ sheet: i, position: null })),
+      sheetCount: count,
+      nextPosition: null,
+    };
+  }
+  const slot = (n: number) => ((n % 3) + 1) as SheetPosition;
+  const first = start - 1;
+  return {
+    placements: Array.from({ length: count }, (_, i) => ({ sheet: Math.floor((first + i) / 3), position: slot(first + i) })),
+    sheetCount: count === 0 ? 0 : Math.floor((first + count - 1) / 3) + 1,
+    nextPosition: slot(first + count),
   };
 }

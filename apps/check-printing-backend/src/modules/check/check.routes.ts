@@ -28,6 +28,7 @@ import {
   printOutcomeSchema,
   clearCheckSchema,
   printCheckSchema,
+  printBatchSchema,
 } from "./check.schemas.js";
 
 // ═════════════════════════════════════════════════════════════
@@ -80,6 +81,18 @@ router.get(
 router.get("/views", validate(viewsQuerySchema, "query"), registerController.views);
 router.get("/number-integrity", validate(numberIntegrityQuerySchema, "query"), registerController.numberIntegrity);
 router.get("/aging", validate(agingQuerySchema, "query"), registerController.aging);
+
+// ── Print jobs: several checks in one PDF (BEFORE /:checkId) ──
+// The batch id is a UUID; anything else is a 404 from the lookup, never a database error.
+router.post(
+  "/print-batches",
+  requirePermission(P.CHECK_PRINT),
+  idempotency(),
+  validate(printBatchSchema),
+  checkController.printBatch,
+);
+router.get("/print-batches/:batchId", requirePermission(P.CHECK_PRINT), checkController.getPrintBatch);
+router.get("/print-batches/:batchId/pdf", requirePermission(P.CHECK_PRINT), checkController.downloadBatchPdf);
 
 // ── List / Search Checks ──
 router.get(

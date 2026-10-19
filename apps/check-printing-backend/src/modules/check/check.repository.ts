@@ -377,6 +377,71 @@ export class CheckRepository {
     }, TX_OPTIONS);
   }
 
+  // Checks for one print job, in no particular order (the service orders them).
+  async findManyForPrint(checkIds: string[], workspaceId: string) {
+    return prisma.check.findMany({
+      where: { id: { in: checkIds }, workspaceId, deletedAt: null },
+      include: CHECK_INCLUDE,
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // RECORD A PRINT JOB (all checks or none)
+  //
+  // One transaction: the batch row, then each check moved to PRINTED with the same
+  // conditional UPDATE as a single print (its status must still be the one we
+  // validated), then its history row. If any check was changed by someone else in
+  // the meantime, the whole job rolls back: half a printed batch would leave checks
+  // marked PRINTED that are missing from the PDF, or in it but not marked.
+  // ═════════════════════════════════════════════════════════════
+
+  async recordBatchPrint(
+    batch: Prisma.PrintBatchUncheckedCreateInput & { id: string },
+    checks: Array<{ checkId: string; checkNumber: number; fromStatus: CheckStatus; data: Record<string, unknown> }>,
+    history: { changedById: string; ipAddress?: string | null },
+  ) {
+    return prisma.$transaction(async (tx) => {
+      await tx.printBatch.create({ data: batch });
+
+      for (const c of checks) {
+        const { count } = await tx.check.updateMany({
+          where: { id: c.checkId, workspaceId: batch.workspaceId, deletedAt: null, status: c.fromStatus },
+          data: { status: "PRINTED", printBatchId: batch.id, ...c.data } as Prisma.CheckUncheckedUpdateManyInput,
+        });
+        if (count !== 1) {
+          throw new ConflictError(
+            `Check #${c.checkNumber} was changed by another request while this job was printing, so nothing was printed. Refresh and try again.`,
+          );
+        }
+      }
+
+      await tx.checkStatusHistory.createMany({
+        data: checks.map((c) => ({
+          checkId: c.checkId,
+          fromStatus: c.fromStatus,
+          toStatus: "PRINTED" as const,
+          changeById: history.changedById,
+          ipAddress: history.ipAddress ?? null,
+        })),
+      });
+
+      return tx.check.findMany({
+        where: { printBatchId: batch.id, workspaceId: batch.workspaceId },
+        include: CHECK_INCLUDE,
+      });
+    }, TX_OPTIONS);
+  }
+
+  async findPrintBatch(batchId: string, workspaceId: string) {
+    return prisma.printBatch.findFirst({
+      where: { id: batchId, workspaceId },
+      include: {
+        createdBy: { select: USER_SELECT },
+        checks: { where: { deletedAt: null }, include: CHECK_LIST_INCLUDE },
+      },
+    });
+  }
+
   // ═════════════════════════════════════════════════════════════
   // CONFIRM A PRINT (the paper came out fine)
   //

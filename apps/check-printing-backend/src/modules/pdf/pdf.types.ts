@@ -85,10 +85,10 @@ export interface StubZone extends StubAreaLayout {
 }
 
 // A perforation / tear line across the page. Its label goes on the side that is not
-// the printed check, so it never lands on the check face.
+// a check, so it never lands on a check face; null when both sides can hold a check.
 export interface CutLine {
   y: number;
-  labelAbove: boolean;
+  label: "above" | "below" | null;
 }
 
 export interface CheckElementPosition {

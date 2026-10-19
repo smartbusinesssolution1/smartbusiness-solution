@@ -6,7 +6,7 @@ import {
   sendCreated,
   sendNoContent,
 } from "../../shared/utils/response.js";
-import type { PrintCheckInput } from "./check.schemas.js";
+import type { PrintBatchInput, PrintCheckInput } from "./check.schemas.js";
 
 export class CheckController {
   constructor(private checkService: CheckService) {}
@@ -113,6 +113,35 @@ export class CheckController {
       "Content-Disposition",
       `inline; filename=check-${checkNumber}.pdf`,
     );
+    res.setHeader("Content-Length", buffer.length);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", "private, no-store, must-revalidate");
+    res.send(buffer);
+  };
+
+  printBatch = async (req: Request, res: Response) => {
+    const result = await this.checkService.printBatch(
+      req.params.wid as string,
+      req.body as PrintBatchInput,
+      this.auditCtx(req),
+    );
+    sendCreated(res, result);
+  };
+
+  getPrintBatch = async (req: Request, res: Response) => {
+    const batch = await this.checkService.getPrintBatch(req.params.batchId as string, req.params.wid as string);
+    sendSuccess(res, batch);
+  };
+
+  downloadBatchPdf = async (req: Request, res: Response) => {
+    const buffer = await this.checkService.downloadBatchPdf(
+      req.params.batchId as string,
+      req.params.wid as string,
+      this.auditCtx(req),
+    );
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=print-job-${req.params.batchId as string}.pdf`);
     res.setHeader("Content-Length", buffer.length);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "private, no-store, must-revalidate");

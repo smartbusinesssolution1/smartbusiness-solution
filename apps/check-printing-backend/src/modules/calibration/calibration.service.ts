@@ -1,6 +1,7 @@
 import { NotFoundError, ValidationError } from "../../shared/errors/index.js";
 import { CALIBRATION_LIMITS, CALIBRATION_REF, PAPER, PTS_PER_INCH, PTS_PER_MM } from "../pdf/pdf.types.js";
-import type { CheckPdfData, PaperSize, StockType, CheckLayout } from "../pdf/pdf.types.js";
+import type { CheckPdfData, PaperSize, StockType, CheckLayout, SheetPosition } from "../pdf/pdf.types.js";
+import { logger } from "../../shared/services/logger.js";
 import type { PdfService } from "../pdf/pdf.service.js";
 import { templateForPrinter } from "../pdf/pdf.templates.js";
 import { computeCalibration, normalizeStoredMeasurements } from "./calibration.math.js";
@@ -233,7 +234,7 @@ export class CalibrationService {
   ): Promise<VerificationResponse> {
     const profile = await this.findOrThrow(profileId, workspaceId);
     const expectations = verificationExpectations(templateForPrinter(this.printerOf(profile)));
-    const outcome = evaluateVerification(expectations, input.unit, input);
+    const outcome = evaluateVerification(expectations, input.unit, input, profile.paperSize as PaperSize);
 
     await this.repo.recordVerification(profileId, workspaceId, {
       passed: outcome.passed,
@@ -390,7 +391,22 @@ export class CalibrationService {
       ...this.printerOf(profile),
       horizontalOffsetPts: Number(profile.horizontalOffsetPts),
       verticalOffsetPts: Number(profile.verticalOffsetPts),
+      nextSlot: this.nextSlotOf(profile),
     };
+  }
+
+  // After a print on three-per-page paper: where the next check goes. Only a hint for
+  // the next print (the person can still pick another slot), so it is written after
+  // the print is recorded, and a failure here never fails the print.
+  async recordNextSlot(workspaceId: string, profileId: string, nextSlot: SheetPosition): Promise<void> {
+    await this.repo.setNextSlot(profileId, workspaceId, nextSlot).catch((err: unknown) => {
+      logger.error({ err, profileId }, "Failed to record the next blank slot of a printer");
+    });
+  }
+
+  private nextSlotOf(profile: ProfileRow): SheetPosition {
+    if (profile.layout !== "THREE_PER_PAGE") return 1;
+    return profile.nextSlot === 2 || profile.nextSlot === 3 ? profile.nextSlot : 1;
   }
 
   private printerOf(profile: ProfileRow): { paperSize: PaperSize; stockType: StockType; layout: CheckLayout } {
@@ -443,6 +459,7 @@ export class CalibrationService {
       calibratedById: profile.calibratedById,
       calibratedAt: profile.calibratedAt.toISOString(),
       isDefault: profile.isDefault,
+      nextSlot: this.nextSlotOf(profile),
       createdAt: profile.createdAt.toISOString(),
       updatedAt: profile.updatedAt.toISOString(),
     };

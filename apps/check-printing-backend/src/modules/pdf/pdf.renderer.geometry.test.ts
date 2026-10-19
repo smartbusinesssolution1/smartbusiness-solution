@@ -168,6 +168,59 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
     });
   });
 
+  describe("print jobs: several checks in one PDF", () => {
+    const fullSheet = (paper: PaperSize) =>
+      ([1, 2, 3] as const).map((slot) =>
+        data(paper, { checkNumber: `00100${slot}`, horizontalOffsetPts: 2, verticalOffsetPts: -1 }, "THREE_PER_PAGE", slot),
+      );
+
+    it("draws every check of a full three-per-page sheet with its MICR line on its own slot", async () => {
+      const sheet = fullSheet("LETTER");
+      await renderer.renderSheets([sheet]);
+
+      const fields = micrCalls();
+      expect(fields).toHaveLength(9);
+      sheet.forEach((d, i) => {
+        const checkBottom = d.template.checkArea.top + d.template.checkArea.height;
+        const own = fields.slice(i * 3, i * 3 + 3);
+        expect(own[0]!.text).toBe(`${O}${d.checkNumber}${O}`);
+        for (const f of own) expect(checkBottom - f.y).toBeCloseTo(0.1875 * PTS_PER_INCH, 6);
+      });
+    });
+
+    it("prints nothing but MICR ink in the clear band of ANY of the three checks", async () => {
+      const sheet = fullSheet("A4").map((d) => ({ ...d, memo: "A memo long enough to matter", invoiceItems: [{ description: "Mulch", amount: "10.00" }] }));
+      await renderer.renderSheets([sheet]);
+      const micr = new Set(micrCalls());
+
+      for (const d of sheet) {
+        const checkBottom = d.template.checkArea.top + d.template.checkArea.height;
+        const bandTop = checkBottom - 0.625 * PTS_PER_INCH;
+        const intruders = calls.filter((c) => !micr.has(c) && c.y + c.fontSize > bandTop && c.y < checkBottom);
+        expect(intruders, `slot ${d.template.position}`).toEqual([]);
+      }
+    });
+
+    it("applies the printer offset once per page and draws the tear lines once per page", async () => {
+      const addPage = vi.spyOn(PDFDocument.prototype, "addPage");
+      const sheet = fullSheet("LETTER");
+      await renderer.renderSheets([sheet, [sheet[0]!]]);
+
+      expect(addPage).toHaveBeenCalledTimes(2);
+      expect(translations.filter(([x, y]) => x === 2 && y === -1)).toHaveLength(2);
+      // Three-per-page: only the bottom line has room for its label; one per page.
+      expect(calls.filter((c) => c.text === "TEAR ALONG PERFORATION")).toHaveLength(2);
+    });
+
+    it("refuses a job that mixes paper sizes or printer offsets", async () => {
+      await expect(renderer.renderSheets([[data("LETTER"), data("A4")]])).rejects.toThrow(/same paper/);
+      await expect(
+        renderer.renderSheets([[data("LETTER"), data("LETTER", { horizontalOffsetPts: 3 })]]),
+      ).rejects.toThrow(/same printer offsets/);
+      await expect(renderer.renderSheets([[]])).rejects.toThrow(/Nothing to render/);
+    });
+  });
+
   it("applies the printer profile's offset once, to the whole page", async () => {
     await renderer.render(data("A4", { horizontalOffsetPts: 8.04, verticalOffsetPts: -1.28 }));
     expect(translations).toContainEqual([8.04, -1.28]);

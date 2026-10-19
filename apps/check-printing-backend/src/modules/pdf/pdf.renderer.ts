@@ -135,6 +135,26 @@ export class PdfRenderer {
   }
 
   async render(data: CheckPdfData): Promise<Buffer> {
+    return this.renderSheets([[data]]);
+  }
+
+  // One PDF page per sheet of paper, each holding one or more checks (several only on
+  // three-per-page paper, each in its own slot). A single check is a one-sheet job.
+  async renderSheets(sheets: CheckPdfData[][]): Promise<Buffer> {
+    const all = sheets.flat();
+    const first = all[0];
+    if (!first || sheets.some((sheet) => sheet.length === 0)) {
+      throw new Error("Nothing to render: every sheet needs at least one check.");
+    }
+    // One paper and one printer correction for the whole job: it goes through one tray.
+    const t0 = first.template;
+    if (all.some((d) => d.template.pageWidth !== t0.pageWidth || d.template.pageHeight !== t0.pageHeight || d.template.layout !== t0.layout)) {
+      throw new Error("Every check in a print job must use the same paper and layout.");
+    }
+    if (all.some((d) => d.horizontalOffsetPts !== first.horizontalOffsetPts || d.verticalOffsetPts !== first.verticalOffsetPts)) {
+      throw new Error("Every check in a print job must use the same printer offsets.");
+    }
+
     if (!this.fontValidated) {
       if (!fs.existsSync(this.fontPath))
         throw new Error(
@@ -156,15 +176,15 @@ export class PdfRenderer {
     }
 
     const PDFDocument = (await import("pdfkit")).default;
+    const last = all[all.length - 1]!;
 
     return new Promise<Buffer>((resolve, reject) => {
       try {
         const doc = new PDFDocument({
-          size: [data.template.pageWidth, data.template.pageHeight],
-          margin: 0,
+          autoFirstPage: false,
           info: {
-            Title: `Check #${data.checkNumber}`,
-            Author: data.companyName,
+            Title: all.length === 1 ? `Check #${first.checkNumber}` : `Checks #${first.checkNumber} to #${last.checkNumber}`,
+            Author: first.companyName,
             Creator: "SmartBusinessSolutions",
             Producer: "PDFKit",
           },
@@ -181,33 +201,41 @@ export class PdfRenderer {
 
         doc.registerFont("E13B", this.fontPath);
 
-        const t = data.template;
+        for (const sheet of sheets) {
+          doc.addPage({ size: [t0.pageWidth, t0.pageHeight], margin: 0 });
 
-        // The printer correction is applied once, to the whole page, so every
-        // element drawn below moves together and none can miss it.
-        doc.save();
-        doc.translate(data.horizontalOffsetPts, data.verticalOffsetPts);
+          // The printer correction is applied once, to the whole page, so every
+          // element drawn below moves together and none can miss it.
+          doc.save();
+          doc.translate(first.horizontalOffsetPts, first.verticalOffsetPts);
+          for (const data of sheet) this.drawCheck(doc, data, fontReport.fontSizePts);
+          // The tear lines belong to the sheet, not to a check: drawn once per page.
+          if (sheet[0]!.template.tearGuides) this.drawTearGuides(doc, sheet[0]!.template);
+          doc.restore();
+        }
 
-        // A calibration sample is drawn by exactly the same code as a real check, so it
-        // goes through the same printing path; only the watermark and lower stub differ.
-        if (data.verification) this.drawSampleWatermark(doc, t);
-        // Every stub the layout has (none on three-per-page paper). On a calibration
-        // sample, the measuring panel takes the place of the lower stub.
-        t.stubs.forEach((stub, i) => {
-          const isSampleArea = data.verification && i === t.stubs.length - 1;
-          if (!isSampleArea) this.drawStub(doc, data, t, stub, stub.label);
-        });
-        this.drawCheckFace(doc, data, t);
-        this.drawMicrLine(doc, data, t, fontReport.fontSizePts);
-        if (data.verification) this.drawVerificationPanel(doc, t, t.sampleArea, data.verification);
-        if (t.tearGuides) this.drawTearGuides(doc, t);
-
-        doc.restore();
         doc.end();
       } catch (e) {
         reject(e);
       }
     });
+  }
+
+  // One check (with its stubs) at the place its template gives it on the page.
+  private drawCheck(doc: PDFKit.PDFDocument, data: CheckPdfData, micrFontSizePts: number): void {
+    const t = data.template;
+    // A calibration sample is drawn by exactly the same code as a real check, so it
+    // goes through the same printing path; only the watermark and lower stub differ.
+    if (data.verification) this.drawSampleWatermark(doc, t);
+    // Every stub the layout has (none on three-per-page paper). On a calibration
+    // sample, the measuring panel takes the place of the lower stub.
+    t.stubs.forEach((stub, i) => {
+      const isSampleArea = data.verification && i === t.stubs.length - 1;
+      if (!isSampleArea) this.drawStub(doc, data, t, stub, stub.label);
+    });
+    this.drawCheckFace(doc, data, t);
+    this.drawMicrLine(doc, data, t, micrFontSizePts);
+    if (data.verification) this.drawVerificationPanel(doc, t, t.sampleArea, data.verification);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -596,12 +624,13 @@ export class PdfRenderer {
   //
   //  The label always sits on the stub side of the line, never on
   //  the check: the bottom 5/8" of the check is the MICR clear band,
-  //  where nothing but MICR characters may print.
+  //  where nothing but MICR characters may print. Between two slots
+  //  of three-per-page paper there is no such side: no label there.
   // ─────────────────────────────────────────────────────────────
 
   private drawTearGuides(doc: PDFKit.PDFDocument, tmpl: CheckTemplate): void {
     for (const line of tmpl.cutLines) {
-      this.drawTearGuide(doc, tmpl, line.y, line.labelAbove);
+      this.drawTearGuide(doc, tmpl, line.y, line.label);
     }
   }
 
@@ -609,7 +638,7 @@ export class PdfRenderer {
     doc: PDFKit.PDFDocument,
     tmpl: CheckTemplate,
     y: number,
-    labelAbove: boolean,
+    label: "above" | "below" | null,
   ): void {
     const left = EDGE_SAFE_PTS;
     const right = tmpl.pageWidth - EDGE_SAFE_PTS;
@@ -619,11 +648,12 @@ export class PdfRenderer {
     doc.moveTo(left, y).lineTo(right, y).stroke();
     doc.undash();
 
+    if (!label) return;
     doc
       .font("Helvetica")
       .fontSize(6.5)
       .fillColor("#666666")
-      .text("TEAR ALONG PERFORATION", left, labelAbove ? y - 10 : y + 3, {
+      .text("TEAR ALONG PERFORATION", left, label === "above" ? y - 10 : y + 3, {
         width: right - left,
         align: "center",
         lineBreak: false,

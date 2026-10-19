@@ -2,10 +2,11 @@ import {
   CALIBRATION_LIMITS,
   MICR,
   MICR_FIELD_END_POSITION,
+  PAPER,
   PTS_PER_INCH,
   PTS_PER_MM,
 } from "../pdf/pdf.types.js";
-import type { CheckTemplate } from "../pdf/pdf.types.js";
+import type { CheckTemplate, PaperSize } from "../pdf/pdf.types.js";
 
 export const VERIFICATION_ITEMS = [
   "upperTearLine",
@@ -94,6 +95,7 @@ export function evaluateVerification(
   expectations: VerificationExpectation[],
   unit: "mm" | "in",
   measured: Record<VerificationItem, number>,
+  paperSize?: PaperSize,
 ): VerificationOutcome {
   const toPts = (v: number) => (unit === "mm" ? v * PTS_PER_MM : v * PTS_PER_INCH);
   const expected = Object.fromEntries(expectations.map((e) => [e.item, e.expectedPts])) as Record<VerificationItem, number>;
@@ -132,10 +134,19 @@ export function evaluateVerification(
     );
   }
 
+  // The amount box is measured from the left edge and the MICR end from the right edge.
+  // Moving the page changes both by the same amount, so when they disagree the sheet is
+  // not as wide as the profile says (A4 in a Letter profile is 5.9 mm narrower) or the
+  // page was scaled sideways. A shift can never fix that, and suggesting one sends the
+  // person round in circles, so say what is wrong instead.
+  const widthErrorPts = error.amountBoxLeft + error.micrRightEdge;
+  const widthMismatch = Math.abs(widthErrorPts) > CALIBRATION_LIMITS.scaleCheckPts;
+  if (widthMismatch) notes.push(paperWidthNote(widthErrorPts, paperSize));
+
   let suggestedAdjustment: VerificationOutcome["suggestedAdjustment"] = null;
   const needsX = Math.abs(shiftRightPts) > CALIBRATION_LIMITS.adjustThresholdPts;
   const needsY = Math.abs(shiftDownPts) > CALIBRATION_LIMITS.adjustThresholdPts;
-  if (!scaled && (needsX || needsY)) {
+  if (!scaled && !widthMismatch && (needsX || needsY)) {
     const parts: string[] = [];
     if (needsX) parts.push(`${Math.abs(toMm(shiftRightPts))} mm ${shiftRightPts > 0 ? "left" : "right"}`);
     if (needsY) parts.push(`${Math.abs(toMm(shiftDownPts))} mm ${shiftDownPts > 0 ? "up" : "down"}`);
@@ -146,6 +157,30 @@ export function evaluateVerification(
     };
   }
 
-  const passed = !scaled && items.every((i) => i.status !== "fail");
+  const passed = !scaled && !widthMismatch && items.every((i) => i.status !== "fail");
   return { passed, items, suggestedAdjustment, notes };
+}
+
+const mm1 = (pts: number) => Math.round((pts / PTS_PER_MM) * 10) / 10;
+
+function paperWidthNote(widthErrorPts: number, paperSize?: PaperSize): string {
+  const off = mm1(Math.abs(widthErrorPts));
+  if (paperSize) {
+    const expected = PAPER[paperSize];
+    const other: PaperSize = paperSize === "LETTER" ? "A4" : "LETTER";
+    const impliedWidthPts = expected.width + widthErrorPts;
+    // Within 2.5 mm of the other size: that is almost certainly the paper in the tray.
+    if (Math.abs(impliedWidthPts - PAPER[other].width) < 2.5 * PTS_PER_MM) {
+      return (
+        `The paper in this printer is about ${mm1(impliedWidthPts)} mm wide, which is ${PAPER[other].label} paper, ` +
+        `but this printer profile is set up for ${expected.label}. Moving the page can't fix that. ` +
+        `Load ${expected.label} paper, or set up a new printer profile for ${other === "A4" ? "A4" : "Letter"} and calibrate it with that sheet.`
+      );
+    }
+  }
+  return (
+    `The left-edge and right-edge measurements disagree by ${off} mm, so the paper isn't the size this profile expects ` +
+    "or the page was scaled sideways. Check the paper size in the tray and that the print scale is 100%, then measure again. " +
+    "Moving the page can't fix this."
+  );
 }

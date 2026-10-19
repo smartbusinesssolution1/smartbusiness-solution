@@ -17,14 +17,14 @@ import {
   PartyPopper,
   Inbox,
 } from "lucide-react";
-import { fetchCheckPdf, useCheck, useCheckList, usePrintCheck, usePrintOutcome, useReissueCheck } from "@/api/checks";
+import { PRINT_BATCH_MAX, fetchCheckPdf, useCheck, useCheckList, usePrintCheck, usePrintOutcome, useReissueCheck } from "@/api/checks";
 import { usePrinters } from "@/api/setup";
 import type { Check, PrinterProfile } from "@/api/types";
 import { useWorkspaceContext } from "@/app/workspace-context";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
-import { Segmented } from "@/components/ui/controls";
+import { Checkbox, Segmented } from "@/components/ui/controls";
 import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { PaperDiagram, layoutLabel } from "@/components/app/paper";
@@ -46,6 +46,23 @@ export function PrintQueuePage() {
   const printers = usePrinters(wid);
   const list = tab === "ready" ? ready : unconfirmed;
   const defaultPrinter = printers.data?.find((p) => p.isDefault) ?? printers.data?.[0];
+  const navigate = useNavigate();
+
+  // Ticked checks for one print job. Only those still in the ready list count, so a
+  // check printed elsewhere meanwhile drops out by itself.
+  const [selected, setSelected] = React.useState<ReadonlySet<string>>(new Set());
+  const readyRows = ready.data?.data ?? [];
+  const chosen = readyRows.filter((c) => selected.has(c.id)).map((c) => c.id);
+  const allChosen = readyRows.length > 0 && chosen.length === readyRows.length;
+  const toggle = (id: string, on: boolean) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const tooMany = chosen.length > PRINT_BATCH_MAX;
+  const chosenTotal = readyRows.filter((c) => selected.has(c.id)).reduce((sum, c) => sum + Number(c.amount), 0);
 
   return (
     <Page>
@@ -77,6 +94,16 @@ export function PrintQueuePage() {
         />
       ) : (
         <Panel className="overflow-hidden">
+          {tab === "ready" && (
+            <label className="flex cursor-pointer items-center gap-3 border-b border-line bg-subtle/50 px-5 py-2.5 text-xs text-muted">
+              <Checkbox
+                checked={allChosen ? true : chosen.length > 0 ? "indeterminate" : false}
+                onCheckedChange={(on) => setSelected(on === true ? new Set(readyRows.map((c) => c.id)) : new Set())}
+                aria-label="Select every check"
+              />
+              {chosen.length > 0 ? `${chosen.length} selected` : "Select checks to print them together in one PDF"}
+            </label>
+          )}
           {tab === "unconfirmed" && (
             <div className="flex items-start gap-2 border-b border-warning-500/25 bg-warning-50 px-5 py-3 text-sm text-warning-700">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" /> These checks have PDFs but nobody has said whether the paper came out right. Report each one.
@@ -84,7 +111,10 @@ export function PrintQueuePage() {
           )}
           <ul className="divide-y divide-line">
             {list.data.data.map((c, i) => (
-              <motion.li key={c.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className="flex flex-wrap items-center gap-3 px-5 py-3">
+              <motion.li key={c.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }} className={cn("flex flex-wrap items-center gap-3 px-5 py-3", tab === "ready" && selected.has(c.id) && "bg-primary-50/40")}>
+                {tab === "ready" && (
+                  <Checkbox checked={selected.has(c.id)} onCheckedChange={(on) => toggle(c.id, on === true)} aria-label={`Select check #${checkNo(c.checkNumber)}`} />
+                )}
                 <span className="w-20 font-mono text-sm text-muted num">#{checkNo(c.checkNumber)}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{c.payeeName}</span>
@@ -100,6 +130,33 @@ export function PrintQueuePage() {
           </ul>
         </Panel>
       )}
+
+      <AnimatePresence>
+        {tab === "ready" && chosen.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-panel/95 p-3 pl-5 shadow-pop backdrop-blur"
+          >
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="text-sm font-semibold">{chosen.length} {chosen.length === 1 ? "check" : "checks"} · {money(chosenTotal)}</span>
+              <span className={cn("text-xs", tooMany ? "text-danger-600" : "text-muted")}>
+                {tooMany ? `Print at most ${PRINT_BATCH_MAX} at a time, so a jam spoils fewer checks.` : "One PDF, in check-number order."}
+              </span>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button
+              disabled={tooMany}
+              onClick={() =>
+                navigate(chosen.length === 1 ? `/w/${wid}/print/${chosen[0]}` : `/w/${wid}/print/batch?ids=${chosen.join(",")}`)
+              }
+            >
+              <Printer /> {chosen.length === 1 ? "Print this check" : `Print ${chosen.length} checks`}
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </Page>
   );
 }
@@ -159,7 +216,9 @@ function Station({ initial }: { initial: Check }) {
   const printable = check.status === "APPROVED" || (check.status === "NEW" && check.approvalRequired === false);
   const [stage, setStage] = React.useState<Stage>(check.status === "PRINTED" && !check.printConfirmedAt ? "outcome" : "setup");
   const [printerId, setPrinterId] = React.useState<string | null>(null);
-  const [slot, setSlot] = React.useState(1);
+  // The slot defaults to the printer's next blank one (the sheet in the tray may be
+  // partly used); null until the person picks a slot themselves.
+  const [slotChoice, setSlotChoice] = React.useState<number | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
   const [spoilReason, setSpoilReason] = React.useState("");
   const [choice, setChoice] = React.useState<"ok" | "spoiled" | null>(null);
@@ -167,6 +226,7 @@ function Station({ initial }: { initial: Check }) {
 
   const all = printers.data ?? [];
   const printer = all.find((p) => p.id === printerId) ?? all.find((p) => p.isDefault) ?? all[0];
+  const slot = slotChoice ?? printer?.nextSlot ?? 1;
 
   const pdfFetcher = React.useCallback(() => fetchCheckPdf(wid, check.id), [wid, check.id]);
   const pdf = usePdf(stage === "print" || stage === "outcome" ? ["check-pdf", check.id, check.printedAt] : null, pdfFetcher);
@@ -280,7 +340,7 @@ function Station({ initial }: { initial: Check }) {
                           type="button"
                           role="radio"
                           aria-checked={printer?.id === p.id}
-                          onClick={() => { setPrinterId(p.id); setSlot(1); }}
+                          onClick={() => { setPrinterId(p.id); setSlotChoice(null); }}
                           className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition-all", printer?.id === p.id ? "border-ink shadow-[0_0_0_3px_rgb(10_10_11/0.07)]" : "border-line hover:border-line-strong")}
                         >
                           <div className="w-9 shrink-0"><PaperDiagram layout={p.layout} paper={p.paperSize} /></div>
@@ -299,12 +359,15 @@ function Station({ initial }: { initial: Check }) {
                       <span className="text-[0.8125rem] font-medium text-ink-soft">Which slot is still blank on the sheet?</span>
                       <div role="radiogroup" aria-label="Slot" className="grid grid-cols-3 gap-2">
                         {[1, 2, 3].map((n) => (
-                          <button key={n} type="button" role="radio" aria-checked={slot === n} onClick={() => setSlot(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", slot === n ? "border-ink bg-subtle" : "border-line hover:border-line-strong")}>
+                          <button key={n} type="button" role="radio" aria-checked={slot === n} onClick={() => setSlotChoice(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", slot === n ? "border-ink bg-subtle" : "border-line hover:border-line-strong")}>
                             <div className="w-8"><PaperDiagram layout="THREE_PER_PAGE" paper={printer.paperSize} slot={n} /></div>
                             {n === 1 ? "Top" : n === 2 ? "Middle" : "Bottom"}
                           </button>
                         ))}
                       </div>
+                      {printer.nextSlot !== 1 && (
+                        <p className="text-xs text-muted">Slot {printer.nextSlot} is the next blank one after the last print on this printer. Pick another if the sheet in the tray is different.</p>
+                      )}
                       {check.invoiceItems && check.invoiceItems.length > 0 && <p className="text-xs text-warning-700">This paper has no stubs, so the invoice lines won't print.</p>}
                     </div>
                   )}
