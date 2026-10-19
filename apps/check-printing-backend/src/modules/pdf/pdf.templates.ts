@@ -18,6 +18,13 @@ export function templateForPrinter(printer: {
 }
 
 const SIDE_MARGIN = 36;
+
+// Printed in the strip below the bottom slot of three-per-page paper. A partly used
+// sheet put back turned around gets the next check printed over a used one (the
+// middle slot stays the middle; the bottom slot lands on the top check).
+export const REUSE_NOTE =
+  "REUSING THIS SHEET? Put it back exactly as it went in the first time: same side up, same end first. " +
+  "Turned around, the next check prints over a used one.";
 const CHECK_HEIGHT = 252; // 3.5 in: every layout, every slot
 
 const LAYOUT_NAMES: Record<CheckLayout, string> = {
@@ -84,14 +91,15 @@ function zonesFor(
     case "THREE_PER_PAGE": {
       // Every slot can hold a check (printed now, earlier, or later on the same sheet),
       // so the lines between slots carry no label: on either side it would land on a
-      // check, possibly in its MICR clear band. Only the last line has room below it.
+      // check, possibly in its MICR clear band. The strip below the last line holds the
+      // reuse note instead (see sheetNote).
       return {
         checkTop: (position - 1) * CHECK_HEIGHT,
         stubs: [],
         cutLines: [
           { y: 252, label: null },
           { y: 504, label: null },
-          { y: 756, label: "below" },
+          { y: 756, label: null },
         ],
       };
     }
@@ -134,6 +142,7 @@ export function buildCheckTemplate(
     stubs,
     cutLines,
     sampleArea,
+    sheetNote: layout === "THREE_PER_PAGE" ? { y: 3 * CHECK_HEIGHT + 4, text: REUSE_NOTE } : null,
     elements: {
       companyName:    { x: SIDE_MARGIN, y: y(18), fontSize: 11 },
       companyAddress: { x: SIDE_MARGIN, y: y(32), fontSize: 7.5 },

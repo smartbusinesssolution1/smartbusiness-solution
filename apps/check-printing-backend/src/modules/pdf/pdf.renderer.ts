@@ -55,6 +55,11 @@ const TYPE = {
 // print the outer ~4 mm, and marks there are clipped or shifted.
 const EDGE_SAFE_PTS = 18;
 
+// The reuse note below the bottom slot of three-per-page paper.
+const SHEET_NOTE_FONT = "Helvetica-Bold";
+export const SHEET_NOTE_FIT = (width: number) => ({ font: SHEET_NOTE_FONT, maxSize: 7, minSize: 5.5, width });
+export const sheetNoteWidth = (pageWidth: number) => pageWidth - 2 * EDGE_SAFE_PTS;
+
 // Helvetica and Helvetica-Bold both have an ascender of 718/1000 (Adobe font metrics).
 // Used to keep shrunk text on the same baseline as full-size text.
 const HELVETICA_ASCENDER = 0.718;
@@ -209,8 +214,9 @@ export class PdfRenderer {
           doc.save();
           doc.translate(first.horizontalOffsetPts, first.verticalOffsetPts);
           for (const data of sheet) this.drawCheck(doc, data, fontReport.fontSizePts);
-          // The tear lines belong to the sheet, not to a check: drawn once per page.
+          // The tear lines and the sheet note belong to the sheet, not to a check: once per page.
           if (sheet[0]!.template.tearGuides) this.drawTearGuides(doc, sheet[0]!.template);
+          if (sheet[0]!.template.sheetNote) this.drawSheetNote(doc, sheet[0]!.template);
           doc.restore();
         }
 
@@ -627,6 +633,19 @@ export class PdfRenderer {
   //  where nothing but MICR characters may print. Between two slots
   //  of three-per-page paper there is no such side: no label there.
   // ─────────────────────────────────────────────────────────────
+
+  // One line across the strip outside every check, shrunk to fit (never truncated: the
+  // template test checks it fits both paper widths at the minimum size).
+  private drawSheetNote(doc: PDFKit.PDFDocument, tmpl: CheckTemplate): void {
+    const note = tmpl.sheetNote!;
+    const width = tmpl.pageWidth - 2 * EDGE_SAFE_PTS;
+    const fit = fitText(note.text, SHEET_NOTE_FIT(width));
+    doc
+      .font(SHEET_NOTE_FONT)
+      .fontSize(fit.size)
+      .fillColor("#555555")
+      .text(fit.text, EDGE_SAFE_PTS, note.y, { width, align: "center", lineBreak: false });
+  }
 
   private drawTearGuides(doc: PDFKit.PDFDocument, tmpl: CheckTemplate): void {
     for (const line of tmpl.cutLines) {

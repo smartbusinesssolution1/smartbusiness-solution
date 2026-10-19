@@ -247,6 +247,23 @@ function CheckActions({ check }: { check: Check }) {
   if (["PENDING_APPROVAL", "APPROVED", "REJECTED", "PRINTED"].includes(s)) {
     if (canVoidAny) danger.push(<MenuItem key="void" destructive onSelect={() => setDialog("void")}><Ban /> {s === "PRINTED" ? "Void printed check" : "Void check"}</MenuItem>);
     else if (mine && s !== "PRINTED" && can("check:create")) danger.push(<MenuItem key="withdraw" destructive onSelect={() => setDialog("withdraw")}><Ban /> Withdraw check</MenuItem>);
+    else if (s === "PRINTED") {
+      // Not hidden without a word: say who can void it, and what this person can do instead.
+      const canReportSpoiled = !check.printConfirmedAt && can("check:print");
+      danger.push(
+        <MenuItem key="void-locked" disabled className="items-start">
+          <Ban className="mt-0.5" />
+          <span className="flex flex-col gap-0.5">
+            <span>Void printed check</span>
+            <span className="max-w-60 text-xs text-muted">
+              {canReportSpoiled
+                ? "Only an admin can void a printed check. If it came out wrong, use Report outcome and mark it spoiled."
+                : "Only an admin can void a printed check. Ask your workspace admin."}
+            </span>
+          </span>
+        </MenuItem>,
+      );
+    }
   }
 
   return (

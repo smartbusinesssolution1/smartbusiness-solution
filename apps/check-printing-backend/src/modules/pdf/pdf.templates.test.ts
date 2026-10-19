@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildCheckTemplate, planSheets, templateForPrinter } from "./pdf.templates.js";
+import { buildCheckTemplate, planSheets, REUSE_NOTE, templateForPrinter } from "./pdf.templates.js";
+import { SHEET_NOTE_FIT, sheetNoteWidth } from "./pdf.renderer.js";
+import { fitText } from "./text-fit.js";
 import { PAPER, type CheckLayout, type PaperSize } from "./pdf.types.js";
 
 // #5: where the check, stubs and tear lines go for every layout.
@@ -102,6 +104,21 @@ describe("stubs and tear lines", () => {
     }
     // The same lines whatever the slot, so a job with several checks draws them once per sheet.
     expect(t.cutLines).toEqual(buildCheckTemplate("THREE_PER_PAGE", "LETTER", { position: 1 }).cutLines);
+  });
+
+  it.each(["LETTER", "A4"] as const)("three per page on %s: the reuse note sits below the bottom slot, inside the printable area, and fits", (paper) => {
+    const t = buildCheckTemplate("THREE_PER_PAGE", paper, { position: 2 });
+    expect(t.sheetNote?.text).toBe(REUSE_NOTE);
+    const top = t.sheetNote!.y;
+    // Below every slot (the bottom slot ends at 10.5 in) and at least 1/4 in above the paper's edge.
+    expect(top).toBeGreaterThanOrEqual(3 * 252);
+    expect(top + 7).toBeLessThanOrEqual(t.pageHeight - 18);
+    // Shrunk if needed, never cut off.
+    expect(fitText(REUSE_NOTE, SHEET_NOTE_FIT(sheetNoteWidth(t.pageWidth))).truncated).toBe(false);
+  });
+
+  it.each(["CHECK_TOP", "CHECK_MIDDLE", "CHECK_BOTTOM"] as const)("%s has no reuse note (one check per sheet)", (layout) => {
+    expect(buildCheckTemplate(layout, "LETTER").sheetNote).toBeNull();
   });
 
   it("has at least two lines across the sheet for the verification landmarks", () => {

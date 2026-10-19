@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { PaperDiagram, layoutLabel } from "@/components/app/paper";
 import { PdfFrame, PrintTips, usePdf } from "@/components/app/pdf-dialog";
+import { ReloadCheck } from "@/components/app/reload-check";
 import { StatusBadge } from "@/components/app/status";
 import { ApiError, errorMessage } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/forms";
@@ -55,6 +56,11 @@ export function BatchSetupPage() {
   const printer = all.find((p) => p.id === printerId) ?? all.find((p) => p.isDefault) ?? all[0];
   const threePerPage = printer?.layout === "THREE_PER_PAGE";
   const start: Slot = startChoice ?? printer?.nextSlot ?? 1;
+  // Starting below the top means a used sheet goes back in: confirmed per printer and slot.
+  const [reloadConfirmedFor, setReloadConfirmedFor] = React.useState<string | null>(null);
+  const reloadKey = `${printer?.id}:${start}`;
+  const reusesSheet = threePerPage && start > 1;
+  const reloadConfirmed = !reusesSheet || reloadConfirmedFor === reloadKey;
 
   // Only checks still ready to print; the list is already in check-number order.
   const checks = (ready.data?.data ?? []).filter((c) => ids.includes(c.id));
@@ -190,12 +196,22 @@ export function BatchSetupPage() {
               </div>
             )}
 
+            {reusesSheet && printer && (
+              <ReloadCheck
+                firstSlot={start as 2 | 3}
+                paper={printer.paperSize}
+                confirmed={reloadConfirmed}
+                onConfirmedChange={(on) => setReloadConfirmedFor(on ? reloadKey : null)}
+                onFreshSheet={() => setStartChoice(1)}
+              />
+            )}
+
             {printer && !printer.verification.verified && (
               <InlineAlert tone="warning" title="This printer isn't verified">Checks may print slightly off. Verify it with a sample check first if you can.</InlineAlert>
             )}
             {printer?.needsRecalibration && <InlineAlert tone="danger">Calibrated with an older sheet. Set this printer up again before printing.</InlineAlert>}
 
-            <Button size="lg" disabled={!printer || checks.length > PRINT_BATCH_MAX} loading={print.isPending} onClick={generate}>
+            <Button size="lg" disabled={!printer || checks.length > PRINT_BATCH_MAX || !reloadConfirmed} loading={print.isPending} onClick={generate}>
               <Printer /> Generate PDF for {checks.length} {checks.length === 1 ? "check" : "checks"}
             </Button>
             <p className="text-xs text-muted">Generating marks every check as printed. If any one can't be printed, none are.</p>

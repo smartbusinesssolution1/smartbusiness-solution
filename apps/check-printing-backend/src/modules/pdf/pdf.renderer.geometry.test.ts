@@ -208,8 +208,12 @@ describe.skipIf(!hasFont)("MICR line geometry", () => {
 
       expect(addPage).toHaveBeenCalledTimes(2);
       expect(translations.filter(([x, y]) => x === 2 && y === -1)).toHaveLength(2);
-      // Three-per-page: only the bottom line has room for its label; one per page.
-      expect(calls.filter((c) => c.text === "TEAR ALONG PERFORATION")).toHaveLength(2);
+      // Three-per-page: no tear-line labels (each would land on a slot), and the reuse
+      // note once per page, below the bottom slot.
+      expect(calls.filter((c) => c.text === "TEAR ALONG PERFORATION")).toHaveLength(0);
+      const notes = calls.filter((c) => c.text.startsWith("REUSING THIS SHEET?"));
+      expect(notes).toHaveLength(2);
+      for (const n of notes) expect(n.y).toBeGreaterThanOrEqual(756);
     });
 
     it("refuses a job that mixes paper sizes or printer offsets", async () => {

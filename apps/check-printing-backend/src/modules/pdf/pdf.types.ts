@@ -122,6 +122,8 @@ export interface CheckTemplate {
   cutLines: CutLine[];
   // Where a calibration sample's measuring panel is printed (a stub, or an empty slot)
   sampleArea: StubAreaLayout;
+  // A line of guidance printed once per sheet, outside every check (three-per-page only)
+  sheetNote: { y: number; text: string } | null;
   elements: {
     companyName: CheckElementPosition;
     companyAddress: CheckElementPosition;

@@ -29,6 +29,7 @@ import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { PaperDiagram, layoutLabel } from "@/components/app/paper";
 import { PdfFrame, PrintTips, usePdf } from "@/components/app/pdf-dialog";
+import { ReloadCheck } from "@/components/app/reload-check";
 import { StatusBadge } from "@/components/app/status";
 import { errorMessage } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/forms";
@@ -227,6 +228,11 @@ function Station({ initial }: { initial: Check }) {
   const all = printers.data ?? [];
   const printer = all.find((p) => p.id === printerId) ?? all.find((p) => p.isDefault) ?? all[0];
   const slot = slotChoice ?? printer?.nextSlot ?? 1;
+  // Printing below the top slot means a used sheet goes back in: confirmed per printer and slot.
+  const [reloadConfirmedFor, setReloadConfirmedFor] = React.useState<string | null>(null);
+  const reloadKey = `${printer?.id}:${slot}`;
+  const reusesSheet = printer?.layout === "THREE_PER_PAGE" && slot > 1;
+  const reloadConfirmed = !reusesSheet || reloadConfirmedFor === reloadKey;
 
   const pdfFetcher = React.useCallback(() => fetchCheckPdf(wid, check.id), [wid, check.id]);
   const pdf = usePdf(stage === "print" || stage === "outcome" ? ["check-pdf", check.id, check.printedAt] : null, pdfFetcher);
@@ -372,13 +378,23 @@ function Station({ initial }: { initial: Check }) {
                     </div>
                   )}
 
+                  {reusesSheet && printer && (
+                    <ReloadCheck
+                      firstSlot={slot as 2 | 3}
+                      paper={printer.paperSize}
+                      confirmed={reloadConfirmed}
+                      onConfirmedChange={(on) => setReloadConfirmedFor(on ? reloadKey : null)}
+                      onFreshSheet={() => setSlotChoice(1)}
+                    />
+                  )}
+
                   {printer && !printer.verification.verified && (
                     <InlineAlert tone="warning" title="This printer isn't verified">Checks may print slightly off. Verify it with a sample check first if you can.</InlineAlert>
                   )}
                   {printer?.needsRecalibration && <InlineAlert tone="danger">Calibrated with an older sheet. Set this printer up again before printing.</InlineAlert>}
                   {printError && <InlineAlert tone="danger" title="Not printed">{printError}</InlineAlert>}
 
-                  <Button size="lg" disabled={!printer} loading={print.isPending} onClick={generate}>
+                  <Button size="lg" disabled={!printer || !reloadConfirmed} loading={print.isPending} onClick={generate}>
                     <Printer /> Generate check PDF
                   </Button>
                   <p className="text-xs text-muted">Generating marks the check as printed. You'll confirm the paper came out right next.</p>
