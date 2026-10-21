@@ -19,12 +19,31 @@ export function createApp(): Express {
 
   app.use(
     corsMiddleware({
-      origin: corsConfig.origin,
+      origin: (requestOrigin, callback) => {
+        if (!requestOrigin) return callback(null, true);
+        if ((corsConfig.origin as readonly string[]).includes(requestOrigin)) {
+          return callback(null, true);
+        }
+        if (process.env.NODE_ENV !== "production") {
+          try {
+            const url = new URL(requestOrigin);
+            if (
+              url.hostname === "localhost" ||
+              url.hostname === "127.0.0.1" ||
+              url.hostname.startsWith("192.168.") ||
+              url.hostname.startsWith("10.") ||
+              url.hostname.startsWith("172.")
+            ) {
+              return callback(null, true);
+            }
+          } catch {}
+        }
+        return callback(null, false);
+      },
       credentials: true,
       methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id", "Platform", "platform", "X-Platform", "x-platform"],
     }),
-
   );
 
   app.use(

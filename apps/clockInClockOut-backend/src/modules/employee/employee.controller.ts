@@ -6,7 +6,7 @@ export class EmployeeController {
 
   /**
    * GET /api/v1/employees/me
-   * Resolves the authenticated user's employee badge and profile
+   * Resolves the authenticated user's complete employee profile, assigned workspaces, and baseline avatar status
    */
   getMe = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.userId;
@@ -18,6 +18,57 @@ export class EmployeeController {
     res.status(200).json({
       success: true,
       data: profile,
+    });
+  };
+
+  /**
+   * PUT /api/v1/employees/me
+   * PATCH /api/v1/employees/me
+   * Update authenticated employee's personal contact info (fullName, phone, avatarUrl)
+   */
+  updateMe = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.userId;
+    const tenantId = req.tenant!.tenantId;
+
+    const result = await this.employeeService.updateEmployeeProfile(userId, tenantId, req.body);
+
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: "Profile updated successfully.",
+    });
+  };
+
+  /**
+   * POST /api/v1/employees/me/avatar
+   * Upload and register official baseline facial portrait (Image 2)
+   */
+  uploadAvatar = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.userId;
+    const tenantId = req.tenant!.tenantId;
+
+    const result = await this.employeeService.uploadBaselineAvatar(userId, tenantId, req.file);
+
+    res.status(201).json({
+      success: true,
+      data: result,
+      message: "Baseline biometric face profile registered successfully.",
+    });
+  };
+
+  /**
+   * POST /api/v1/employees/me/push-token
+   * Register mobile device Expo push notification token
+   */
+  registerPushToken = async (req: Request, res: Response): Promise<void> => {
+    const userId = req.user!.userId;
+    const tenantId = req.tenant!.tenantId;
+
+    await this.employeeService.registerPushToken(userId, tenantId, req.body);
+
+    res.status(200).json({
+      success: true,
+      message: "Push notification token registered.",
     });
   };
 
@@ -35,21 +86,4 @@ export class EmployeeController {
       data: employees,
     });
   };
-
-  /**
-   * PATCH /api/v1/employees/me
-   * Update authenticated employee's biometric photo / avatar
-   */
-  updateMe = async (req: Request, res: Response): Promise<void> => {
-    const userId = req.user!.userId;
-    const tenantId = req.tenant!.tenantId;
-    const result = await this.employeeService.updateEmployeeProfile(userId, tenantId, req.body);
-
-    res.status(200).json({
-      success: true,
-      data: result,
-      message: "Employee profile updated successfully.",
-    });
-  };
 }
-

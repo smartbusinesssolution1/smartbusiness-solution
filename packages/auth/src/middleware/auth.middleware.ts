@@ -8,9 +8,9 @@ export function createAuthMiddleware(tokenService: TokenService) {
     _res: Response,
     next: NextFunction,
   ): Promise<void> {
-    // Only the httpOnly cookie is accepted. Tokens are never handed to JavaScript, so there is
-    // no other legitimate way to present one; an Authorization header is ignored.
-    const token = req.cookies?.access_token;
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    const token = req.cookies?.access_token || bearerToken;
 
     if (!token) {
       throw new AuthError("Authentication required. Please log in.");

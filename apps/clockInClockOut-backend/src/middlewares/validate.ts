@@ -21,7 +21,16 @@ export function validate(schema: z.ZodType, target: ValidationTarget = "body") {
       throw new ValidationError("Validation Failed", formattedErrors);
     }
 
-    req[target] = result.data;
+    if (target === "query") {
+      Object.defineProperty(req, "query", {
+        value: result.data,
+        writable: true,
+        enumerable: true,
+        configurable: true,
+      });
+    } else {
+      req[target] = result.data;
+    }
     next();
   };
 }

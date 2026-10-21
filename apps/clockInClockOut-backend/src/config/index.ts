@@ -37,6 +37,7 @@ export const env = {
     },
 
     portalLoginUrl: parsedEnv.PORTAL_LOGIN_URL,
+    faceRecognitionApiUrl: parsedEnv.FACE_RECOGNITION_API_URL,
     aws: {
         region: parsedEnv.AWS_REGION,
         accessKeyId: parsedEnv.AWS_ACCESS_KEY_ID,

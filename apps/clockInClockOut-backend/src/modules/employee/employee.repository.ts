@@ -12,6 +12,7 @@ export class EmployeeRepository {
           userId,
           workspace: {
             tenantId,
+            deletedAt: null,
           },
         },
       },
@@ -24,6 +25,7 @@ export class EmployeeRepository {
                 fullName: true,
                 email: true,
                 isActive: true,
+                createdAt: true,
               },
             },
             workspace: {
@@ -31,11 +33,89 @@ export class EmployeeRepository {
                 id: true,
                 businessName: true,
                 tenantId: true,
+                addressLine1: true,
+                city: true,
+                state: true,
+                attendanceSettings: true,
               },
             },
           },
         },
       },
+    });
+  }
+
+  /**
+   * List all workspaces assigned to a user within the specified tenant
+   */
+  async findAssignedWorkspaces(userId: string, tenantId: string) {
+    return prisma.workspaceMember.findMany({
+      where: {
+        userId,
+        deletedAt: null,
+        workspace: {
+          tenantId,
+          deletedAt: null,
+        },
+      },
+      include: {
+        workspace: {
+          include: {
+            attendanceSettings: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+    });
+  }
+
+  /**
+   * Atomically update user details (e.g. fullName) and employee details (e.g. phone, biometricPhotoUrl)
+   */
+  async updateProfileTransaction(params: {
+    employeeId: string;
+    userId: string;
+    fullName?: string;
+    phone?: string;
+    biometricPhotoUrl?: string;
+  }) {
+    const { employeeId, userId, fullName, phone, biometricPhotoUrl } = params;
+
+    return prisma.$transaction(async (tx) => {
+      let updatedUser;
+      if (fullName !== undefined) {
+        updatedUser = await tx.user.update({
+          where: { id: userId },
+          data: { fullName },
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        });
+      }
+
+      const employeeData: Record<string, any> = {
+        updatedAt: new Date(),
+      };
+      if (phone !== undefined) {
+        employeeData.phone = phone;
+      }
+      if (biometricPhotoUrl !== undefined) {
+        employeeData.biometricPhotoUrl = biometricPhotoUrl;
+      }
+
+      const updatedEmployee = await tx.attendanceEmployeeDetails.update({
+        where: { id: employeeId },
+        data: employeeData,
+      });
+
+      return {
+        employee: updatedEmployee,
+        user: updatedUser,
+      };
     });
   }
 
@@ -80,15 +160,16 @@ export class EmployeeRepository {
   }
 
   /**
-   * Update employee profile (biometricPhotoUrl) by employee detail ID
+   * Update employee profile (biometricPhotoUrl, phone) by employee detail ID
    */
-  async updateEmployeeProfile(id: string, data: { biometricPhotoUrl?: string }) {
+  async updateEmployeeProfile(id: string, data: { biometricPhotoUrl?: string; phone?: string }) {
     return prisma.attendanceEmployeeDetails.update({
       where: { id },
       data: {
-        ...(data.biometricPhotoUrl ? { biometricPhotoUrl: data.biometricPhotoUrl } : {}),
+        ...(data.biometricPhotoUrl !== undefined ? { biometricPhotoUrl: data.biometricPhotoUrl } : {}),
+        ...(data.phone !== undefined ? { phone: data.phone } : {}),
+        updatedAt: new Date(),
       },
     });
   }
 }
-

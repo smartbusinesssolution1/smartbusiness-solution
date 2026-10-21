@@ -167,6 +167,16 @@ export interface AdminDashboardMetrics {
   departmentStats?: DepartmentAttendanceStat[];
 }
 
+export interface TodaySessionInfo {
+  id: string;
+  sessionNumber: number;
+  checkIn: string;
+  checkOut: string | null;
+  workingHours: number;
+  status: string;
+  isActive: boolean;
+}
+
 export interface EmployeeDashboardMetrics {
   todayAttendance: AttendanceRecord | null;
   totalPresent: number;
@@ -174,4 +184,7 @@ export interface EmployeeDashboardMetrics {
   totalWorkingHours: number;
   attendanceRate: number;
   recentAttendance: AttendanceRecord[];
+  hasActiveSession?: boolean;
+  activeSessionId?: string | null;
+  todaySessions?: TodaySessionInfo[];
 }

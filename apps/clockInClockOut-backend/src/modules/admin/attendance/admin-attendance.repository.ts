@@ -446,19 +446,41 @@ export class AdminAttendanceRepository {
     // Filter today's records
     const todayRecords = weeklyRecords.filter((r) => formatRecDate(r.clockInDate) === todayStr);
 
-    const presentToday = todayRecords.filter(
-      (r) => r.status === "PRESENT" || r.status === "LATE" || r.status === "HALF_DAY"
-    ).length;
-    const lateToday = todayRecords.filter((r) => r.status === "LATE").length;
-    const autoClosedToday = todayRecords.filter((r) => r.status === "AUTO_CLOSED").length;
+    // Use distinct employeeId Sets so employees with multiple sessions in a day are not double-counted
+    const presentEmpIds = new Set(
+      todayRecords
+        .filter((r) => r.status === "PRESENT" || r.status === "LATE" || r.status === "HALF_DAY")
+        .map((r) => r.employeeId)
+    );
+    const presentToday = presentEmpIds.size;
+
+    const lateEmpIds = new Set(
+      todayRecords
+        .filter((r) => r.status === "LATE")
+        .map((r) => r.employeeId)
+    );
+    const lateToday = lateEmpIds.size;
+
+    const autoClosedToday = new Set(
+      todayRecords
+        .filter((r) => r.status === "AUTO_CLOSED")
+        .map((r) => r.employeeId)
+    ).size;
+
     const attendanceRate = totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 100;
 
-    // 3. Compute Weekly Trend (last 5 business days)
+    // 3. Compute Weekly Trend (last 5 business days, distinct employees per day)
     const weeklyStats = weekdays.map((w) => {
       const dayRecords = weeklyRecords.filter((r) => formatRecDate(r.clockInDate) === w.dateStr);
-      const present = dayRecords.filter((r) => r.status === "PRESENT" || r.status === "HALF_DAY").length;
-      const late = dayRecords.filter((r) => r.status === "LATE").length;
-      const explicitAbsent = dayRecords.filter((r) => r.status === "ABSENT").length;
+      const present = new Set(
+        dayRecords.filter((r) => r.status === "PRESENT" || r.status === "HALF_DAY").map((r) => r.employeeId)
+      ).size;
+      const late = new Set(
+        dayRecords.filter((r) => r.status === "LATE").map((r) => r.employeeId)
+      ).size;
+      const explicitAbsent = new Set(
+        dayRecords.filter((r) => r.status === "ABSENT").map((r) => r.employeeId)
+      ).size;
       const absent = explicitAbsent > 0 ? explicitAbsent : Math.max(0, totalEmployees - (present + late));
 
       return {

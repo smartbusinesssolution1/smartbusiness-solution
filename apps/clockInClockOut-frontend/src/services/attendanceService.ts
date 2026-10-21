@@ -161,11 +161,7 @@ export const attendanceService = {
   },
 
   async checkIn(formData: FormData): Promise<AttendanceRecord> {
-    const response = await clockInApi.post('/api/v1/attendance/check-in', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await clockInApi.post('/api/v1/attendance/check-in', formData);
     return response.data?.data || response.data;
   },
 

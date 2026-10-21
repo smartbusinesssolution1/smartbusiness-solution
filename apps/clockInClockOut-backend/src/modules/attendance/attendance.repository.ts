@@ -1,0 +1,423 @@
+import { prisma, AttendanceStatus } from "@smartbusiness/database";
+
+export class AttendanceRepository {
+  /**
+   * Find employee profile with workspace and attendance settings by User ID and Tenant ID
+   */
+  async findEmployeeByUserId(userId: string, tenantId: string) {
+    return prisma.attendanceEmployeeDetails.findFirst({
+      where: {
+        deletedAt: null,
+        workspaceMember: {
+          userId,
+          deletedAt: null,
+          workspace: {
+            tenantId,
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        workspaceMember: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+              },
+            },
+            workspace: {
+              include: {
+                attendanceSettings: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Find a specific workspace with its geofence settings
+   */
+  async findWorkspaceWithGeofence(workspaceId: string, tenantId: string) {
+    return prisma.workspace.findFirst({
+      where: {
+        id: workspaceId,
+        tenantId,
+        deletedAt: null,
+      },
+      include: {
+        attendanceSettings: true,
+      },
+    });
+  }
+
+  /**
+   * Check if employee is a member of the specified workspace
+   */
+  async isEmployeeMemberOfWorkspace(userId: string, workspaceId: string) {
+    const member = await prisma.workspaceMember.findFirst({
+      where: {
+        userId,
+        workspaceId,
+        deletedAt: null,
+      },
+    });
+    return Boolean(member);
+  }
+
+  /**
+   * Find active open clock-in session for an employee (clockOutTime IS NULL)
+   */
+  async findActiveSession(employeeId: string) {
+    return prisma.attendanceRecord.findFirst({
+      where: {
+        employeeId,
+        clockOutTime: null,
+      },
+      orderBy: {
+        clockInTime: "desc",
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Find all attendance records/sessions for an employee on a given date
+   */
+  async findTodaySessions(employeeId: string, todayDate: Date) {
+    return prisma.attendanceRecord.findMany({
+      where: {
+        employeeId,
+        clockInDate: todayDate,
+      },
+      orderBy: {
+        clockInTime: "asc",
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Find today's attendance record for an employee (active open session takes priority, otherwise most recent)
+   */
+  async findTodayRecord(employeeId: string, todayDate: Date) {
+    const active = await prisma.attendanceRecord.findFirst({
+      where: {
+        employeeId,
+        clockInDate: todayDate,
+        clockOutTime: null,
+      },
+      orderBy: {
+        clockInTime: "desc",
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (active) return active;
+
+    return prisma.attendanceRecord.findFirst({
+      where: {
+        employeeId,
+        clockInDate: todayDate,
+      },
+      orderBy: {
+        clockInTime: "desc",
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Create clock-in punch attendance record
+   */
+  async createAttendanceRecord(params: {
+    employeeId: string;
+    status: AttendanceStatus;
+    selfieUrl?: string;
+    clockInDate: Date;
+    clockInTime: Date;
+    clockInLatitude: number;
+    clockInLongitude: number;
+    clockInFaceMatchConfidence: number;
+    notes?: string;
+  }) {
+    const {
+      employeeId,
+      status,
+      selfieUrl,
+      clockInDate,
+      clockInTime,
+      clockInLatitude,
+      clockInLongitude,
+      clockInFaceMatchConfidence,
+      notes,
+    } = params;
+
+    return prisma.attendanceRecord.create({
+      data: {
+        employeeId,
+        status,
+        selfieUrl: selfieUrl || null,
+        clockInDate,
+        clockInTime,
+        clockInLatitude,
+        clockInLongitude,
+        clockInFaceMatchConfidence,
+        notes: notes || null,
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Update attendance record with clock-out timestamp and calculated working hours
+   */
+  async updateClockOutRecord(
+    recordId: string,
+    params: {
+      clockOutDate: Date;
+      clockOutTime: Date;
+      clockOutLatitude?: number;
+      clockOutLongitude?: number;
+      clockOutFaceMatchConfidence?: number;
+      workingHours: number;
+      notes?: string;
+    }
+  ) {
+    const {
+      clockOutDate,
+      clockOutTime,
+      clockOutLatitude,
+      clockOutLongitude,
+      clockOutFaceMatchConfidence,
+      workingHours,
+      notes,
+    } = params;
+
+    return prisma.attendanceRecord.update({
+      where: { id: recordId },
+      data: {
+        clockOutDate,
+        clockOutTime,
+        clockOutLatitude: clockOutLatitude !== undefined ? clockOutLatitude : null,
+        clockOutLongitude: clockOutLongitude !== undefined ? clockOutLongitude : null,
+        clockOutFaceMatchConfidence:
+          clockOutFaceMatchConfidence !== undefined ? clockOutFaceMatchConfidence : null,
+        workingHours,
+        notes: notes || undefined,
+        updatedAt: new Date(),
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Fetch paginated attendance records for an employee
+   */
+  async findAttendanceHistory(
+    employeeId: string,
+    params: {
+      startDate?: Date;
+      endDate?: Date;
+      skip?: number;
+      take?: number;
+    }
+  ) {
+    const { startDate, endDate, skip = 0, take = 31 } = params;
+
+    const where: any = {
+      employeeId,
+    };
+
+    if (startDate || endDate) {
+      where.clockInDate = {
+        ...(startDate ? { gte: startDate } : {}),
+        ...(endDate ? { lte: endDate } : {}),
+      };
+    }
+
+    const [records, total] = await Promise.all([
+      prisma.attendanceRecord.findMany({
+        where,
+        orderBy: {
+          clockInDate: "desc",
+        },
+        skip,
+        take,
+        include: {
+          employee: {
+            include: {
+              workspaceMember: {
+                include: {
+                  workspace: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+      prisma.attendanceRecord.count({ where }),
+    ]);
+
+    return { records, total };
+  }
+
+  /**
+   * Fetch single record by ID scoped to employee
+   */
+  async findRecordById(recordId: string, employeeId: string) {
+    return prisma.attendanceRecord.findFirst({
+      where: {
+        id: recordId,
+        employeeId,
+      },
+      include: {
+        employee: {
+          include: {
+            workspaceMember: {
+              include: {
+                workspace: true,
+                user: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * Aggregate monthly metrics for employee, correctly grouping multiple sessions per calendar day
+   */
+  async findMonthlyMetrics(employeeId: string, startDate: Date, endDate: Date) {
+    const records = await prisma.attendanceRecord.findMany({
+      where: {
+        employeeId,
+        clockInDate: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        clockInDate: true,
+        clockInTime: true,
+        status: true,
+        workingHours: true,
+      },
+      orderBy: {
+        clockInTime: "asc",
+      },
+    });
+
+    // Group records by calendar date YYYY-MM-DD
+    const dateMap = new Map<string, typeof records>();
+    for (const rec of records) {
+      const dtStr = rec.clockInDate.toISOString().split("T")[0];
+      const list = dateMap.get(dtStr) || [];
+      list.push(rec);
+      dateMap.set(dtStr, list);
+    }
+
+    const totalDays = dateMap.size;
+    let presentDays = 0;
+    let lateDays = 0;
+    let onTimeDays = 0;
+    let totalHours = 0;
+
+    for (const [, dayRecords] of dateMap.entries()) {
+      const isAnyPresent = dayRecords.some(
+        (r) => r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.LATE
+      );
+      if (isAnyPresent) presentDays++;
+
+      // First session of the day determines punctuality
+      const firstSession = dayRecords[0];
+      if (firstSession && firstSession.status === AttendanceStatus.LATE) {
+        lateDays++;
+      } else if (isAnyPresent) {
+        onTimeDays++;
+      }
+
+      for (const r of dayRecords) {
+        totalHours += Number(r.workingHours || 0);
+      }
+    }
+
+    return {
+      totalDays,
+      presentDays,
+      onTimeDays,
+      lateDays,
+      totalHours: Math.round(totalHours * 100) / 100,
+      punctualityRate: presentDays > 0 ? Math.round((onTimeDays / presentDays) * 100) : 100,
+    };
+  }
+}

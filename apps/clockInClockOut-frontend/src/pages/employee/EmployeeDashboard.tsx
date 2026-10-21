@@ -178,21 +178,39 @@ export const EmployeeDashboard: React.FC = () => {
     return 'Good Evening';
   };
 
-  const isCheckedIn = !!metrics?.todayAttendance?.checkIn;
-  const isCheckedOut = !!metrics?.todayAttendance?.checkOut;
+  // Multi-session state machine
+  const hasActiveSession = metrics?.hasActiveSession !== undefined
+    ? metrics.hasActiveSession
+    : Boolean(metrics?.todayAttendance?.checkIn && !metrics?.todayAttendance?.checkOut);
 
-  // Calculate circular progress percentage for working hours
+  const todaySessions = metrics?.todaySessions || [];
+  const completedSessionsCount = todaySessions.filter((s) => !s.isActive).length;
+  const hasAnySessionToday = todaySessions.length > 0 || Boolean(metrics?.todayAttendance?.checkIn);
+
+  // Total working hours accumulated today
   const workingHoursToday = metrics?.todayAttendance?.workingHours || 0;
-  // If checked in but not checked out, calculate elapsed hours in real time
+
+  // Real-time elapsed hours calculation
   const getElapsedHours = () => {
-    if (isCheckedOut) return workingHoursToday;
-    if (isCheckedIn && metrics?.todayAttendance?.checkIn) {
+    if (!hasActiveSession) return workingHoursToday;
+
+    const activeSess = todaySessions.find((s) => s.isActive);
+    const activeCheckIn = activeSess?.checkIn || metrics?.todayAttendance?.checkIn;
+    if (activeCheckIn) {
       const todayStr = dayjs().format('YYYY-MM-DD');
-      const checkInTime = dayjs(`${todayStr} ${metrics.todayAttendance.checkIn}`, 'YYYY-MM-DD HH:mm:ss');
-      const elapsed = parseFloat(dayjs().diff(checkInTime, 'hour', true).toFixed(2));
-      return isNaN(elapsed) ? 0 : elapsed;
+      const checkInTime = dayjs(`${todayStr} ${activeCheckIn}`, 'YYYY-MM-DD hh:mm A');
+      const sessionElapsed = parseFloat(
+        dayjs()
+          .diff(checkInTime.isValid() ? checkInTime : dayjs(`${todayStr} ${activeCheckIn}`), 'hour', true)
+          .toFixed(2)
+      );
+      const baseHours = todaySessions
+        .filter((s) => !s.isActive)
+        .reduce((acc, s) => acc + (s.workingHours || 0), 0);
+      const total = baseHours + (isNaN(sessionElapsed) || sessionElapsed < 0 ? 0 : sessionElapsed);
+      return Math.max(workingHoursToday, parseFloat(total.toFixed(2)));
     }
-    return 0;
+    return workingHoursToday;
   };
 
   const elapsedHours = parseFloat(getElapsedHours().toFixed(2));
@@ -289,13 +307,13 @@ export const EmployeeDashboard: React.FC = () => {
                     SHIFT STATUS
                   </Typography>
                   
-                  {isCheckedOut ? (
-                    <Alert severity="success" icon={<PresentIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
-                      Shift completed successfully today. Thank you!
-                    </Alert>
-                  ) : isCheckedIn ? (
+                  {hasActiveSession ? (
                     <Alert severity="info" icon={<ClockIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
-                      You are checked in and active. Keep up the great work!
+                      You are currently clocked in {todaySessions.length > 0 ? `(Session #${todaySessions.length})` : ''}. Shift in progress!
+                    </Alert>
+                  ) : hasAnySessionToday ? (
+                    <Alert severity="success" icon={<PresentIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
+                      Currently clocked out / on break. Total logged today: {workingHoursToday} hrs across {completedSessionsCount || 1} session(s). Ready to clock in again!
                     </Alert>
                   ) : (
                     <Alert severity="warning" icon={<LateIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
@@ -309,13 +327,15 @@ export const EmployeeDashboard: React.FC = () => {
                       variant="contained"
                       color="primary"
                       size="large"
-                      disabled={isCheckedIn || checkInMutation.isPending || isLocating}
+                      disabled={hasActiveSession || checkInMutation.isPending || isLocating}
                       startIcon={<CheckInIcon />}
                       onClick={triggerCheckIn}
                       sx={{ py: 1.5, borderRadius: 2, fontWeight: 700 }}
                     >
                       {checkInMutation.isPending || isLocating ? (
                         <CircularProgress size={24} color="inherit" />
+                      ) : hasAnySessionToday ? (
+                        `Clock In Again (Session #${todaySessions.length + 1})`
                       ) : (
                         'Check In'
                       )}
@@ -326,7 +346,7 @@ export const EmployeeDashboard: React.FC = () => {
                       variant="contained"
                       color="secondary"
                       size="large"
-                      disabled={!isCheckedIn || isCheckedOut || checkOutMutation.isPending}
+                      disabled={!hasActiveSession || checkOutMutation.isPending}
                       startIcon={<CheckOutIcon />}
                       onClick={triggerCheckOut}
                       sx={{ py: 1.5, borderRadius: 2, fontWeight: 700 }}
@@ -446,11 +466,15 @@ export const EmployeeDashboard: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <ClockIcon color="action" />
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Check In</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {todaySessions.length > 1 ? 'Latest Check In' : 'Check In'}
+                      </Typography>
                     </Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {metrics?.todayAttendance?.checkIn 
-                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).format('hh:mm A') 
+                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).isValid()
+                          ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).format('hh:mm A')
+                          : metrics.todayAttendance.checkIn
                         : '--:--'}
                     </Typography>
                   </Box>
@@ -460,12 +484,20 @@ export const EmployeeDashboard: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <ClockIcon color="action" />
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Check Out</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {todaySessions.length > 1 ? 'Latest Check Out' : 'Check Out'}
+                      </Typography>
                     </Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {metrics?.todayAttendance?.checkOut 
-                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).format('hh:mm A') 
-                        : '--:--'}
+                      {hasActiveSession ? (
+                        <Chip label="Active Now" color="primary" size="small" sx={{ height: 20, fontSize: '0.7rem' }} />
+                      ) : metrics?.todayAttendance?.checkOut ? (
+                        dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).isValid()
+                          ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).format('hh:mm A')
+                          : metrics.todayAttendance.checkOut
+                      ) : (
+                        '--:--'
+                      )}
                     </Typography>
                   </Box>
 
@@ -480,6 +512,43 @@ export const EmployeeDashboard: React.FC = () => {
                       ? getStatusChip(metrics.todayAttendance.status) 
                       : <Chip label="Unreported" size="small" />}
                   </Box>
+
+                  {/* Multi-session timeline breakdown */}
+                  {todaySessions.length > 0 && (
+                    <Box sx={{ mt: 1, pt: 2, borderTop: `1px dashed ${theme.palette.divider}` }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', display: 'block', mb: 1 }}>
+                        Today's Sessions ({todaySessions.length})
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {todaySessions.map((session) => (
+                          <Box
+                            key={session.id}
+                            sx={{
+                              p: 1.2,
+                              borderRadius: 1.5,
+                              bgcolor: session.isActive ? 'action.selected' : 'action.hover',
+                              border: `1px solid ${session.isActive ? theme.palette.primary.main : theme.palette.divider}`,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Box>
+                              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                Session #{session.sessionNumber} {session.isActive && '• In Progress'}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {session.checkIn} → {session.checkOut || 'Active'}
+                              </Typography>
+                            </Box>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: session.isActive ? 'primary.main' : 'text.primary' }}>
+                              {session.isActive ? 'Logging...' : `${session.workingHours} hrs`}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>
