@@ -15,6 +15,44 @@ function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
   return fallback;
 }
 
+// ─── Session ────────────────────────────────────────────────
+// The login tokens live only in httpOnly cookies set by platform-api: JavaScript can never
+// read them, so a script injected into the page cannot steal a session. The browser sends
+// the cookies itself (withCredentials). What the app keeps here is only a yes/no flag that
+// it signed in, so it does not call protected APIs while signed out.
+const SESSION_FLAG_KEY = 'session_active';
+
+// Earlier versions kept the access token in localStorage; remove any left behind.
+try {
+  localStorage.removeItem('access_token');
+} catch {
+  // Storage unavailable
+}
+
+export function markSignedIn(): void {
+  try {
+    localStorage.setItem(SESSION_FLAG_KEY, '1');
+  } catch {
+    // Storage unavailable
+  }
+}
+
+export function markSignedOut(): void {
+  try {
+    localStorage.removeItem(SESSION_FLAG_KEY);
+  } catch {
+    // Storage unavailable
+  }
+}
+
+export function isSignedIn(): boolean {
+  try {
+    return localStorage.getItem(SESSION_FLAG_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 // Central Axios instance for ClockInClockOut backend (Port 3000)
 export const clockInApi = axios.create({
   baseURL: CLOCKIN_API_URL,
@@ -33,7 +71,7 @@ export const platformAuthApi = axios.create({
   },
 });
 
-// Request interceptor: attach Authorization, X-Tenant-Id and X-Workspace-Id headers
+// Request interceptor: attach X-Tenant-Id and X-Workspace-Id headers (the session cookie goes by itself)
 clockInApi.interceptors.request.use((config) => {
   const url = config.url || '';
   const isAuthRoute =
@@ -41,16 +79,11 @@ clockInApi.interceptors.request.use((config) => {
     url.includes('/auth/register') ||
     url.includes('/auth/refresh');
 
-  const token = localStorage.getItem('access_token');
-
-  // Do not hit network for protected routes when logged out / token is missing
-  if (!token && !isAuthRoute) {
-    return Promise.reject(new axios.CanceledError('No access token available. Request aborted.'));
+  // Do not hit network for protected routes when signed out
+  if (!isSignedIn() && !isAuthRoute) {
+    return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
-  if (token) {
-    config.headers.set('Authorization', `Bearer ${token}`);
-  }
   const tenantId = localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
@@ -62,7 +95,7 @@ clockInApi.interceptors.request.use((config) => {
   return config;
 });
 
-// Request interceptor for platformAuthApi: attach Authorization and X-Tenant-Id headers
+// Request interceptor for platformAuthApi: attach the X-Tenant-Id header (the session cookie goes by itself)
 platformAuthApi.interceptors.request.use((config) => {
   const url = config.url || '';
   const isAuthRoute =
@@ -70,16 +103,11 @@ platformAuthApi.interceptors.request.use((config) => {
     url.includes('/auth/register') ||
     url.includes('/auth/refresh');
 
-  const token = localStorage.getItem('access_token');
-
-  // Do not hit network for protected routes when logged out / token is missing
-  if (!token && !isAuthRoute) {
-    return Promise.reject(new axios.CanceledError('No access token available. Request aborted.'));
+  // Do not hit network for protected routes when signed out
+  if (!isSignedIn() && !isAuthRoute) {
+    return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
-  if (token) {
-    config.headers.set('Authorization', `Bearer ${token}`);
-  }
   const tenantId = localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
@@ -87,7 +115,22 @@ platformAuthApi.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor for ClockInApi: notify on error or success: false, silent token refresh on 401
+// Renews the session cookies once; concurrent callers share the same attempt. The refresh
+// token is replaced on every refresh, so two refreshes at once would make the second fail.
+let refreshInFlight: Promise<boolean> | null = null;
+
+export function refreshSession(): Promise<boolean> {
+  refreshInFlight ??= platformAuthApi
+    .post('/api/v1/auth/refresh')
+    .then(() => true)
+    .catch(() => false)
+    .finally(() => {
+      refreshInFlight = null;
+    });
+  return refreshInFlight;
+}
+
+// Response interceptor for ClockInApi: notify on error or success: false, silent session refresh on 401
 clockInApi.interceptors.response.use(
   (response) => {
     if (response.data && response.data.success === false) {
@@ -113,32 +156,22 @@ clockInApi.interceptors.response.use(
 
     if (error.response?.status === 401 && !originalRequest?._retry && !isAuthRoute) {
       originalRequest._retry = true;
-      const currentToken = localStorage.getItem('access_token');
 
-      // If no token was stored, don't attempt refresh loop
-      if (currentToken) {
-        try {
-          // Silent token refresh via platform-api
-          const refreshRes = await platformAuthApi.post('/api/v1/auth/refresh');
-          const newAccessToken = refreshRes.data?.data?.tokens?.accessToken;
-          if (newAccessToken) {
-            localStorage.setItem('access_token', newAccessToken);
-            originalRequest.headers = originalRequest.headers || {};
-            originalRequest.headers['Authorization'] = `Bearer ${newAccessToken}`;
-            // Retry the original request
-            return clockInApi(originalRequest);
-          }
-        } catch (refreshErr) {
-          // Session expired, redirect to login
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('active_tenant_id');
-          localStorage.removeItem('active_workspace_id');
-          localStorage.removeItem('checkpoint_current_user');
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
-          }
-          notify('Your session has expired. Please sign in again.', 'warning');
+      // Only a signed-in session can be renewed; otherwise there is nothing to refresh
+      if (isSignedIn()) {
+        // Silent session refresh via platform-api: new cookies, then retry the original request
+        if (await refreshSession()) {
+          return clockInApi(originalRequest);
         }
+        // Session expired, redirect to login
+        markSignedOut();
+        localStorage.removeItem('active_tenant_id');
+        localStorage.removeItem('active_workspace_id');
+        localStorage.removeItem('checkpoint_current_user');
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        notify('Your session has expired. Please sign in again.', 'warning');
       }
     }
 

@@ -19,24 +19,25 @@ export const envSchema = z.object({
                 .map((origin) => origin.trim())
                 .filter(Boolean)
         )
+        // No "*": the session is in cookies, so only the listed websites may call this API.
+        .refine((origins) => !origins.includes("*"), {
+            message: 'ORIGIN cannot be "*": list the exact frontend origins, comma-separated',
+        })
         .pipe(
             z
                 .array(
-                    z.union([
-                        z.literal("*"),
-                        z.url().refine(
-                            (value) => {
-                                const url = new URL(value);
-                                return (
-                                    url.protocol === "http:" ||
-                                    url.protocol === "https:"
-                                );
-                            },
-                            {
-                                message: "ORIGIN must use http or https",
-                            }
-                        ),
-                    ])
+                    z.url().refine(
+                        (value) => {
+                            const url = new URL(value);
+                            return (
+                                url.protocol === "http:" ||
+                                url.protocol === "https:"
+                            );
+                        },
+                        {
+                            message: "ORIGIN must use http or https",
+                        }
+                    )
                 )
                 .min(1)
         ),

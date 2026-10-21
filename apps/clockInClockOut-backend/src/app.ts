@@ -17,10 +17,12 @@ export function createApp(): Express {
     app.set("trust proxy", 1);
 
     app.use(corsMiddleware({
-        origin: env.server.origin.includes("*") ? true : env.server.origin,
+        // Exact origins only (env.schema refuses "*"): the session is in cookies, so allowing any
+        // website with credentials would let it act as the signed-in user and read the answers.
+        origin: env.server.origin,
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id"],
+        allowedHeaders: ["Content-Type", "X-Tenant-Id", "X-Workspace-Id"],
     }));
     app.use(helmet({
         crossOriginResourcePolicy: {

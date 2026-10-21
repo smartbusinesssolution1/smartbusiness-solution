@@ -30,7 +30,6 @@ apiV1.use('/auth', async (req, res) => {
       'content-type': (req.headers['content-type'] as string) || 'application/json',
     };
     if (req.headers.cookie) headers['cookie'] = req.headers.cookie;
-    if (req.headers.authorization) headers['authorization'] = req.headers.authorization;
     if (req.headers['x-tenant-id']) headers['x-tenant-id'] = req.headers['x-tenant-id'] as string;
 
     const fetchResponse = await fetch(targetUrl, {

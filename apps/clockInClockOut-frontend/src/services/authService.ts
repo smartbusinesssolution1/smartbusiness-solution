@@ -1,5 +1,5 @@
 import { User, Tenant, Workspace } from '../types';
-import { platformAuthApi, clockInApi } from './apiClient';
+import { platformAuthApi, clockInApi, isSignedIn, markSignedIn, markSignedOut, refreshSession } from './apiClient';
 import { getSessionUser, setSessionUser, getUsers } from './mockDb';
 
 export const ACTIVE_TENANT_STORAGE_KEY = 'active_tenant_id';
@@ -115,8 +115,7 @@ export const authService = {
    * Fetch live workspaces from backend for the active tenant (deduplicated)
    */
   async fetchWorkspaces(): Promise<Workspace[]> {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
+    if (!isSignedIn()) {
       return this.getWorkspaces();
     }
 
@@ -250,11 +249,10 @@ export const authService = {
     try {
       const loginRes = await platformAuthApi.post('/api/v1/auth/login', { email, password });
 
-      const { user: authUser, tenants: rawTenants, tokens } = loginRes.data.data;
+      const { user: authUser, tenants: rawTenants } = loginRes.data.data;
 
-      if (tokens?.accessToken) {
-        localStorage.setItem('access_token', tokens.accessToken);
-      }
+      // The session is in httpOnly cookies set by platform-api; only remember that we signed in.
+      markSignedIn();
 
       const activeRawTenant = rawTenants?.[0];
       if (!activeRawTenant) {
@@ -265,7 +263,9 @@ export const authService = {
       const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
 
       if (!isPrivileged) {
-        localStorage.removeItem('access_token');
+        // End the server session too: the cookies would otherwise stay valid.
+        await platformAuthApi.post('/api/v1/auth/logout').catch(() => {});
+        markSignedOut();
         localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
         localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
         throw new Error(
@@ -391,10 +391,9 @@ export const authService = {
         password: 'Password1!',
       });
 
-      const { user: authUser, tokens } = res.data.data;
-      if (tokens?.accessToken) {
-        localStorage.setItem('access_token', tokens.accessToken);
-      }
+      const { user: authUser } = res.data.data;
+      // The session is in httpOnly cookies set by platform-api; only remember that we signed in.
+      markSignedIn();
       this.setCurrentTenant(tenant);
       this.setWorkspaces(workspaces);
       localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, initialWorkspace.id);
@@ -462,7 +461,7 @@ export const authService = {
     } catch (err) {
       console.warn('Logout API error:', err);
     } finally {
-      localStorage.removeItem('access_token');
+      markSignedOut();
       localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
       localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
       setSessionUser(null);
@@ -473,8 +472,7 @@ export const authService = {
    * Get current session user (deduplicated)
    */
   async getCurrentUser(): Promise<User | null> {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
+    if (!isSignedIn()) {
       return null;
     }
 
@@ -484,7 +482,14 @@ export const authService = {
 
     inFlightCurrentUserPromise = (async () => {
       try {
-        const meRes = await platformAuthApi.get('/api/v1/auth/me');
+        let meRes;
+        try {
+          meRes = await platformAuthApi.get('/api/v1/auth/me');
+        } catch (meErr: any) {
+          // The 15-minute access cookie may have expired: renew it once, then ask again.
+          if (meErr?.response?.status !== 401 || !(await refreshSession())) throw meErr;
+          meRes = await platformAuthApi.get('/api/v1/auth/me');
+        }
         const authUser = meRes.data.data?.user;
         const rawTenants = meRes.data.data?.tenants;
 
@@ -505,6 +510,7 @@ export const authService = {
           const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
 
           if (!isPrivileged) {
+            markSignedOut();
             localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
             localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
             setSessionUser(null);
@@ -541,7 +547,14 @@ export const authService = {
           setSessionUser(user);
           return user;
         }
-      } catch (err) {
+      } catch (err: any) {
+        // The server says the session is over (signed out elsewhere, deactivated, expired):
+        // never keep showing a cached user as signed in.
+        if (err?.response?.status === 401) {
+          markSignedOut();
+          setSessionUser(null);
+          return null;
+        }
         console.warn('Session verification failed on backend:', err);
       } finally {
         inFlightCurrentUserPromise = null;

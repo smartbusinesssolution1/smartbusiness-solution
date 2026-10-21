@@ -60,6 +60,20 @@ describe("register", () => {
     expect(body).not.toContain("passwordHash");
   });
 
+  // Every frontend (Check Printing, Clock-In) gets its session only as httpOnly cookies.
+  it("never returns tokens in the body of a sign-in or a refresh either", async () => {
+    const client = new AuthClient();
+    await client.register();
+    for (const res of [await client.login(), await client.refresh()]) {
+      expect(res.status).toBe(200);
+      const cookies = parseSetCookies(res);
+      const body = JSON.stringify(res.body);
+      expect(res.body.data.tokens).toBeUndefined();
+      expect(body).not.toContain(cookies.access_token!.value);
+      expect(body).not.toContain(cookies.refresh_token!.value);
+    }
+  });
+
   it("normalises the email to lower case", async () => {
     const res = await new AuthClient().register({ email: "  Maria@GreenAcres.TEST " });
     expect(res.body.data.user.email).toBe("maria@greenacres.test");
@@ -233,6 +247,15 @@ describe("access token", () => {
 
   it("is refused when missing", async () => {
     expect((await new AuthClient().me()).status).toBe(401);
+  });
+
+  // Tokens are never handed to JavaScript, so the cookie is the only way to present one. A valid
+  // token sent any other way (copied out of a browser, say) does not sign anyone in.
+  it("is refused when sent as an Authorization: Bearer header instead of the cookie", async () => {
+    const client = new AuthClient();
+    await client.register();
+    const res = await request(getApp()).get("/api/v1/auth/me").set("Authorization", `Bearer ${client.accessToken!}`);
+    expect(res.status).toBe(401);
   });
 
   it("is refused when signed with another secret", async () => {

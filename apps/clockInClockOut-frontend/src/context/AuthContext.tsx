@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { useQueryClient } from '@tanstack/react-query';
 import { User, Tenant, Workspace } from '../types';
 import { authService } from '../services/authService';
+import { isSignedIn } from '../services/apiClient';
 
 interface AuthContextType {
   user: User | null;
@@ -48,20 +49,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     async function restoreSession() {
       try {
-        const token = localStorage.getItem('access_token');
-        if (!token) {
+        // The session lives in httpOnly cookies; only a "signed in" flag is kept locally.
+        if (!isSignedIn()) {
           setIsLoading(false);
           return;
         }
 
-        const [currentUser, liveWorkspaces] = await Promise.all([
-          authService.getCurrentUser(),
-          authService.fetchWorkspaces(),
-        ]);
+        // Who is signed in first (this also renews an expired access cookie), then their workspaces.
+        const currentUser = await authService.getCurrentUser();
+        const liveWorkspaces = currentUser ? await authService.fetchWorkspaces() : [];
 
         if (currentUser) {
           setUser(currentUser);
-          setToken(token);
+          setToken('session-cookie-active');
           const tenant = authService.getCurrentTenant();
           const active = authService.getActiveWorkspace();
           setCurrentTenant(tenant);

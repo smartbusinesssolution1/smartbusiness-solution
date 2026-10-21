@@ -36,7 +36,9 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendCreated(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
+    // The tokens go only into httpOnly cookies, never into the body: JavaScript (including a
+    // script injected through an XSS bug) can never read them, in any frontend.
+    sendCreated(res, { user: result.user, tenants: result.tenants });
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
@@ -46,7 +48,7 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
+    sendSuccess(res, { user: result.user, tenants: result.tenants });
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
@@ -59,7 +61,7 @@ export class AuthController {
     const result = await this.authService.refresh(rawRefreshToken);
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
+    sendSuccess(res, { user: result.user, tenants: result.tenants });
   };
 
 

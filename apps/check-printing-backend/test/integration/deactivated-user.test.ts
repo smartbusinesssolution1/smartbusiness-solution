@@ -39,3 +39,45 @@ describe("a user who was deactivated or deleted after logging in (R-13)", () => 
     expect(checks.status).toBe(401);
   });
 });
+
+// The same, for a user who is already working: their earlier requests must not let a later
+// one through (an answer remembered from before the change would skip these checks).
+describe("access ends on the very next request, even mid-session", () => {
+  let world: TestWorld;
+  let headers: Record<string, string>;
+  const checksUrl = () => `/api/v1/workspaces/${world.workspaceId}/checks`;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    world = await createWorld();
+    headers = authHeaders(world.editor);
+    // Working normally: a few requests succeed first.
+    for (let i = 0; i < 3; i++) {
+      expect((await request(getApp()).get(checksUrl()).set(headers)).status).toBe(200);
+    }
+  });
+
+  it.each([
+    ["deactivated", { isActive: false }],
+    ["deleted", { deletedAt: new Date() }],
+  ])("refuses the next request once the account is %s", async (_label, change) => {
+    await prisma.user.update({ where: { id: world.editor.id }, data: change });
+    const res = await request(getApp()).get(checksUrl()).set(headers);
+    expect(res.status).toBe(401);
+    expect(res.body.error.message).toMatch(/deactivated/);
+  });
+
+  it("refuses the next request once the user is removed from the organization", async () => {
+    await prisma.tenantMember.updateMany({ where: { tenantId: world.tenantId, userId: world.editor.id }, data: { deletedAt: new Date() } });
+    const res = await request(getApp()).get(checksUrl()).set(headers);
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toMatch(/not a member/);
+  });
+
+  it("refuses the next request once the organization is suspended", async () => {
+    await prisma.tenant.update({ where: { id: world.tenantId }, data: { status: "SUSPENDED" } });
+    const res = await request(getApp()).get(checksUrl()).set(headers);
+    expect(res.status).toBe(403);
+    expect(res.body.error.message).toMatch(/suspended/);
+  });
+});
