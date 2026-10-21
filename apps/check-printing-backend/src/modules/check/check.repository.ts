@@ -56,6 +56,7 @@ const CHECK_INCLUDE = {
       bankName: true,
       accountNumberLast4: true,
       accountType: true,
+      checkNumberPadding: true,
     },
   },
   statusHistory: {

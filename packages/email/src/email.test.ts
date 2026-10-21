@@ -4,7 +4,10 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   addedToWorkspaceEmail,
+  approvalRequestEmail,
   assertSendable,
+  checkApprovedEmail,
+  checkRejectedEmail,
   createEmailSender,
   escapeHtml,
   FileEmailSender,
@@ -134,6 +137,49 @@ describe("templates", () => {
     expect(() =>
       passwordResetEmail({ name: "J", resetUrl: "javascript:alert(1)", expiresInMinutes: 60 }),
     ).toThrow(/http or https/);
+  });
+});
+
+describe("check approval emails", () => {
+  const check = {
+    checkNumber: "005009",
+    amount: "$9,000.00",
+    payeeName: "Lala Company Pvt Ltd",
+    workspaceName: "Green Acres Landscaping LLC",
+    checkUrl: "https://app.smartbusiness.test/w/W1/checks/C1",
+  };
+  const request = approvalRequestEmail({ ...check, approverName: "David", writerName: "Maria Rodriguez", memo: "Rent", approvalsNeeded: 2 });
+  const approved = checkApprovedEmail({ ...check, writerName: "Maria Rodriguez" });
+  const rejected = checkRejectedEmail({ ...check, writerName: "Maria Rodriguez", rejectedBy: "David Park", reason: "Wrong amount" });
+
+  it("names the check by number, amount and payee in the subject", () => {
+    expect(request.subject).toBe("Approval needed: check #005009 · $9,000.00 to Lala Company Pvt Ltd");
+    expect(approved.subject).toBe("Approved: check #005009 · $9,000.00 to Lala Company Pvt Ltd");
+    expect(rejected.subject).toBe("Rejected: check #005009 · $9,000.00 to Lala Company Pvt Ltd");
+    expect([request.tag, approved.tag, rejected.tag]).toEqual(["approval-request", "check-approved", "check-rejected"]);
+  });
+
+  it("says who wrote it, the memo, how many approvals it needs, and links to the check", () => {
+    for (const body of [request.html, request.text]) {
+      expect(body).toContain("Maria Rodriguez");
+      expect(body).toContain("Rent");
+      expect(body).toContain("needs 2 approvals");
+      expect(body).toContain(check.checkUrl);
+    }
+  });
+
+  it("tells the writer it is ready to print, or who rejected it and why", () => {
+    expect(approved.text).toContain("ready to print");
+    expect(rejected.text).toContain("David Park rejected");
+    expect(rejected.text).toContain("Reason: Wrong amount");
+  });
+
+  it("never lets a payee name or a rejection reason inject HTML, and keeps subjects on one line", () => {
+    const evil = checkRejectedEmail({ ...check, payeeName: ATTACK, writerName: ATTACK, rejectedBy: ATTACK, reason: ATTACK });
+    expect(evil.html).not.toContain('<a href="https://evil.example');
+    expect(evil.html.match(/<a href=/g)).toHaveLength(1);
+    const broken = approvalRequestEmail({ ...check, payeeName: "Acme\r\nBcc: all@example.test", approverName: "D", writerName: "M", memo: null, approvalsNeeded: 1 });
+    expect(broken.subject).not.toMatch(/[\r\n]/);
   });
 });
 

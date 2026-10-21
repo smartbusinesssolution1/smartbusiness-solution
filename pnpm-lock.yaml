@@ -36,6 +36,9 @@ importers:
       '@smartbusiness/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@smartbusiness/email':
+        specifier: workspace:*
+        version: link:../../packages/email
       '@smartbusiness/jobs':
         specifier: workspace:*
         version: link:../../packages/jobs

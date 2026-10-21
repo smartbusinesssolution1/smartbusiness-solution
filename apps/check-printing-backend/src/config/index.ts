@@ -81,6 +81,10 @@ export const storage = {
   },
 } as const;
 
+export const app = {
+  url: (config.APP_URL ?? "http://localhost:5173").replace(/\/+$/, ""),
+} as const;
+
 export const jobs = {
   redisUrl: config.REDIS_URL ?? "redis://127.0.0.1:6379",
   // Same policy as platform-api, which runs the worker: 5 tries, backing off from 10 s.

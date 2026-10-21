@@ -7,6 +7,10 @@ import { validate } from "../../middleware/validate.js";
 import { requireAnyPermission, requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { idempotency } from "../../middleware/idempotency.js";
+import { emailQueue } from "../../jobs/queues.js";
+import { app } from "../../config/index.js";
+import { CheckNotificationRepository } from "./check-notification.repository.js";
+import { CheckNotificationService } from "./check-notification.service.js";
 import { pdfService } from "../pdf/index.js";
 import { calibrationService } from "../calibration/calibration.routes.js";
 import { checkPrintingSettingsService } from "../check-printing-settings/check-printing-settings.routes.js";
@@ -45,6 +49,7 @@ const checkService = new CheckService(
   encryptionService,
   fileStorage,
   checkPrintingSettingsService,
+  new CheckNotificationService(new CheckNotificationRepository(), emailQueue, app.url),
 );
 const checkController = new CheckController(checkService);
 const attachmentController = new AttachmentController(

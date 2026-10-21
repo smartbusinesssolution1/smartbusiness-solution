@@ -29,4 +29,8 @@ export interface EmailJobs {
   // link replaces older ones); otherwise a "you now have access" email. Checked again at
   // send time, so a cancelled invitation sends nothing.
   "workspace-invitation": { userId: string; workspaceId: string; invitedById: string };
+  // A finished email from a product (Check Printing's approval notices): the product
+  // knows its own data and builds the email; the worker only sends it. It holds the
+  // recipient and the text of a notice, never a link token or other secret.
+  "notification-email": { to: string; tag: string; subject: string; html: string; text: string };
 }

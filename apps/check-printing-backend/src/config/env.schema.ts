@@ -144,6 +144,10 @@ export const envSchema = z.object({
     S3_SERVER_SIDE_ENCRYPTION: z.enum(["AES256", "none"]).default("AES256"),
     S3_PREFIX: z.string().regex(/^([A-Za-z0-9_-]+\/)*$/, "S3_PREFIX must look like folder/ or a/b/").default(""),
 
+    // The web app's address: links in emails (approval notices) are built from it, never
+    // from a request, so a forged Host header cannot put another site into our emails.
+    APP_URL: z.url({ protocol: /^https?$/ }).optional(),
+
     // ─── Job queue (Redis, shared with platform-api) ───
     // Invitation emails are queued here and sent by platform-api's worker. Locally the
     // Redis from docker-compose.dev.yml; rediss:// (TLS) for a hosted Redis.
@@ -161,6 +165,11 @@ export const envSchema = z.object({
     .refine((env) => env.NODE_ENV !== "production" || env.STORAGE_DRIVER === "s3", {
         path: ["STORAGE_DRIVER"],
         message: "Production must store files in S3 (STORAGE_DRIVER=s3)",
+    })
+    // Locally the default app address is fine; a server must say where its web app is.
+    .refine((env) => env.NODE_ENV !== "production" || !!env.APP_URL, {
+        path: ["APP_URL"],
+        message: "APP_URL is required in production (links in emails are built from it)",
     })
     // Locally the default Redis is fine; a server must say which one it uses.
     .refine((env) => env.NODE_ENV !== "production" || !!env.REDIS_URL, {

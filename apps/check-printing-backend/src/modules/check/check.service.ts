@@ -34,6 +34,7 @@ import type { ObjectStorage } from "../../shared/storage/index.js";
 import type { CheckPrintingSettingsService } from "../check-printing-settings/check-printing-settings.service.js";
 import { ruleLabel } from "../approval-rule/rule-satisfiability.js";
 import { formatAttachment } from "./attachment.service.js";
+import type { CheckNotificationService } from "./check-notification.service.js";
 import { Prisma } from "@smartbusiness/database";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
 
@@ -97,6 +98,8 @@ export class CheckService {
     private encryptionService: EncryptionService,
     private fileStorage: ObjectStorage,
     private settingsService: CheckPrintingSettingsService,
+    // Approval emails (queued for platform-api's worker); never fails the step it follows.
+    private notifications: CheckNotificationService,
   ) {}
 
   // ═════════════════════════════════════════════════════════════
@@ -182,6 +185,10 @@ export class CheckService {
       },
       ipAddress: ctx.ipAddress,
     });
+
+    if (initialStatus === "PENDING_APPROVAL") {
+      await this.notifications.approvalRequested(check, await this.findMatchingRule(workspaceId, input.amount));
+    }
 
     return this.withApprovalRequirement(this.formatCheck(check), workspaceId);
   }
@@ -422,6 +429,8 @@ export class CheckService {
       ipAddress: ctx.ipAddress,
     });
 
+    await this.notifications.approvalRequested(updated, await this.findMatchingRule(workspaceId, Number(updated.amount)));
+
     return this.formatCheck(updated);
   }
 
@@ -526,6 +535,9 @@ export class CheckService {
       ipAddress: ctx.ipAddress,
     });
 
+    // Only now, with every approval it needs: a partial approval tells the writer nothing.
+    await this.notifications.approved(result.check);
+
     return this.formatCheck(result.check);
   }
 
@@ -589,6 +601,8 @@ export class CheckService {
       ipAddress: ctx.ipAddress,
     });
 
+    await this.notifications.rejected(updated, reason, ctx.userId);
+
     return this.formatCheck(updated);
   }
 
@@ -646,6 +660,9 @@ export class CheckService {
       details: { checkNumber: check.checkNumber, round: updated.approvalRound },
       ipAddress: ctx.ipAddress,
     });
+
+    // A new round: everyone who can approve is asked again (earlier votes do not count).
+    await this.notifications.approvalRequested(updated, await this.findMatchingRule(workspaceId, Number(updated.amount)));
 
     return this.formatCheck(updated);
   }

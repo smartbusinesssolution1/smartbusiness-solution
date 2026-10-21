@@ -1,7 +1,9 @@
-import { createTypedWorker, createWorkerConnection, QUEUES, type EmailJobs, type Worker } from "@smartbusiness/jobs";
+import { assertSendable } from "@smartbusiness/email";
+import { createTypedWorker, createWorkerConnection, QUEUES, UnrecoverableError, type EmailJobs, type Worker } from "@smartbusiness/jobs";
 import { jobs } from "../config/index.js";
 import { authService } from "../modules/auth/auth.module.js";
 import { logger } from "../shared/services/logger.js";
+import { emailSender } from "../shared/services/email.js";
 
 // Processes the "emails" queue. Every processor must be safe to run more than once:
 // BullMQ retries failed jobs and re-runs jobs whose worker crashed.
@@ -20,6 +22,16 @@ export function startEmailWorker(): { worker: Worker; close: () => Promise<void>
           ipAddress: data.ipAddress,
         }),
       "workspace-invitation": (data) => authService.processWorkspaceInvitationJob(data),
+      // Already built by the product; checked by the sender (one address, one-line subject).
+      // An unsafe message can never become safe on a retry, so it fails for good at once.
+      "notification-email": async (data) => {
+        try {
+          assertSendable({ ...data });
+        } catch (err) {
+          throw new UnrecoverableError(err instanceof Error ? err.message : String(err));
+        }
+        await emailSender.send({ ...data });
+      },
     },
     connection,
     {
