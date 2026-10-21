@@ -65,4 +65,7 @@ export function applyTestEnv(): void {
   process.env.RATE_LIMIT_MAX = "1000000";
   // Two frontends, as on the platform (the check-printing app and the customer portal).
   process.env.CORS_ORIGIN = "http://localhost:5173, http://localhost:5174";
+  // The test Redis (docker-compose.test.yml), database 2: platform-api's tests use 1.
+  // Nothing processes this queue in these tests; they read the jobs that were added.
+  process.env.REDIS_URL = process.env.CHECK_TEST_REDIS_URL ?? "redis://127.0.0.1:63790/2";
 }

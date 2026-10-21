@@ -1,12 +1,15 @@
 import type { Workspace } from "@smartbusiness/database";
 import { WorkspaceRepository, type MemberWithRoles } from "./workspace.repository.js";
 import {
+  AppError,
   ValidationError,
   NotFoundError,
   ConflictError,
 } from "../../shared/errors/index.js";
-import { PasswordService } from "@smartbusiness/auth";
+import type { UserTokenService } from "@smartbusiness/auth";
+import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
 import { AuditService } from "../../shared/services/audit.service.js";
+import { logger } from "../../shared/services/logger.js";
 import type {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
@@ -27,11 +30,22 @@ interface AuditContext {
   ipAddress?: string;
 }
 
+// At most one invitation email per person per minute, however often Resend is pressed.
+const INVITATION_RESEND_COOLDOWN_MS = 60 * 1000;
+
+// Where a member stands: ACTIVE has a password and signs in; INVITED was emailed a link
+// and has not chosen a password yet; INVITATION_EXPIRED needs a new link (Resend).
+export type MemberStatus = "ACTIVE" | "INVITED" | "INVITATION_EXPIRED";
+
+type LatestInvitation = { expiresAt: Date; createdAt: Date };
+
 export class WorkspaceService {
   constructor(
     private workspaceRepository: WorkspaceRepository,
     private auditService: AuditService,
-    private passwordService: PasswordService,
+    // Invitation emails are sent by platform-api's worker; this service only adds the job.
+    private emailQueue: Pick<TypedQueue<EmailJobs>, "add">,
+    private userTokens: UserTokenService,
   ) {}
 
   // ═══════════════════════════════════════════════════════
@@ -149,8 +163,27 @@ export class WorkspaceService {
 
   async listMembers(workspaceId: string, productId: string) {
     const members = await this.workspaceRepository.findMembers(workspaceId, productId);
-    return members.map((m) => this.formatMember(m, productId));
+    const invitations = await this.workspaceRepository.findLatestInvitations(
+      workspaceId,
+      members.map((m) => m.userId),
+    );
+    return members.map((m) => this.formatMember(m, productId, invitations.get(m.userId)));
   }
+
+  // ═════════════════════════════════════════════════════════════
+  // INVITE A MEMBER
+  //
+  // The access is given at once, with exactly the chosen roles; then an email job is
+  // queued for platform-api's worker:
+  //   - a new person is created WITHOUT a password and gets an invitation link to choose
+  //     one (they cannot sign in before that);
+  //   - someone who already has an account gets "you now have access" and signs in as
+  //     usual. If their account is in another company (an outside bookkeeper), they join
+  //     this company as a plain member.
+  // The reply is the same either way, so inviting cannot be used to find out who has an
+  // account. If the email cannot be queued, the access stays and the reply says so: the
+  // admin can press Resend.
+  // ═════════════════════════════════════════════════════════════
 
   async addMember(
     workspaceId: string,
@@ -161,64 +194,31 @@ export class WorkspaceService {
   ) {
     const roles = await this.resolveRoles(productId, input.roleSlugs);
 
-    const existingUser =
-      await this.workspaceRepository.findUserByEmail(input.email);
-
-    let needsUserCreation = false;
-    let userId = existingUser?.id ?? "";
+    const existingUser = await this.workspaceRepository.findUserByEmail(input.email);
+    let joinTenantId: string | undefined;
 
     if (existingUser) {
-      const tenantMembership =
-        await this.workspaceRepository.findTenantMembership(
-          tenantId,
-          existingUser.id,
-        );
+      const tenantMembership = await this.workspaceRepository.findTenantMembership(tenantId, existingUser.id);
+      if (!tenantMembership) joinTenantId = tenantId;
 
-      if (!tenantMembership) {
-        throw new ValidationError(
-          "Unable to add this user. Please contact support.",
-          { email: ["This email cannot be added to this workspace"] },
-        );
-      }
-
-      const existingMember =
-        await this.workspaceRepository.findMemberByUserId(
-          workspaceId,
-          existingUser.id,
-        );
-
+      const existingMember = await this.workspaceRepository.findMemberByUserId(workspaceId, existingUser.id);
       // Someone in the workspace only through another product can be given roles here;
       // someone who already has Check Printing roles is changed with PUT, not added twice.
       const hasRolesHere = existingMember?.assignedRoles.some((ar) => ar.role.productId === productId);
       if (hasRolesHere) {
-        throw new ConflictError(
-          "This user is already a member of this workspace",
-        );
+        throw new ConflictError("This user is already a member of this workspace");
       }
-    } else {
-      needsUserCreation = true;
-    }
-
-    let userData = null;
-    if (needsUserCreation) {
-      const tempPassword = crypto.randomUUID();
-      const passwordHash = await this.passwordService.hash(tempPassword);
-
-      userData = {
-        tenantId,
-        email: input.email,
-        fullName: input.fullName,
-        passwordHash,
-      };
     }
 
     const member = await this.workspaceRepository.addMemberInTransaction(
-      userData,
-      { workspaceId, userId },
+      existingUser ? null : { tenantId, email: input.email, fullName: input.fullName },
+      { workspaceId, userId: existingUser?.id ?? "", joinTenantId },
       productId,
       roles.map((r) => r.id),
       ctx.userId,
     );
+
+    const invitationEmailQueued = await this.queueInvitationEmail(member.userId, workspaceId, ctx.userId);
 
     await this.auditService.log({
       tenantId,
@@ -229,13 +229,61 @@ export class WorkspaceService {
       entityId: member.id,
       details: {
         memberEmail: input.email,
-        newUserCreated: needsUserCreation,
+        newUserCreated: !existingUser,
+        joinedCompany: Boolean(joinTenantId),
         roleSlugs: roles.map((r) => r.slug),
+        invitationEmailQueued,
       },
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatMember(member, productId);
+    const invitations = await this.workspaceRepository.findLatestInvitations(workspaceId, [member.userId]);
+    return { ...this.formatMember(member, productId, invitations.get(member.userId)), invitationEmailQueued };
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // RESEND AN INVITATION
+  //
+  // For someone who has not chosen a password yet: a new link is emailed and the old one
+  // stops working (the worker replaces it). At most once a minute per person.
+  // ═════════════════════════════════════════════════════════════
+
+  async resendInvitation(workspaceId: string, tenantId: string, memberId: string, ctx: AuditContext) {
+    const member = await this.workspaceRepository.findMemberById(memberId);
+    if (!member || member.workspaceId !== workspaceId || member.workspace.tenantId !== tenantId) {
+      throw new NotFoundError("Member");
+    }
+    if (member.user.passwordHash !== null) {
+      throw new ConflictError(
+        `${member.user.fullName} has already set up their account and signs in with their own password. There is no invitation to resend.`,
+      );
+    }
+
+    const latest = (await this.workspaceRepository.findLatestInvitations(workspaceId, [member.userId])).get(member.userId);
+    if (latest && Date.now() - latest.createdAt.getTime() < INVITATION_RESEND_COOLDOWN_MS) {
+      throw new AppError(
+        "An invitation was sent to this person less than a minute ago. Wait a minute before sending another.",
+        429,
+        "INVITATION_RECENTLY_SENT",
+      );
+    }
+
+    if (!(await this.queueInvitationEmail(member.userId, workspaceId, ctx.userId))) {
+      throw new AppError("We couldn't send the invitation right now. Try again in a moment.", 503, "SERVICE_UNAVAILABLE");
+    }
+
+    await this.auditService.log({
+      tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "INVITATION_RESENT",
+      entityType: "WorkspaceMember",
+      entityId: memberId,
+      details: { memberEmail: member.user.email },
+      ipAddress: ctx.ipAddress,
+    });
+
+    return { message: `A new invitation is on its way to ${member.user.email}. Earlier links no longer work.` };
   }
 
   async updateMember(
@@ -282,7 +330,8 @@ export class WorkspaceService {
       ipAddress: ctx.ipAddress,
     });
 
-    return this.formatMember(updated, productId);
+    const invitations = await this.workspaceRepository.findLatestInvitations(workspaceId, [updated.userId]);
+    return this.formatMember(updated, productId, invitations.get(updated.userId));
   }
 
   async removeMember(
@@ -317,6 +366,12 @@ export class WorkspaceService {
       productId,
     );
 
+    // Someone who no longer has any access to this workspace must not be able to use an
+    // emailed link to it ("cancel the invitation"). Accepting checks the membership too.
+    const revokedInvitations = leftWorkspace
+      ? await this.userTokens.revokeForUser(member.userId, "INVITATION", { workspaceId })
+      : 0;
+
     await this.auditService.log({
       tenantId,
       userId: ctx.userId,
@@ -328,6 +383,7 @@ export class WorkspaceService {
         removedUserEmail: member.user.email,
         roleSlugs: removedRoleSlugs,
         leftWorkspace,
+        revokedInvitations,
       },
       ipAddress: ctx.ipAddress,
     });
@@ -336,6 +392,18 @@ export class WorkspaceService {
   // ═══════════════════════════════════════════════════════
   // PRIVATE HELPERS
   // ═══════════════════════════════════════════════════════
+
+  // Adds the email job (IDs only: the worker creates the link when it runs). A failure is
+  // reported, not thrown: the access was already given.
+  private async queueInvitationEmail(userId: string, workspaceId: string, invitedById: string): Promise<boolean> {
+    try {
+      await this.emailQueue.add("workspace-invitation", { userId, workspaceId, invitedById });
+      return true;
+    } catch (err) {
+      logger.error({ err, userId, workspaceId }, "Could not queue an invitation email");
+      return false;
+    }
+  }
 
   // The product's roles for these slugs. A slug listed twice counts once; an unknown slug
   // is named in the error.
@@ -372,7 +440,7 @@ export class WorkspaceService {
 
   // This product's view of a member: only its roles and their permissions. Roles the
   // member holds in other products of the platform are not shown here.
-  private formatMember(member: MemberWithRoles, productId: string) {
+  private formatMember(member: MemberWithRoles, productId: string, invitation?: LatestInvitation) {
     const productRoles = member.assignedRoles.filter((ar) => ar.role.productId === productId);
     const roleSlugs = productRoles.map((ar) => ar.role.slug);
 
@@ -390,9 +458,22 @@ export class WorkspaceService {
       fullName: member.user.fullName,
       isActive: member.user.isActive,
       lastLoginAt: member.user.lastLoginAt,
+      ...this.memberStatus(member, invitation),
       roles: roleSlugs,
       permissions: [...permissionSet],
       createdAt: member.createdAt,
     };
+  }
+
+  // The password itself never leaves this method: only whether one was chosen.
+  private memberStatus(member: MemberWithRoles, invitation?: LatestInvitation): {
+    status: MemberStatus;
+    invitationExpiresAt: Date | null;
+  } {
+    if (member.user.passwordHash !== null) return { status: "ACTIVE", invitationExpiresAt: null };
+    // No link yet: the email job has not run. It counts as invited (being sent).
+    if (!invitation) return { status: "INVITED", invitationExpiresAt: null };
+    const expired = invitation.expiresAt.getTime() <= Date.now();
+    return { status: expired ? "INVITATION_EXPIRED" : "INVITED", invitationExpiresAt: invitation.expiresAt };
   }
 }

@@ -111,6 +111,16 @@ export class WorkspaceController {
     sendSuccess(res, member);
   };
 
+  resendInvitation = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.workspaceService.resendInvitation(
+      req.params.wid as string,
+      req.tenant!.tenantId,
+      req.params.mid as string,
+      this.auditCtx(req),
+    );
+    sendSuccess(res, result, 202);
+  };
+
   removeMember = async (req: Request, res: Response): Promise<void> => {
     await this.workspaceService.removeMember(
       req.params.wid as string,

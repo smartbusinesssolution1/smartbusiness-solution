@@ -7,7 +7,13 @@ import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
 import { AppError, ConflictError } from "../../shared/errors/index.js";
 import { TokenService, PasswordService, UserTokenService, type TokenProblem } from "@smartbusiness/auth";
-import { passwordChangedEmail, passwordResetEmail, type EmailSender } from "@smartbusiness/email";
+import {
+  addedToWorkspaceEmail,
+  invitationEmail,
+  passwordChangedEmail,
+  passwordResetEmail,
+  type EmailSender,
+} from "@smartbusiness/email";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { refreshToken as refreshTokenConfig } from "../../config/index.js";
 import { logger } from "../../shared/services/logger.js";
@@ -34,9 +40,31 @@ interface SessionContext {
   userAgent?: string;
 }
 
+// Settings for the links this service emails.
 export interface PasswordResetSettings {
   appUrl: string;
+  // Password reset links
   ttlMinutes: number;
+  // Workspace invitation links
+  invitationTtlDays: number;
+}
+
+export interface InvitationView {
+  email: string;
+  fullName: string;
+  companyName: string;
+  workspaceName: string;
+  inviterName: string | null;
+  expiresAt: Date;
+  // True when the person already chose a password through another invitation: they
+  // just sign in.
+  accountReady: boolean;
+}
+
+export interface AcceptedInvitation extends AuthResult {
+  // Where the invitation leads: the app opens this company and workspace.
+  tenantId: string;
+  workspaceId: string;
 }
 
 // At most one reset email per account per minute, whatever the request rate
@@ -54,6 +82,28 @@ const RESET_LINK_ERRORS: Record<TokenProblem, { code: string; message: string }>
   },
   REVOKED: { code: "RESET_LINK_REPLACED", message: "A newer reset link was sent. Use the link in the most recent email." },
 };
+
+// The person holding the link already has the email; the reason tells them what to do.
+const INVITATION_LINK_ERRORS: Record<TokenProblem, { code: string; message: string }> = {
+  NOT_FOUND: {
+    code: "INVALID_INVITATION_LINK",
+    message: "This invitation link is invalid. Ask your administrator to send a new one.",
+  },
+  EXPIRED: {
+    code: "INVITATION_EXPIRED",
+    message: "This invitation has expired. Ask your administrator to send a new one.",
+  },
+  USED: { code: "INVITATION_USED", message: "This invitation was already accepted. Sign in with your password." },
+  REVOKED: {
+    code: "INVITATION_REPLACED",
+    message: "This invitation was replaced or cancelled. Use the link in the most recent invitation email, or ask your administrator.",
+  },
+};
+
+function invitationLinkError(problem: TokenProblem): AppError {
+  const e = INVITATION_LINK_ERRORS[problem];
+  return new AppError(e.message, 400, e.code);
+}
 
 function resetLinkError(problem: TokenProblem): AppError {
   const e = RESET_LINK_ERRORS[problem];
@@ -377,6 +427,167 @@ export class AuthService {
       id: updatedUser.id,
       email: updatedUser.email,
       fullName: updatedUser.fullName,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // WORKSPACE INVITATION EMAIL (runs in the job worker)
+  //
+  // Check Printing (or any product) gave someone access and queued this job with IDs
+  // only. Everything is read again now: if the access was cancelled meanwhile, nothing
+  // is sent. Someone without a password gets an invitation link (created here, never
+  // stored in the job; a new link replaces older ones for this workspace); someone with
+  // a password is told they have access and signs in as usual.
+  // Safe to run again: a retry sends a fresh link, which replaces the unsent one.
+  // ═════════════════════════════════════════════════════════════
+
+  async processWorkspaceInvitationJob(data: { userId: string; workspaceId: string; invitedById: string }): Promise<void> {
+    const ctx = await this.authRepository.findInvitationContext(data.userId, data.workspaceId, data.invitedById);
+    const { user, workspace } = ctx;
+    if (!user || !workspace || !ctx.membershipActive || workspace.tenant.status !== "ACTIVE") {
+      logger.info({ ...data, action: "INVITATION_SKIPPED" }, "Access no longer exists; no invitation email sent");
+      return;
+    }
+
+    const inviterName = ctx.inviterName ?? "Your administrator";
+    let action: string;
+    if (!user.hasPassword) {
+      const days = this.resetSettings.invitationTtlDays;
+      const { token } = await this.userTokens.issue({
+        userId: user.id,
+        purpose: "INVITATION",
+        ttlMs: days * 24 * 60 * 60 * 1000,
+        tenantId: workspace.tenantId,
+        workspaceId: workspace.id,
+        createdById: data.invitedById,
+      });
+      // Built from configuration only: never from a request's Host header.
+      const acceptUrl = `${this.resetSettings.appUrl}/accept-invitation?token=${token}`;
+      // If sending fails, this throws and the queue retries the whole job later.
+      await this.emailSender.send({
+        to: user.email,
+        ...invitationEmail({
+          inviteeName: user.fullName,
+          inviterName,
+          companyName: workspace.tenant.name,
+          workspaceName: workspace.businessName,
+          acceptUrl,
+          expiresInDays: days,
+        }),
+      });
+      action = "INVITATION_SENT";
+    } else {
+      await this.emailSender.send({
+        to: user.email,
+        ...addedToWorkspaceEmail({
+          name: user.fullName,
+          inviterName,
+          companyName: workspace.tenant.name,
+          workspaceName: workspace.businessName,
+          signInUrl: `${this.resetSettings.appUrl}/sign-in`,
+        }),
+      });
+      action = "WORKSPACE_ACCESS_EMAIL_SENT";
+    }
+
+    await this.auditService.log({
+      tenantId: workspace.tenantId,
+      workspaceId: workspace.id,
+      userId: data.invitedById,
+      action,
+      entityType: "User",
+      entityId: user.id,
+      details: { email: user.email },
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // SHOW AN INVITATION (the page the email links to)
+  // ═════════════════════════════════════════════════════════════
+
+  async inspectInvitation(token: string): Promise<InvitationView> {
+    const check = await this.userTokens.inspect(token, "INVITATION");
+    if (!check.ok) throw invitationLinkError(check.problem);
+    const record = check.record;
+    if (!record.workspaceId) throw invitationLinkError("NOT_FOUND");
+
+    const ctx = await this.authRepository.findInvitationContext(record.userId, record.workspaceId, record.createdById);
+    // Access removed (or the account deactivated) since the link was sent.
+    if (!ctx.user || !ctx.workspace || !ctx.membershipActive) throw invitationLinkError("REVOKED");
+
+    return {
+      email: ctx.user.email,
+      fullName: ctx.user.fullName,
+      companyName: ctx.workspace.tenant.name,
+      workspaceName: ctx.workspace.businessName,
+      inviterName: ctx.inviterName,
+      expiresAt: record.expiresAt,
+      accountReady: ctx.user.hasPassword,
+    };
+  }
+
+  // ═════════════════════════════════════════════════════════════
+  // ACCEPT AN INVITATION
+  //
+  // One transaction: the link is used up, the password set, together or not at all;
+  // if anything fails, the link still works. Then the person is signed in, exactly
+  // like a login. The email and roles come from the invitation and cannot be changed.
+  // ═════════════════════════════════════════════════════════════
+
+  async acceptInvitation(
+    token: string,
+    input: { fullName: string; password: string },
+    ctx: SessionContext,
+  ): Promise<AcceptedInvitation> {
+    // Argon2 is deliberately slow; hashing first keeps the transaction (and its locks) short.
+    const passwordHash = await this.passwordService.hash(input.password);
+
+    const accepted = await this.authRepository.transaction(async (tx) => {
+      const check = await this.userTokens.consume(token, "INVITATION", tx);
+      if (!check.ok) throw invitationLinkError(check.problem);
+      const { userId, workspaceId, tenantId } = check.record;
+      if (!workspaceId) throw invitationLinkError("NOT_FOUND");
+
+      await this.authRepository.lockUser(userId, tx);
+      // Deactivated or deleted since the link was sent: refuse (and roll back the consume).
+      const user = await this.authRepository.findActiveUserById(userId, tx);
+      if (!user) throw invitationLinkError("NOT_FOUND");
+      // Access cancelled since the link was sent.
+      if (!(await this.authRepository.isActiveWorkspaceMember(workspaceId, userId, tx))) {
+        throw invitationLinkError("REVOKED");
+      }
+      // Set up already through another invitation: their password is never replaced here.
+      if (!(await this.authRepository.setInvitedUserPassword(userId, passwordHash, input.fullName, tx))) {
+        throw new AppError("Your account is already set up. Sign in with your password.", 409, "ACCOUNT_ALREADY_SET_UP");
+      }
+      return { userId, workspaceId, tenantId };
+    });
+
+    const user = await this.authRepository.findUserById(accepted.userId);
+    if (!user) throw invitationLinkError("NOT_FOUND");
+    const tenants = this.extractTenants(user);
+    if (tenants.length === 0) throw new AuthError("No active organization found for this account.");
+
+    await this.authRepository.updateLastLogin(user.id);
+    const tokens = await this.createSession(user.id, user.email, ctx);
+
+    const tenantId = accepted.tenantId ?? tenants[0]!.tenantId;
+    await this.auditService.log({
+      tenantId,
+      workspaceId: accepted.workspaceId,
+      userId: user.id,
+      action: "INVITATION_ACCEPTED",
+      entityType: "User",
+      entityId: user.id,
+      ipAddress: ctx.ipAddress,
+    });
+
+    return {
+      user: { id: user.id, fullName: user.fullName, email: user.email },
+      tenants,
+      tokens,
+      tenantId,
+      workspaceId: accepted.workspaceId,
     };
   }
 

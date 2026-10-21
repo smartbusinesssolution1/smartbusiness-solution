@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, MailCheck } from "lucide-react";
-import { useForgotPassword, useLogin, useRegister, useResetPassword } from "@/api/auth";
+import { useAcceptInvitation, useForgotPassword, useInvitation, useLogin, useRegister, useResetPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -238,6 +238,110 @@ export function ResetPasswordPage() {
         <Button type="submit" size="lg" loading={reset.isPending} disabled={!token} className="w-full">
           Change password
         </Button>
+      </form>
+    </AuthLayout>
+  );
+}
+
+// The page an invitation email links to: who invited you to what, then choose a password.
+// Accepting signs you in and opens the workspace. The email and roles come from the
+// invitation; only the name can be corrected here.
+export function AcceptInvitationPage() {
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
+  const token = params.get("token") ?? "";
+  const invitation = useInvitation(token);
+  const accept = useAcceptInvitation();
+  const [formError, setFormError] = React.useState<string | null>(null);
+  const view = invitation.data;
+  // The name starts as the one the inviter typed; keepDirtyValues keeps what the person typed.
+  const { register, handleSubmit, watch, setError, formState: { errors } } = useForm<{ fullName: string; password: string; confirm: string }>({
+    values: view ? { fullName: view.fullName, password: "", confirm: "" } : undefined,
+    resetOptions: { keepDirtyValues: true },
+  });
+  const password = watch("password") ?? "";
+
+  const onSubmit = handleSubmit(({ fullName, password }) => {
+    setFormError(null);
+    accept.mutate(
+      { token, fullName: fullName.trim(), password },
+      {
+        onSuccess: (r) => navigate(`/w/${r.workspaceId}`, { replace: true }),
+        onError: (err) => setFormError(applyServerErrors(err, setError, ["fullName", "password"])),
+      },
+    );
+  });
+
+  const signInFooter = (
+    <Link to="/sign-in" className="font-medium text-ink underline-offset-4 hover:underline">
+      Go to sign in
+    </Link>
+  );
+
+  if (!token) {
+    return (
+      <AuthLayout title="This invitation link is incomplete" subtitle="Open the link from the invitation email again, or ask your administrator to send a new one." footer={signInFooter}>
+        <span />
+      </AuthLayout>
+    );
+  }
+  if (invitation.isPending) {
+    return (
+      <AuthLayout title="Opening your invitation" footer={signInFooter}>
+        <div className="flex flex-col gap-3" aria-busy="true">
+          <div className="skeleton h-4 w-3/4 rounded" />
+          <div className="skeleton h-10 rounded-lg" />
+          <div className="skeleton h-10 rounded-lg" />
+        </div>
+      </AuthLayout>
+    );
+  }
+  if (invitation.error || !view) {
+    return (
+      <AuthLayout title="This invitation can't be used" footer={signInFooter}>
+        <InlineAlert tone="danger">{invitation.error instanceof Error ? invitation.error.message : "This invitation link is invalid."}</InlineAlert>
+      </AuthLayout>
+    );
+  }
+  if (view.accountReady) {
+    return (
+      <AuthLayout title={`You already have access to ${view.workspaceName}`} subtitle={`Your account (${view.email}) is set up. Sign in with your password to open it.`} footer={signInFooter}>
+        <Button size="lg" className="w-full" onClick={() => navigate("/sign-in", { replace: true })}>
+          Sign in <ArrowRight />
+        </Button>
+      </AuthLayout>
+    );
+  }
+
+  return (
+    <AuthLayout
+      title={`Join ${view.workspaceName}`}
+      subtitle={
+        <>
+          {view.inviterName ?? "Your administrator"} invited you to {view.companyName}. Choose a password to finish setting up your account.
+        </>
+      }
+      footer={<span>Already set up? {signInFooter}</span>}
+    >
+      <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <FormError message={formError} />
+        <Field label="Work email" htmlFor="invite-email" hint="Set by the invitation.">
+          <Input id="invite-email" value={view.email} readOnly className="bg-subtle text-muted" />
+        </Field>
+        <Field label="Your name" htmlFor="fullName" error={errors.fullName?.message}>
+          <Input autoComplete="name" {...register("fullName", { required: "Enter your name", maxLength: { value: 255, message: "That name is too long" } })} />
+        </Field>
+        <Field label="Password" htmlFor="password" error={errors.password?.message}>
+          <PasswordInput autoComplete="new-password" autoFocus {...register("password", { required: "Choose a password", validate: passwordProblem })} />
+        </Field>
+        <PasswordRules value={password} />
+        <Field label="Repeat it" htmlFor="confirm" error={errors.confirm?.message}>
+          <PasswordInput autoComplete="new-password" {...register("confirm", { validate: (v) => v === password || "The passwords don't match" })} />
+        </Field>
+        <Button type="submit" size="lg" loading={accept.isPending} className="w-full">
+          Join {view.workspaceName} <ArrowRight />
+        </Button>
+        <p className="text-center text-xs text-muted">This invitation works until {new Date(view.expiresAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}.</p>
       </form>
     </AuthLayout>
   );

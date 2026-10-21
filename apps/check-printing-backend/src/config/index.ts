@@ -81,6 +81,12 @@ export const storage = {
   },
 } as const;
 
+export const jobs = {
+  redisUrl: config.REDIS_URL ?? "redis://127.0.0.1:6379",
+  // Same policy as platform-api, which runs the worker: 5 tries, backing off from 10 s.
+  retry: { attempts: 5, backoffMs: 10_000 },
+} as const;
+
 export const cors = {
   origin: config.CORS_ORIGIN
 } as const

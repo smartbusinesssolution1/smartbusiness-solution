@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { CheckSettings, Member, RoleSlug, Workspace, WorkspaceWithAccess } from "./types";
+import type { CheckSettings, InvitedMember, Member, RoleSlug, Workspace, WorkspaceWithAccess } from "./types";
 
 export interface WorkspaceInput {
   businessName: string;
@@ -62,7 +62,17 @@ export function useAddMember(wid: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { email: string; fullName: string; roleSlugs: RoleSlug[] }) =>
-      (await api<Member>(`/workspaces/${wid}/members`, { method: "POST", body: input })).data,
+      (await api<InvitedMember>(`/workspaces/${wid}/members`, { method: "POST", body: input })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["members", wid] }),
+  });
+}
+
+// Emails a new invitation link (the old one stops working). At most once a minute per person.
+export function useResendInvitation(wid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) =>
+      (await api<{ message: string }>(`/workspaces/${wid}/members/${memberId}/invitation`, { method: "POST" })).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["members", wid] }),
   });
 }

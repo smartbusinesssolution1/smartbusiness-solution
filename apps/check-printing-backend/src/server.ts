@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { prisma } from "@smartbusiness/database";
 import { logger } from "./shared/services/logger.js";
 import { pdfRenderer } from "./modules/pdf/index.js";
+import { closeQueues } from "./jobs/queues.js";
 
 // A bad MICR font must not stop the rest of the API, so this only reports;
 // in strict mode the renderer itself refuses to print.
@@ -43,6 +44,12 @@ async function startServer() {
       httpServer.close(() => {
         logger.info("HTTP server closed");
       });
+
+      try {
+        await closeQueues();
+      } catch (err) {
+        logger.error(err, "Error closing the job queue");
+      }
 
       try {
         await prisma.$disconnect();

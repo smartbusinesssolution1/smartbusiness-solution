@@ -9,7 +9,8 @@ import { WorkspaceRepository } from "./workspace.repository.js";
 import { WorkspaceService } from "./workspace.service.js";
 import { WorkspaceController } from "./workspace.controller.js";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { PasswordService } from "@smartbusiness/auth";
+import { UserTokenService } from "@smartbusiness/auth";
+import { emailQueue } from "../../jobs/queues.js";
 import {
   createWorkspaceSchema,
   updateWorkspaceSchema,
@@ -27,11 +28,11 @@ import { checkPrintingSettingsRouter } from "../check-printing-settings/check-pr
 
 const workspaceRepository = new WorkspaceRepository();
 const auditService = new AuditService();
-const passwordService = new PasswordService();
 const workspaceService = new WorkspaceService(
   workspaceRepository,
   auditService,
-  passwordService,
+  emailQueue,
+  new UserTokenService(),
 );
 const workspaceController = new WorkspaceController(workspaceService);
 
@@ -94,6 +95,16 @@ router.put(
   workspaceController.updateMember,
 );
 
+// Email a new invitation link to someone who has not set up their account yet.
+router.post(
+  "/:wid/members/:mid/invitation",
+  workspaceMiddleware,
+  requirePermission(P.MEMBER_MANAGE),
+  workspaceController.resendInvitation,
+);
+
+// Removing someone who was invited but never accepted is how an invitation is cancelled:
+// the access goes, and so does the link.
 router.delete(
   "/:wid/members/:mid",
   workspaceMiddleware,

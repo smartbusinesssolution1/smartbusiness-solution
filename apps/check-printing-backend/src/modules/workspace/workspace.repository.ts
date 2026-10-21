@@ -30,7 +30,9 @@ export interface MemberWithRoles {
   workspaceId: string;
   createdAt: Date;
   deletedAt: Date | null;
-  user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt">;
+  // passwordHash is read only to tell "invited, not set up yet" (null) from a working
+  // account; formatMember turns it into a status and never returns it.
+  user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt" | "passwordHash">;
   assignedRoles: Array<{
     role: {
       productId: string;
@@ -55,6 +57,7 @@ const memberInclude = {
       fullName: true,
       isActive: true,
       lastLoginAt: true,
+      passwordHash: true,
     },
   },
   assignedRoles: {
@@ -96,6 +99,22 @@ export class WorkspaceRepository {
     return prisma.user.findFirst({
       where: { email, deletedAt: null },
     });
+  }
+
+  // ─── Invitations ──────────────────────────────────────
+
+  // The newest invitation link per person for this workspace (an older one is replaced
+  // whenever a new one is sent), to show "Invited · expires …" or "Invitation expired".
+  async findLatestInvitations(workspaceId: string, userIds: string[]) {
+    if (userIds.length === 0) return new Map<string, { expiresAt: Date; createdAt: Date }>();
+    const tokens = await prisma.userToken.findMany({
+      where: { workspaceId, purpose: "INVITATION", userId: { in: userIds } },
+      orderBy: { createdAt: "desc" },
+      select: { userId: true, expiresAt: true, createdAt: true },
+    });
+    const latest = new Map<string, { expiresAt: Date; createdAt: Date }>();
+    for (const t of tokens) if (!latest.has(t.userId)) latest.set(t.userId, { expiresAt: t.expiresAt, createdAt: t.createdAt });
+    return latest;
   }
 
   // ─── Role Operations ──────────────────────────────────
@@ -275,14 +294,16 @@ export class WorkspaceRepository {
   // Only the acting product's roles are touched (role.productId). A member can also hold
   // roles in other products of the platform; those belong to those products.
 
+  // New people (userData) are created without a password: they choose one when they
+  // accept the emailed invitation. Someone who already has an account but is not in this
+  // company yet (an outside bookkeeper, say) joins it here as a plain member.
   async addMemberInTransaction(
     userData: {
       tenantId: string;
       email: string;
       fullName: string;
-      passwordHash: string;
     } | null,
-    memberData: { workspaceId: string; userId: string },
+    memberData: { workspaceId: string; userId: string; joinTenantId?: string },
     productId: string,
     roleIds: string[],
     assignedById: string,
@@ -296,7 +317,7 @@ export class WorkspaceRepository {
           data: {
             email: userData.email,
             fullName: userData.fullName,
-            passwordHash: userData.passwordHash,
+            passwordHash: null,
           },
         });
         userId = user.id;
@@ -307,6 +328,17 @@ export class WorkspaceRepository {
             userId: user.id,
             role: "MEMBER",
           },
+        });
+      }
+
+      // A removed company membership is reactivated, like a removed workspace member, but
+      // always as a plain MEMBER: an invitation must never bring back an old OWNER or ADMIN
+      // role in the company.
+      if (memberData.joinTenantId) {
+        await tx.tenantMember.upsert({
+          where: { tenantId_userId: { tenantId: memberData.joinTenantId, userId } },
+          create: { tenantId: memberData.joinTenantId, userId, role: "MEMBER" },
+          update: { deletedAt: null, role: "MEMBER" },
         });
       }
 

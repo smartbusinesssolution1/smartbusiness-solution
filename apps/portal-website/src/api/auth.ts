@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, tenantStore } from "@/lib/api";
-import type { Session } from "./types";
+import type { InvitationView, Session } from "./types";
 
 export const sessionKey = ["session"] as const;
 
@@ -73,6 +73,32 @@ export function useLogout() {
 export function useForgotPassword() {
   return useMutation({
     mutationFn: async (email: string) => (await api<{ message: string }>("/auth/forgot-password", { method: "POST", body: { email } })).data,
+  });
+}
+
+// The invitation behind an emailed link. The token travels in the body, never the URL path.
+export function useInvitation(token: string) {
+  return useQuery({
+    queryKey: ["invitation", token],
+    queryFn: async () => (await api<InvitationView>("/auth/invitations/inspect", { method: "POST", body: { token } })).data,
+    enabled: token.length > 0,
+    retry: false,
+    staleTime: Infinity,
+  });
+}
+
+// Choosing a password accepts the invitation and signs the person in (httpOnly cookies),
+// straight into the company and workspace they were invited to.
+export function useAcceptInvitation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { token: string; fullName: string; password: string }) =>
+      (await api<Session & { tenantId: string; workspaceId: string }>("/auth/invitations/accept", { method: "POST", body: input })).data,
+    onSuccess: ({ user, tenants, tenantId }) => {
+      qc.clear();
+      tenantStore.set(tenantId);
+      qc.setQueryData(sessionKey, { user, tenants });
+    },
   });
 }
 

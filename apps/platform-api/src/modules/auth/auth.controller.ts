@@ -9,7 +9,14 @@ import {
 } from "@smartbusiness/auth";
 import { server, cookie, refreshToken as refreshTokenConfig } from "../../config/index.js";
 import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
-import type { RegisterInputType, LoginInputType, ForgotPasswordInput, ResetPasswordInput } from "./auth.schema.js";
+import type {
+  AcceptInvitationInput,
+  ForgotPasswordInput,
+  InvitationTokenInput,
+  LoginInputType,
+  RegisterInputType,
+  ResetPasswordInput,
+} from "./auth.schema.js";
 import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
 import { AppError } from "../../shared/errors/index.js";
 import { logger } from "../../shared/services/logger.js";
@@ -112,6 +119,28 @@ export class AuthController {
     // Every session was ended; clear this browser's cookies too.
     this.clearAuthCookies(res);
     sendSuccess(res, { message: "Your password has been changed. Sign in with your new password." });
+  };
+
+  inspectInvitation = async (req: Request, res: Response): Promise<void> => {
+    const { token } = req.body as InvitationTokenInput;
+    sendSuccess(res, await this.authService.inspectInvitation(token));
+  };
+
+  // Accepting signs the person in: the session goes into httpOnly cookies, never the body.
+  acceptInvitation = async (req: Request, res: Response): Promise<void> => {
+    const { token, fullName, password } = req.body as AcceptInvitationInput;
+    const result = await this.authService.acceptInvitation(token, { fullName, password }, {
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
+    sendSuccess(res, {
+      user: result.user,
+      tenants: result.tenants,
+      tenantId: result.tenantId,
+      workspaceId: result.workspaceId,
+    });
   };
 
   me = async (req: Request, res: Response): Promise<void> => {

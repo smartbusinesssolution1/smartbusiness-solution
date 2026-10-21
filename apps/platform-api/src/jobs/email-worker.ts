@@ -19,6 +19,7 @@ export function startEmailWorker(): { worker: Worker; close: () => Promise<void>
           isRetry: job.attemptsMade > 0,
           ipAddress: data.ipAddress,
         }),
+      "workspace-invitation": (data) => authService.processWorkspaceInvitationJob(data),
     },
     connection,
     {

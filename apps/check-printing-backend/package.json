@@ -40,6 +40,7 @@
     "@aws-sdk/client-s3": "3.1141.0",
     "@smartbusiness/auth": "workspace:*",
     "@smartbusiness/database": "workspace:*",
+    "@smartbusiness/jobs": "workspace:*",
     "argon2": "^0.45.1",
     "bullmq": "^6.3.4",
     "cookie-parser": "^1.4.7",

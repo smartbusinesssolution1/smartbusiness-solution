@@ -144,6 +144,14 @@ export const envSchema = z.object({
     S3_SERVER_SIDE_ENCRYPTION: z.enum(["AES256", "none"]).default("AES256"),
     S3_PREFIX: z.string().regex(/^([A-Za-z0-9_-]+\/)*$/, "S3_PREFIX must look like folder/ or a/b/").default(""),
 
+    // ─── Job queue (Redis, shared with platform-api) ───
+    // Invitation emails are queued here and sent by platform-api's worker. Locally the
+    // Redis from docker-compose.dev.yml; rediss:// (TLS) for a hosted Redis.
+    REDIS_URL: z
+        .string()
+        .regex(/^rediss?:\/\//, "REDIS_URL must start with redis:// or rediss://")
+        .optional(),
+
 })
     .refine((env) => env.STORAGE_DRIVER !== "s3" || !!env.S3_BUCKET, {
         path: ["S3_BUCKET"],
@@ -153,6 +161,11 @@ export const envSchema = z.object({
     .refine((env) => env.NODE_ENV !== "production" || env.STORAGE_DRIVER === "s3", {
         path: ["STORAGE_DRIVER"],
         message: "Production must store files in S3 (STORAGE_DRIVER=s3)",
+    })
+    // Locally the default Redis is fine; a server must say which one it uses.
+    .refine((env) => env.NODE_ENV !== "production" || !!env.REDIS_URL, {
+        path: ["REDIS_URL"],
+        message: "REDIS_URL is required in production (invitation emails are queued there)",
     })
     .refine((env) => env.STORAGE_ENCRYPTION_KEY.toLowerCase() !== env.ENCRYPTION_KEY.toLowerCase(), {
         path: ["STORAGE_ENCRYPTION_KEY"],

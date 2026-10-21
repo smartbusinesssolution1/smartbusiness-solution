@@ -1,6 +1,6 @@
 import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
-import { PasswordService } from "@smartbusiness/auth";
+import { UserTokenService } from "@smartbusiness/auth";
 import { prisma, resetDatabase } from "../helpers/db.js";
 import { authHeaders, createWorld, today, type TestUser, type TestWorld } from "../helpers/fixtures.js";
 import { getApp } from "../helpers/api.js";
@@ -249,7 +249,9 @@ describe("workspace members", () => {
       let admin2: TestUser;
 
       beforeEach(async () => {
-        service = new WorkspaceService(new WorkspaceRepository(), new AuditService(), new PasswordService());
+        // These tests never invite anyone; the queue is a stand-in that accepts jobs.
+        const noQueue = { add: async () => undefined } as unknown as ConstructorParameters<typeof WorkspaceService>[2];
+        service = new WorkspaceService(new WorkspaceRepository(), new AuditService(), noQueue, new UserTokenService());
         productId = (await prisma.product.findUniqueOrThrow({ where: { slug: PRODUCT_SLUG } })).id;
         admin2 = world.approver2;
         await giveCheckRole(world, admin2, ROLES.ADMIN);

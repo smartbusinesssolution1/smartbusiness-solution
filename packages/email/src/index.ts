@@ -1,5 +1,6 @@
 import { FileEmailSender } from "./senders/file.js";
 import { MemoryEmailSender } from "./senders/memory.js";
+import { SmtpEmailSender, type SmtpSettings } from "./senders/smtp.js";
 import type { EmailSender } from "./types.js";
 
 export * from "./types.js";
@@ -7,8 +8,9 @@ export * from "./templates.js";
 export { escapeHtml, safeLink } from "./escape.js";
 export { FileEmailSender } from "./senders/file.js";
 export { MemoryEmailSender } from "./senders/memory.js";
+export { SmtpEmailSender, type SmtpSettings } from "./senders/smtp.js";
 
-export type EmailTransport = "file" | "memory";
+export type EmailTransport = "file" | "memory" | "smtp";
 
 export interface EmailConfig {
   transport: EmailTransport;
@@ -16,12 +18,13 @@ export interface EmailConfig {
   from: string;
   // Required for the "file" transport: where emails are written.
   fileDirectory?: string;
+  // Required for the "smtp" transport (Mailpit locally, AWS SES in production).
+  smtp?: SmtpSettings;
   log?: (line: string) => void;
 }
 
 // Chooses the delivery for this environment. Business code receives the result as
-// an EmailSender and never knows which one it got. A real provider will be added
-// here as one more case once the client chooses it.
+// an EmailSender and never knows which one it got.
 
 export function createEmailSender(config: EmailConfig): EmailSender {
   switch (config.transport) {
@@ -34,6 +37,11 @@ export function createEmailSender(config: EmailConfig): EmailSender {
       return new FileEmailSender(config.from, config.fileDirectory, config.log);
     case "memory":
       return new MemoryEmailSender(config.from);
+    case "smtp":
+      if (!config.smtp) {
+        throw new Error('EMAIL_TRANSPORT "smtp" needs SMTP settings (SMTP_HOST, SMTP_PORT…)');
+      }
+      return new SmtpEmailSender(config.from, config.smtp, config.log);
     default:
       throw new Error(`Unknown email transport "${String(config.transport)}"`);
   }

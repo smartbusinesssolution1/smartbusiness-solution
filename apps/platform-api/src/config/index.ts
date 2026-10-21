@@ -43,10 +43,25 @@ export const email = {
   transport: config.EMAIL_TRANSPORT,
   from: config.EMAIL_FROM,
   fileDirectory: config.EMAIL_FILE_DIRECTORY,
+  smtp: config.SMTP_HOST
+    ? {
+        host: config.SMTP_HOST,
+        port: config.SMTP_PORT,
+        secure: config.SMTP_SECURE === "true",
+        // Production insists on TLS; Mailpit on this machine has none.
+        requireTls: config.NODE_ENV === "production",
+        user: config.SMTP_USER,
+        pass: config.SMTP_PASS,
+      }
+    : undefined,
 } as const;
 
 export const passwordReset = {
   ttlMinutes: config.PASSWORD_RESET_TTL_MINUTES,
+} as const;
+
+export const invitation = {
+  ttlDays: config.INVITATION_TTL_DAYS,
 } as const;
 
 export const jobs = {
@@ -60,6 +75,7 @@ export const rateLimits = {
   globalPerMinute: config.RATE_LIMIT_MAX,
   authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,
   refreshPer15Minutes: config.REFRESH_RATE_LIMIT_MAX,
+  invitationPer15Minutes: config.INVITATION_RATE_LIMIT_MAX,
 } as const;
 
 export const cors = {

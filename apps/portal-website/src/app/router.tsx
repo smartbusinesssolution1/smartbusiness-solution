@@ -15,6 +15,7 @@ const SignInPage = page(() => import("@/pages/auth/auth-pages"), "SignInPage");
 const SignUpPage = page(() => import("@/pages/auth/auth-pages"), "SignUpPage");
 const ForgotPasswordPage = page(() => import("@/pages/auth/auth-pages"), "ForgotPasswordPage");
 const ResetPasswordPage = page(() => import("@/pages/auth/auth-pages"), "ResetPasswordPage");
+const AcceptInvitationPage = page(() => import("@/pages/auth/auth-pages"), "AcceptInvitationPage");
 const WorkspacePickerPage = page(() => import("@/pages/workspaces"), "WorkspacePickerPage");
 const CreateWorkspacePage = page(() => import("@/pages/workspaces"), "CreateWorkspacePage");
 const HomePage = page(() => import("@/pages/home"), "HomePage");
@@ -94,6 +95,7 @@ export const router = createBrowserRouter([
       },
       { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/reset-password", element: <ResetPasswordPage /> },
+      { path: "/accept-invitation", element: <AcceptInvitationPage /> },
       {
         element: <RequireAuth />,
         children: [

@@ -51,6 +51,10 @@ export interface WorkspaceWithAccess extends Workspace {
   myAccess: { roles: RoleSlug[]; permissions: Permission[] };
 }
 
+// ACTIVE signs in with a password; INVITED was emailed a link and has not chosen one yet;
+// INVITATION_EXPIRED needs a new link (Resend).
+export type MemberStatus = "ACTIVE" | "INVITED" | "INVITATION_EXPIRED";
+
 export interface Member {
   id: string;
   userId: string;
@@ -58,9 +62,27 @@ export interface Member {
   fullName: string;
   isActive: boolean;
   lastLoginAt: string | null;
+  status: MemberStatus;
+  // When the current invitation link stops working (null: active, or the email is still being sent)
+  invitationExpiresAt: string | null;
   roles: RoleSlug[];
   permissions: Permission[];
   createdAt: string;
+}
+
+// The answer to inviting someone: false when the email could not be queued (Resend works).
+export type InvitedMember = Member & { invitationEmailQueued: boolean };
+
+// What an invitation link shows before it is accepted.
+export interface InvitationView {
+  email: string;
+  fullName: string;
+  companyName: string;
+  workspaceName: string;
+  inviterName: string | null;
+  expiresAt: string;
+  // Already set up through another invitation: they just sign in.
+  accountReady: boolean;
 }
 
 export interface BankAccount {

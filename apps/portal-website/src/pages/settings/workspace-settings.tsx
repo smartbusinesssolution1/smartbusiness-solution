@@ -2,11 +2,11 @@ import * as React from "react";
 import { useForm } from "react-hook-form";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { KeyRound, MoreHorizontal, Pencil, Plus, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
+import { MailCheck, MoreHorizontal, Pencil, Plus, Send, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
 import { useSession } from "@/api/auth";
-import { useAddMember, useCheckSettings, useMembers, useRemoveMember, useUpdateCheckSettings, useUpdateMember, useUpdateWorkspace, type WorkspaceInput } from "@/api/workspace";
+import { useAddMember, useCheckSettings, useMembers, useRemoveMember, useResendInvitation, useUpdateCheckSettings, useUpdateMember, useUpdateWorkspace, type WorkspaceInput } from "@/api/workspace";
 import { useApprovalRules, useEligibleApprovers, useRuleApprovers, useRuleState, useSaveRule, useToggleApproval } from "@/api/setup";
-import type { ApprovalRule, Member, RoleSlug } from "@/api/types";
+import type { ApprovalRule, InvitedMember, Member, RoleSlug } from "@/api/types";
 import { useWorkspaceContext } from "@/app/workspace-context";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -301,18 +301,36 @@ const ROLES: Array<{ slug: RoleSlug; label: string; description: string }> = [
 ];
 const roleLabel = (s: string) => ROLES.find((r) => r.slug === s)?.label ?? s;
 
+// "expires in 6 days" / "expires today"
+function expiresIn(iso: string): string {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  return days <= 1 ? "expires today" : `expires in ${days} days`;
+}
+
+// Where someone stands, next to their name: nothing for an active member.
+function InvitationBadge({ member }: { member: Member }) {
+  if (member.status === "ACTIVE") return null;
+  const expired = member.status === "INVITATION_EXPIRED";
+  return (
+    <span className={cn("ml-2 rounded-full px-2 py-0.5 text-[0.6875rem] font-medium", expired ? "bg-danger-50 text-danger-700" : "bg-warning-50 text-warning-700")}>
+      {expired ? "Invitation expired" : member.invitationExpiresAt ? `Invited · ${expiresIn(member.invitationExpiresAt)}` : "Invited · sending email"}
+    </span>
+  );
+}
+
 export function TeamSettingsPage() {
   const { wid, can } = useWorkspaceContext();
   const { data: session } = useSession();
   const members = useMembers(wid);
   const remove = useRemoveMember(wid);
+  const resend = useResendInvitation(wid);
   const [dialog, setDialog] = React.useState<Member | "new" | null>(null);
   const [removing, setRemoving] = React.useState<Member | null>(null);
   const canManage = can("member:manage");
 
   return (
     <Page className="max-w-4xl">
-      <PageHeader eyebrow="Settings" title="Team" description="Who works in this workspace and what they can do. One person can hold several roles." actions={canManage && <Button onClick={() => setDialog("new")}><UserPlus /> Add member</Button>} />
+      <PageHeader eyebrow="Settings" title="Team" description="Who works in this workspace and what they can do. One person can hold several roles." actions={canManage && <Button onClick={() => setDialog("new")}><UserPlus /> Invite member</Button>} />
       {members.error ? (
         <ErrorState error={members.error} onRetry={() => members.refetch()} />
       ) : members.isPending ? (
@@ -324,8 +342,8 @@ export function TeamSettingsPage() {
               <li key={m.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-xs font-semibold text-white">{initials(m.fullName)}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{m.fullName}{m.userId === session?.user.id && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}{!m.isActive && <span className="ml-2 rounded-full bg-danger-50 px-2 py-0.5 text-[0.6875rem] font-medium text-danger-700">Deactivated · can't sign in</span>}</span>
-                  <span className="truncate text-xs text-muted">{m.email} · {m.lastLoginAt ? `last signed in ${ago(m.lastLoginAt)}` : "never signed in"}</span>
+                  <span className="truncate font-medium">{m.fullName}{m.userId === session?.user.id && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}{!m.isActive && <span className="ml-2 rounded-full bg-danger-50 px-2 py-0.5 text-[0.6875rem] font-medium text-danger-700">Deactivated · can't sign in</span>}<InvitationBadge member={m} /></span>
+                  <span className="truncate text-xs text-muted">{m.email} · {m.status !== "ACTIVE" ? "hasn't set up their account yet" : m.lastLoginAt ? `last signed in ${ago(m.lastLoginAt)}` : "never signed in"}</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {m.roles.map((r) => <span key={r} className={cn("rounded-full px-2 py-0.5 text-xs font-medium", r === "check-admin" ? "bg-ink text-white" : "bg-subtle text-ink-soft")}>{roleLabel(r)}</span>)}
@@ -335,7 +353,19 @@ export function TeamSettingsPage() {
                     <MenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${m.fullName}`}><MoreHorizontal /></Button></MenuTrigger>
                     <MenuContent>
                       <MenuItem onSelect={() => setDialog(m)}><Pencil /> Change roles</MenuItem>
-                      {m.userId !== session?.user.id && <><MenuSeparator /><MenuItem destructive onSelect={() => setRemoving(m)}><Trash2 /> Remove from workspace</MenuItem></>}
+                      {m.status !== "ACTIVE" && (
+                        <MenuItem
+                          onSelect={() =>
+                            resend.mutate(m.id, {
+                              onSuccess: (r) => toast.success("Invitation sent again", { description: r.message }),
+                              onError: (e) => toast.error(errorMessage(e)),
+                            })
+                          }
+                        >
+                          <Send /> Resend invitation
+                        </MenuItem>
+                      )}
+                      {m.userId !== session?.user.id && <><MenuSeparator /><MenuItem destructive onSelect={() => setRemoving(m)}><Trash2 /> {m.status === "ACTIVE" ? "Remove from workspace" : "Cancel invitation"}</MenuItem></>}
                     </MenuContent>
                   </Menu>
                 )}
@@ -347,10 +377,29 @@ export function TeamSettingsPage() {
       {dialog && <MemberDialog member={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} />}
       <Dialog open={removing !== null} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent>
-          <DialogHeader icon={<Trash2 />} title={`Remove ${removing?.fullName}?`} description="They lose access to Check Printing in this workspace. Checks they wrote, approved or printed keep their name in the history." />
+          {removing?.status === "ACTIVE" || !removing ? (
+            <DialogHeader icon={<Trash2 />} title={`Remove ${removing?.fullName}?`} description="They lose access to Check Printing in this workspace. Checks they wrote, approved or printed keep their name in the history." />
+          ) : (
+            <DialogHeader icon={<Trash2 />} title={`Cancel the invitation to ${removing.fullName}?`} description="The link in their email stops working and they won't get access. You can invite them again later." />
+          )}
           <DialogFooter>
-            <Button variant="secondary" onClick={() => setRemoving(null)}>Cancel</Button>
-            <Button variant="danger" loading={remove.isPending} onClick={() => removing && remove.mutate(removing.id, { onSuccess: () => { toast.success(`${removing.fullName} removed`); setRemoving(null); }, onError: (e) => toast.error(errorMessage(e)) })}>Remove</Button>
+            <Button variant="secondary" onClick={() => setRemoving(null)}>Keep</Button>
+            <Button
+              variant="danger"
+              loading={remove.isPending}
+              onClick={() =>
+                removing &&
+                remove.mutate(removing.id, {
+                  onSuccess: () => {
+                    toast.success(removing.status === "ACTIVE" ? `${removing.fullName} removed` : `Invitation to ${removing.fullName} cancelled`);
+                    setRemoving(null);
+                  },
+                  onError: (e) => toast.error(errorMessage(e)),
+                })
+              }
+            >
+              {removing?.status === "ACTIVE" ? "Remove" : "Cancel invitation"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -363,7 +412,7 @@ function MemberDialog({ member, onClose }: { member: Member | null; onClose: () 
   const add = useAddMember(wid);
   const update = useUpdateMember(wid);
   const [roles, setRoles] = React.useState<RoleSlug[]>(member?.roles ?? ["check-editor"]);
-  const [added, setAdded] = React.useState<Member | null>(null);
+  const [added, setAdded] = React.useState<InvitedMember | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   const { register, handleSubmit, setError, formState: { errors } } = useForm<{ fullName: string; email: string }>();
 
@@ -386,20 +435,25 @@ function MemberDialog({ member, onClose }: { member: Member | null; onClose: () 
         <AnimatePresence mode="wait" initial={false}>
           {added ? (
             <motion.div key="done" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <DialogHeader icon={<KeyRound />} title={`${added.fullName} was added`} description="Tell them how to sign in for the first time." />
+              {added.status === "ACTIVE" ? (
+                <DialogHeader icon={<MailCheck />} title={`${added.fullName} now has access`} description={`They already have an account, so we emailed ${added.email} that they can sign in to this workspace.`} />
+              ) : (
+                <DialogHeader icon={<MailCheck />} title={`Invitation sent to ${added.email}`} description="They'll get an email with a link to choose a password and open this workspace." />
+              )}
               <DialogBody>
-                <ol className="flex flex-col gap-2 text-sm">
-                  <li className="flex gap-2"><span className="font-mono text-muted">1.</span> Go to the sign-in page and choose <span className="font-medium">Forgot password?</span></li>
-                  <li className="flex gap-2"><span className="font-mono text-muted">2.</span> Enter <span className="font-medium">{added.email}</span> and open the reset email.</li>
-                  <li className="flex gap-2"><span className="font-mono text-muted">3.</span> Choose a password. They'll land in this workspace.</li>
-                </ol>
-                <InlineAlert tone="info">Email invitations are coming. Until then, the reset link is how a new member sets their password.</InlineAlert>
+                {!added.invitationEmailQueued ? (
+                  <InlineAlert tone="warning" title="The email didn't go out">
+                    Their access is ready, but we couldn't send the email just now. Use Resend invitation in the team list in a moment.
+                  </InlineAlert>
+                ) : added.status !== "ACTIVE" ? (
+                  <p className="text-sm text-muted">The link works for 7 days. Until they accept, they show as Invited in the team list, where you can resend the invitation or cancel it.</p>
+                ) : null}
               </DialogBody>
               <DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter>
             </motion.div>
           ) : (
             <motion.form key="form" onSubmit={onSubmit} noValidate initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <DialogHeader icon={<Users />} title={member ? `Roles for ${member.fullName}` : "Add a team member"} description={member ? member.email : "They'll use their own email to sign in."} />
+              <DialogHeader icon={<Users />} title={member ? `Roles for ${member.fullName}` : "Invite a team member"} description={member ? member.email : "We'll email them a link to set up their account. They sign in with this email."} />
               <DialogBody>
                 {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
                 {!member && (
@@ -420,7 +474,7 @@ function MemberDialog({ member, onClose }: { member: Member | null; onClose: () 
               </DialogBody>
               <DialogFooter>
                 <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button type="submit" loading={add.isPending || update.isPending}>{member ? "Save roles" : "Add member"}</Button>
+                <Button type="submit" loading={add.isPending || update.isPending}>{member ? "Save roles" : "Send invitation"}</Button>
               </DialogFooter>
             </motion.form>
           )}

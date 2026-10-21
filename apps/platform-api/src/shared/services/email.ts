@@ -8,5 +8,6 @@ export const emailSender = createEmailSender({
   transport: email.transport,
   from: email.from,
   fileDirectory: email.fileDirectory,
+  smtp: email.smtp,
   log: (line) => logger.info(line),
 });

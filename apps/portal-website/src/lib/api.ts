@@ -69,7 +69,7 @@ function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
-const NO_REFRESH = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/forgot-password", "/auth/reset-password", "/auth/logout"];
+const NO_REFRESH = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/forgot-password", "/auth/reset-password", "/auth/invitations", "/auth/logout"];
 
 export interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

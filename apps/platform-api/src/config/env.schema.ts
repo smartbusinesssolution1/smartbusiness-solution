@@ -54,16 +54,37 @@ export const envSchema = z
     .default("300")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(1)),
+  // Invitation page views and accepts per IP per 15 minutes, also a separate budget: an
+  // office behind one IP onboarding several people must not lock itself out of signing
+  // in. The links are 256-bit secrets, so this only stops floods, not guessing.
+  INVITATION_RATE_LIMIT_MAX: z
+    .string()
+    .default("60")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1)),
 
   // The web app's address. Every link in an email is built from this, never from the
   // request, so a forged Host header cannot put someone else's site into our emails.
   APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5173"),
 
-  // How emails are delivered: "file" writes them to EMAIL_FILE_DIRECTORY (development),
-  // "memory" keeps them in a list (tests). A real provider is added once chosen.
-  EMAIL_TRANSPORT: z.enum(["file", "memory"]).default("file"),
+  // How emails are delivered: "smtp" sends them (Mailpit locally, AWS SES in production),
+  // "file" writes them to EMAIL_FILE_DIRECTORY, "memory" keeps them in a list (tests).
+  EMAIL_TRANSPORT: z.enum(["smtp", "file", "memory"]).default("file"),
   EMAIL_FROM: z.string().min(3).default("SmartBusiness <no-reply@smartbusiness.local>"),
   EMAIL_FILE_DIRECTORY: z.string().default("./tmp/emails"),
+
+  // SMTP (EMAIL_TRANSPORT=smtp). Locally: Mailpit, 127.0.0.1:1025 without a login.
+  // AWS SES: email-smtp.<region>.amazonaws.com, port 587, SES SMTP credentials.
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z
+    .string()
+    .default("587")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1).max(65535)),
+  // "true" only for port 465 (TLS from the start); 587 upgrades with STARTTLS.
+  SMTP_SECURE: z.enum(["true", "false"]).default("false"),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
 
   // Job queue (BullMQ). redis:// locally, rediss:// (TLS) for a hosted Redis.
   REDIS_URL: z
@@ -81,6 +102,14 @@ export const envSchema = z
   // (one command), no in production, where `pnpm start:worker` runs it separately.
   RUN_WORKER_IN_API: z.enum(["true", "false"]).optional(),
 
+  // How long a workspace invitation link works. The inviter can resend at any time,
+  // which replaces the old link.
+  INVITATION_TTL_DAYS: z
+    .string()
+    .default("7")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().min(1).max(30)),
+
   PASSWORD_RESET_TTL_MINUTES: z
     .string()
     .default("60")
@@ -92,6 +121,16 @@ export const envSchema = z
   .refine((env) => env.NODE_ENV !== "production" || !["file", "memory"].includes(env.EMAIL_TRANSPORT), {
     path: ["EMAIL_TRANSPORT"],
     message: "Production needs a real email provider; 'file' and 'memory' only work for development and tests",
+  })
+  .refine((env) => env.EMAIL_TRANSPORT !== "smtp" || Boolean(env.SMTP_HOST), {
+    path: ["SMTP_HOST"],
+    message: "EMAIL_TRANSPORT=smtp needs SMTP_HOST (127.0.0.1 for Mailpit, the SES endpoint in production)",
+  })
+  // A real provider is always reached over TLS with a login; plain, anonymous SMTP is
+  // only for Mailpit on this machine.
+  .refine((env) => env.NODE_ENV !== "production" || env.EMAIL_TRANSPORT !== "smtp" || Boolean(env.SMTP_USER && env.SMTP_PASS), {
+    path: ["SMTP_USER"],
+    message: "Production SMTP needs SMTP_USER and SMTP_PASS (the SES SMTP credentials)",
   });
 
 export type Env = z.infer<typeof envSchema>;

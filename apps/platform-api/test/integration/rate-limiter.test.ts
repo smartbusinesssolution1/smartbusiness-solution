@@ -42,4 +42,10 @@ describe("auth rate limiter", () => {
     expect(source).toMatch(/router\.post\("\/refresh", refreshRateLimiter,/);
     expect(source).toMatch(/router\.post\(\s*"\/login",\s*authRateLimiter,/);
   });
+
+  it("the invitation routes use their own limiter, never the sign-in budget", async () => {
+    const source = await import("node:fs").then((fs) => fs.readFileSync(new URL("../../src/modules/auth/auth.routes.ts", import.meta.url), "utf8"));
+    expect(source).toMatch(/router\.post\("\/invitations\/inspect", invitationRateLimiter,/);
+    expect(source).toMatch(/router\.post\("\/invitations\/accept", invitationRateLimiter,/);
+  });
 });
