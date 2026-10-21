@@ -371,6 +371,15 @@ export class AuthService {
     };
   }
 
+  async updateProfile(userId: string, data: { fullName?: string }): Promise<AuthUser> {
+    const updatedUser = await this.authRepository.updateUserProfile(userId, data);
+    return {
+      id: updatedUser.id,
+      email: updatedUser.email,
+      fullName: updatedUser.fullName,
+    };
+  }
+
   // ─── Private Helpers ─────────────────────────────────────────
 
   // Audit rows belong to a tenant; a user with no membership at all is logged instead.

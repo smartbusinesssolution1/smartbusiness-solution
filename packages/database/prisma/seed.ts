@@ -37,6 +37,7 @@ function seedEncrypt(plainText: string): string {
 const IDS = {
   // ─── Product ───
   PRODUCT_CHECK_PRINTING: "00000000-0000-4000-8000-000000000001",
+  PRODUCT_CLOCK_IN_CLOCK_OUT: "00000000-0000-4000-8000-000000000002",
 
   // ─── Tenants ───
   TENANT_GREEN_ACRES: "10000000-0000-4000-8000-000000000001",
@@ -154,6 +155,16 @@ async function seedRBAC() {
     },
   });
 
+  const clockInProduct = await prisma.product.create({
+    data: {
+      id: IDS.PRODUCT_CLOCK_IN_CLOCK_OUT,
+      slug: "clock-in-clock-out",
+      name: "Clock-In Clock-Out",
+      description: "Employee time tracking, biometric verification, and attendance reports",
+      isActive: true,
+    },
+  });
+
   const PERMISSIONS = [
     { action: "workspace:manage", description: "Update and delete workspace settings" },
     { action: "member:manage", description: "Add, update, and remove workspace members" },
@@ -207,10 +218,11 @@ async function seedRBAC() {
   }
 
   console.log(`  ✅ Product: ${product.name}`);
+  console.log(`  ✅ Product: ${clockInProduct.name}`);
   console.log(`  ✅ ${PERMISSIONS.length} Permissions`);
   console.log(`  ✅ ${ROLES.length} Roles`);
 
-  return { product, roleMap };
+  return { product, clockInProduct, roleMap };
 }
 
 // ============================================================================
@@ -266,7 +278,7 @@ async function seedCheckTemplates() {
 // ============================================================================
 // SEED: Green Acres Landscaping (Primary Tenant)
 // ============================================================================
-async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
+async function seedGreenAcres(productId: string, clockInProductId: string, roleMap: Map<string, string>) {
   console.log("\n🌿 Seeding Tenant: Green Acres Landscaping...\n");
 
   // ─── Tenant ───
@@ -293,7 +305,21 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
       stripeSubscriptionId: "sub_greenacres_001",
     },
   });
-  console.log("  ✅ ProductSubscription: PROFESSIONAL (active)");
+  console.log("  ✅ ProductSubscription (Check Printing): PROFESSIONAL (active)");
+
+  // ─── Product Subscription: Clock-In Clock-Out (PROFESSIONAL plan, active) ───
+  await prisma.productSubscription.create({
+    data: {
+      tenantId: tenant.id,
+      productId: clockInProductId,
+      plan: "PROFESSIONAL",
+      status: "ACTIVE",
+      trialEndsAt: d(30),
+      currentPeriodEndsAt: d(-335),
+      stripeSubscriptionId: "sub_greenacres_clockin_001",
+    },
+  });
+  console.log("  ✅ ProductSubscription (Clock-In Clock-Out): PROFESSIONAL (active)");
 
   // ─── Users (no tenantId on User — linked via TenantMember) ───
   const maria = await prisma.user.create({
@@ -644,7 +670,7 @@ async function seedGreenAcres(productId: string, roleMap: Map<string, string>) {
 // ============================================================================
 // SEED: Sunshine Pool Service (Secondary Tenant — isolation testing)
 // ============================================================================
-async function seedSunshinePool(productId: string, roleMap: Map<string, string>) {
+async function seedSunshinePool(productId: string, clockInProductId: string, roleMap: Map<string, string>) {
   console.log("☀️  Seeding Tenant: Sunshine Pool Service...\n");
 
   const tenant = await prisma.tenant.create({
@@ -665,7 +691,18 @@ async function seedSunshinePool(productId: string, roleMap: Map<string, string>)
       trialEndsAt: d(-14),
     },
   });
-  console.log("  ✅ Tenant: Sunshine Pool Service (TRIAL)");
+
+  // Clock-In Clock-Out Subscription (TRIAL, active)
+  await prisma.productSubscription.create({
+    data: {
+      tenantId: tenant.id,
+      productId: clockInProductId,
+      plan: "TRIAL",
+      status: "ACTIVE",
+      trialEndsAt: d(30),
+    },
+  });
+  console.log("  ✅ Tenant: Sunshine Pool Service (Check Printing TRIAL + Clock-In ACTIVE)");
 
   const sarah = await prisma.user.create({
     data: {
@@ -795,10 +832,10 @@ async function main() {
 
   await cleanup();
 
-  const { product, roleMap } = await seedRBAC();
+  const { product, clockInProduct, roleMap } = await seedRBAC();
   await seedCheckTemplates();
-  await seedGreenAcres(product.id, roleMap);
-  await seedSunshinePool(product.id, roleMap);
+  await seedGreenAcres(product.id, clockInProduct.id, roleMap);
+  await seedSunshinePool(product.id, clockInProduct.id, roleMap);
 
   // ─── Summary ───
   const counts = {

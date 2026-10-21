@@ -1,0 +1,215 @@
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { User, Tenant, Workspace } from '../types';
+import { authService } from '../services/authService';
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  isLoading: boolean;
+  currentTenant: Tenant | null;
+  workspaces: Workspace[];
+  currentWorkspace: Workspace | null;
+  isSuperAdmin: boolean;
+  switchWorkspace: (workspaceId: string) => Promise<Workspace>;
+  addWorkspace: (name: string, details?: Partial<Workspace>) => Promise<Workspace>;
+  refreshWorkspaces: () => Promise<void>;
+  login: (email: string, password?: string) => Promise<User>;
+  register: (companyName: string, fullName: string, email: string, defaultPolicy?: string) => Promise<User>;
+  logout: () => Promise<void>;
+  updateCurrentUserState: (updatedUser: User) => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const queryClient = useQueryClient();
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [currentTenant, setCurrentTenant] = useState<Tenant | null>(() => authService.getCurrentTenant());
+  const [workspaces, setWorkspaces] = useState<Workspace[]>(() => authService.getWorkspaces());
+  const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(() => authService.getActiveWorkspace());
+
+  const hasRestoredRef = React.useRef(false);
+
+  const refreshWorkspaces = useCallback(async () => {
+    const list = await authService.fetchWorkspaces();
+    const active = authService.getActiveWorkspace();
+    const tenant = authService.getCurrentTenant();
+    setCurrentTenant(tenant);
+    setWorkspaces(list);
+    setCurrentWorkspace(active);
+  }, []);
+
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+
+    async function restoreSession() {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          setIsLoading(false);
+          return;
+        }
+
+        const [currentUser, liveWorkspaces] = await Promise.all([
+          authService.getCurrentUser(),
+          authService.fetchWorkspaces(),
+        ]);
+
+        if (currentUser) {
+          setUser(currentUser);
+          setToken(token);
+          const tenant = authService.getCurrentTenant();
+          const active = authService.getActiveWorkspace();
+          setCurrentTenant(tenant);
+          setWorkspaces(liveWorkspaces);
+          setCurrentWorkspace(active);
+        } else {
+          setUser(null);
+          setToken(null);
+        }
+      } catch (err) {
+        console.error('Failed to restore authentication session:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    restoreSession();
+  }, []);
+
+
+  const switchWorkspace = async (workspaceId: string): Promise<Workspace> => {
+    try {
+      const switched = authService.switchWorkspace(workspaceId);
+      setCurrentWorkspace(switched);
+      setWorkspaces(authService.getWorkspaces());
+      // Broadcast event so any listeners (metrics/reports) can refresh
+      window.dispatchEvent(new CustomEvent('workspace-switched', { detail: switched }));
+      return switched;
+    } catch (err) {
+      console.error('Failed to switch workspace:', err);
+      throw err;
+    }
+  };
+
+  const addWorkspace = async (name: string, details?: Partial<Workspace>): Promise<Workspace> => {
+    try {
+      const newWs = await authService.addWorkspace(name, details);
+      setCurrentWorkspace(newWs);
+      await refreshWorkspaces();
+      return newWs;
+    } catch (err) {
+      console.error('Failed to add workspace:', err);
+      throw err;
+    }
+  };
+
+  const login = async (email: string, password?: string): Promise<User> => {
+    setIsLoading(true);
+    try {
+      const response = await authService.login(email, password);
+      setUser(response.user);
+      setToken(response.token);
+      setCurrentTenant(response.tenant);
+      const liveWorkspaces = await authService.fetchWorkspaces();
+      setWorkspaces(liveWorkspaces.length > 0 ? liveWorkspaces : response.workspaces);
+      setCurrentWorkspace(authService.getActiveWorkspace());
+      return response.user;
+    } catch (err) {
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+
+  const register = async (
+    companyName: string,
+    fullName: string,
+    email: string,
+    defaultPolicy?: string
+  ): Promise<User> => {
+    setIsLoading(true);
+    try {
+      const response = await authService.register(companyName, fullName, email, defaultPolicy);
+      setUser(response.user);
+      setToken(response.token);
+      setCurrentTenant(response.tenant);
+      setWorkspaces(response.workspaces);
+      setCurrentWorkspace(response.currentWorkspace);
+      return response.user;
+    } catch (err) {
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    setIsLoading(true);
+    try {
+      // 1. Abort all in-flight queries and wipe query cache
+      queryClient.cancelQueries();
+      queryClient.clear();
+
+      // 2. Clear backend session & persistent storage
+      await authService.logout();
+
+      // 3. Clear auth state
+      setUser(null);
+      setToken(null);
+      setCurrentTenant(null);
+      setCurrentWorkspace(null);
+    } catch (err) {
+      console.error('Failed to log out:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateCurrentUserState = (updatedUser: User) => {
+    setUser(updatedUser);
+  };
+
+  const isSuperAdmin = Boolean(
+    currentTenant?.role === 'OWNER' ||
+    user?.role === 'super_admin' ||
+    user?.isSuperAdmin === true
+  );
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        currentTenant,
+        workspaces,
+        currentWorkspace,
+        isSuperAdmin,
+        switchWorkspace,
+        addWorkspace,
+        refreshWorkspaces,
+        login,
+        register,
+        logout,
+        updateCurrentUserState,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+};
+
+export default AuthContext;

@@ -1,6 +1,16 @@
 import type { NextFunction, Request, Response } from "express";
 import { prisma } from "@smartbusiness/database";
 import { ForbiddenError } from "../errors/index.js";
+import { SimpleCache } from "../utils/cache.js";
+
+interface CachedProductSubscription {
+  productId: string;
+  slug: string;
+  subscriptionStatus: any;
+  plan: any;
+}
+
+export const productSubscriptionCache = new SimpleCache<CachedProductSubscription>(60);
 
 export function requireProduct(productSlug: string) {
   return async function productMiddleware(
@@ -8,7 +18,23 @@ export function requireProduct(productSlug: string) {
     _res: Response,
     next: NextFunction,
   ): Promise<void> {
-    const tenantId = req.tenant!.tenantId;
+    const tenantId = req.tenant?.tenantId;
+    if (!tenantId) {
+      throw new ForbiddenError("Organization context is required.");
+    }
+
+    const cacheKey = `${tenantId}:${productSlug}`;
+    const cached = productSubscriptionCache.get(cacheKey);
+
+    if (cached) {
+      req.product = {
+        productId: cached.productId,
+        slug: cached.slug,
+        subscriptionStatus: cached.subscriptionStatus,
+        plan: cached.plan,
+      };
+      return next();
+    }
 
     const subscription = await prisma.productSubscription.findFirst({
       where: {
@@ -25,6 +51,13 @@ export function requireProduct(productSlug: string) {
       );
     }
 
+    productSubscriptionCache.set(cacheKey, {
+      productId: subscription.product.id,
+      slug: subscription.product.slug,
+      subscriptionStatus: subscription.status,
+      plan: subscription.plan,
+    });
+
     req.product = {
       productId: subscription.product.id,
       slug: subscription.product.slug,
@@ -35,3 +68,4 @@ export function requireProduct(productSlug: string) {
     next();
   };
 }
+

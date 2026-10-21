@@ -1,0 +1,6 @@
+{
+  "name": "SmartBusiness Solutions - Next-Gen Check Automation Platform",
+  "description": "One Platform to manage all your checks with precision. Direct bank integration, instant clearing compliance, and full ledger automation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

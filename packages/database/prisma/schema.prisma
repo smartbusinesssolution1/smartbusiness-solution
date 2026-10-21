@@ -118,6 +118,7 @@ model TenantMember {
   @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
+  @@index([tenantId, userId, deletedAt])
   @@map("tenant_members")
 }
 
@@ -158,6 +159,7 @@ model ProductSubscription {
 
   @@unique([tenantId, productId])
   @@index([tenantId])
+  @@index([tenantId, status])
   @@map("product_subscriptions")
 }
 
@@ -233,6 +235,9 @@ model Workspace {
   userTokens            UserToken[]
   checkPrintingSettings CheckPrintingSettings?
 
+  // Clock In Clock Out
+  attendanceSettings AttendanceSettings?
+
   @@index([tenantId])
   @@map("workspaces")
 }
@@ -266,6 +271,9 @@ model WorkspaceMember {
   deletedAt DateTime? @map("deleted_at")
 
   assignedRoles WorkspaceMemberRole[]
+
+  // Clock In Clock Out
+  employeeProfiles AttendanceEmployeeDetails[]
 
   @@unique([workspaceId, userId])
   @@index([userId])
@@ -777,4 +785,95 @@ model IdempotencyRecord {
   @@unique([key, userId])
   @@index([expiresAt])
   @@map("idempotency_records")
+}
+
+// ----------------------------------------
+// Clock In Clock Out
+// ----------------------------------------
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  HALF_DAY
+  AUTO_CLOSED
+}
+
+model AttendanceSettings {
+  workspaceId           String  @id @map("workspace_id")
+  latitude              Decimal @db.Decimal(9, 6)
+  longitude             Decimal @db.Decimal(9, 6)
+  radiusMeters          Int     @default(100) @map("radius_meters")
+  graceMinutes          Int?    @default(15) @map("grace_minutes")
+  defaultShiftStartTime String  @default("09:00") @map("default_shift_start_time")
+  defaultShiftEndTime   String  @default("18:00") @map("default_shift_end_time")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id])
+
+  @@map("attendance_settings")
+}
+
+model AttendanceEmployeeDetails {
+  id                String @id @default(uuid())
+  workspaceMemberId String @unique @map("workspace_id")
+
+  employeeCode      String  @map("employee_code") // was `employeeId`, e.g. "EMP-001"
+  designation       String?
+  department        String?
+  phone             String? @map("phone")
+  role              String  @default("employee") @map("role") // "admin" | "employee"
+  shiftType         String  @default("general") @map("shift_type") // "general" | "custom"
+  weeklySchedule    Json?   @map("weekly_schedule") // Day-wise shift config: { "MON": { "isWorkDay": true, "startTime": "09:00", "endTime": "18:00" }, ... }
+  biometricPhotoUrl String  @map("biometric_photo_url") // was `avatarUrl` — mandatory face-match reference
+  isActive          Boolean @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  workspaceMember   WorkspaceMember    @relation(fields: [workspaceMemberId], references: [id])
+  attendanceRecords AttendanceRecord[]
+
+  @@index([workspaceMemberId])
+  @@index([deletedAt])
+  @@index([workspaceMemberId, isActive, deletedAt])
+  @@map("employees")
+}
+
+model AttendanceRecord {
+  id         String           @id @default(uuid())
+  employeeId String           @map("employee_id")
+  createdAt  DateTime         @default(now()) @map("created_at")
+  updatedAt  DateTime?        @updatedAt @map("updated_at")
+  status     AttendanceStatus
+  selfieUrl  String?          @map("selfie_url")
+
+  // Clock In
+  clockInDate                DateTime @db.Date
+  clockInTime                DateTime @map("clock_in_time")
+  clockInLatitude            Decimal  @map("clock_in_latitude") @db.Decimal(9, 6)
+  clockInLongitude           Decimal  @map("clock_in_longitude") @db.Decimal(9, 6)
+  clockInFaceMatchConfidence Decimal  @map("clock_in_face_match_confidence") @db.Decimal(5, 2)
+
+  // Clock Out
+  clockOutDate                DateTime? @db.Date
+  clockOutTime                DateTime? @map("clock_out_time")
+  clockOutLatitude            Decimal?  @map("clock_out_latitude") @db.Decimal(9, 6)
+  clockOutLongitude           Decimal?  @map("clock_out_longitude") @db.Decimal(9, 6)
+  clockOutFaceMatchConfidence Decimal?  @map("check_out_face_match_confidence") @db.Decimal(5, 2)
+
+  workingHours Decimal? @map("working_hours") @db.Decimal(4, 2)
+  notes        String?  @map("notes")
+
+  employee AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+
+  @@index([employeeId])
+  @@index([clockInDate])
+  @@index([employeeId, clockInDate])
+  @@index([clockInDate, status])
+  @@index([clockInDate(sort: Desc), clockInTime(sort: Desc)])
+  @@map("attendance_records")
 }

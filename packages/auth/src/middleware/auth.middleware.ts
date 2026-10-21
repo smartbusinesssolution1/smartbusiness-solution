@@ -8,7 +8,9 @@ export function createAuthMiddleware(tokenService: TokenService) {
     _res: Response,
     next: NextFunction,
   ): Promise<void> {
-    const token = req.cookies?.access_token;
+    const authHeader = req.headers.authorization;
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : undefined;
+    const token = req.cookies?.access_token || bearerToken;
 
     if (!token) {
       throw new AuthError("Authentication required. Please log in.");

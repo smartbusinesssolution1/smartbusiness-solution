@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Face Verification — Test Client</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Sora:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:#0e0f11; --surface:#16181c; --border:rgba(255,255,255,0.08);
+    --border-active:rgba(255,255,255,0.2); --text:#f0f0f0; --muted:#7a7d85;
+    --accent:#4ade80; --accent-dim:rgba(74,222,128,0.12);
+    --danger:#f87171; --danger-dim:rgba(248,113,113,0.12);
+    --warn:#fbbf24; --warn-dim:rgba(251,191,36,0.12);
+    --info:#60a5fa; --mono:'DM Mono',monospace; --sans:'Sora',sans-serif;
+  }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); font-size:14px; min-height:100vh; padding:40px 20px; }
+  .container { max-width:760px; margin:0 auto; }
+  header { margin-bottom:32px; }
+  header h1 { font-size:22px; font-weight:600; letter-spacing:-0.5px; margin-bottom:6px; }
+  header p { color:var(--muted); font-size:13px; }
+  .api-bar { display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:14px; }
+  .api-bar label { color:var(--muted); font-size:12px; font-family:var(--mono); white-space:nowrap; }
+  .api-bar input { flex:1; background:transparent; border:none; outline:none; color:var(--text); font-family:var(--mono); font-size:13px; }
+  .steps { display:flex; flex-direction:column; gap:24px; margin-top:18px; }
+  .step { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; transition:border-color 0.2s; }
+  .step.active { border-color:var(--border-active); }
+  .step.done   { border-color:var(--accent); }
+  .step-header { display:flex; align-items:center; gap:14px; padding:18px 20px; border-bottom:1px solid var(--border); }
+  .step-num { width:28px; height:28px; border-radius:50%; border:1px solid var(--border-active); display:flex; align-items:center; justify-content:center; font-size:12px; font-family:var(--mono); color:var(--muted); flex-shrink:0; }
+  .step.active .step-num { border-color:var(--accent); color:var(--accent); }
+  .step.done   .step-num { background:var(--accent); border-color:var(--accent); color:#000; }
+  .step-title { font-weight:500; font-size:14px; }
+  .step-sub { color:var(--muted); font-size:12px; margin-top:2px; }
+  .step-body { padding:20px; }
+  .upload-zone { border:1px dashed var(--border-active); border-radius:10px; padding:28px; text-align:center; cursor:pointer; }
+  .upload-zone:hover { background:rgba(255,255,255,0.03); }
+  .upload-zone input { display:none; }
+  .upload-zone p { color:var(--muted); font-size:13px; }
+  .upload-zone span { color:var(--text); font-weight:500; }
+  .preview-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
+  .preview-item { position:relative; width:90px; height:90px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
+  .preview-item img { width:100%; height:100%; object-fit:cover; }
+  .preview-item .remove-btn { position:absolute; top:4px; right:4px; width:20px; height:20px; background:rgba(0,0,0,0.7); border:none; border-radius:50%; color:#fff; cursor:pointer; font-size:12px; }
+  .preview-item .angle-label { position:absolute; bottom:4px; left:4px; background:rgba(0,0,0,0.75); color:#fff; font-size:10px; padding:2px 5px; border-radius:3px; font-family:var(--mono); }
+  .img-count { font-size:12px; color:var(--muted); margin-top:8px; }
+  .img-count span { color:var(--accent); font-family:var(--mono); }
+
+  /* Camera */
+  .camera-wrap { border-radius:10px; overflow:hidden; background:#000; position:relative; margin-bottom:14px; }
+  #camera-feed { width:100%; max-height:380px; object-fit:cover; display:block; transform:scaleX(-1); }
+  .camera-svg-overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+  .face-oval { fill:none; stroke-width:3; transition:stroke 0.25s; }
+  .face-oval.gray   { stroke:rgba(180,180,180,0.5); }
+  .face-oval.yellow { stroke:#fbbf24; filter:drop-shadow(0 0 6px #fbbf24); }
+  .face-oval.green  { stroke:#4ade80; filter:drop-shadow(0 0 8px #4ade80); }
+  .face-oval.red    { stroke:#f87171; filter:drop-shadow(0 0 6px #f87171); }
+  .camera-hint { position:absolute; bottom:64px; left:0; right:0; text-align:center; font-size:13px; font-family:var(--mono); padding:4px 12px; }
+  .camera-hint.gray   { color:rgba(255,255,255,0.7); }
+  .camera-hint.yellow { color:#fbbf24; }
+  .camera-hint.green  { color:#4ade80; }
+  .camera-hint.red    { color:#f87171; }
+
+  /* Hold-steady badge — countdown ring over oval while pose is correct */
+  .hold-badge { position:absolute; top:38%; left:50%; transform:translate(-50%,-50%);
+    display:flex; flex-direction:column; align-items:center; gap:8px; pointer-events:none; }
+  .hold-ring { width:64px; height:64px; transform:rotate(-90deg); }
+  .hold-ring-bg { fill:none; stroke:rgba(255,255,255,0.18); stroke-width:4; }
+  .hold-ring-fg { fill:none; stroke:#4ade80; stroke-width:4; stroke-linecap:round;
+    stroke-dasharray:163.36; stroke-dashoffset:163.36; transition:stroke-dashoffset 0.1s linear; }
+  .hold-badge-text { font-family:var(--mono); font-size:11px; letter-spacing:0.5px; color:#4ade80;
+    background:rgba(0,0,0,0.65); padding:4px 10px; border-radius:20px; white-space:nowrap; }
+
+  /* Live pose gauge */
+  .pose-gauge {
+    position:absolute; bottom:8px; left:8px; right:8px;
+    display:flex; gap:6px; justify-content:space-between;
+    font-family:var(--mono); font-size:11px;
+    background:rgba(0,0,0,0.55); padding:6px 10px; border-radius:8px;
+  }
+  .pose-gauge .pg-item { flex:1; text-align:center; color:#fff; }
+  .pose-gauge .pg-label { color:rgba(255,255,255,0.55); font-size:10px; letter-spacing:0.5px; }
+  .pose-gauge .pg-value { font-size:14px; font-weight:500; }
+  .pose-gauge .pg-value.ok  { color:#4ade80; }
+  .pose-gauge .pg-value.bad { color:#f87171; }
+  .pose-gauge .pg-value.na  { color:rgba(255,255,255,0.3); }  /* pitch dimmed for side slots */
+
+  /* Angle steps */
+  .angle-steps { display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap; }
+  .angle-step { display:flex; align-items:center; gap:6px; padding:6px 14px; border-radius:20px; border:1px solid var(--border); font-size:12px; font-family:var(--mono); color:var(--muted); }
+  .angle-step .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); }
+  .angle-step.current { border-color:var(--warn); color:var(--warn); }
+  .angle-step.current .dot { background:var(--warn); }
+  .angle-step.ready   { border-color:var(--accent); color:var(--accent); }
+  .angle-step.ready .dot { background:var(--accent); animation:pulse 1s infinite; }
+  .angle-step.done    { border-color:var(--accent); color:var(--accent); background:var(--accent-dim); }
+  .angle-step.done .dot { background:var(--accent); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .cam-controls { display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap; }
+  .btn { padding:10px 20px; border-radius:8px; border:1px solid var(--border-active); background:transparent; color:var(--text); font-family:var(--sans); font-size:13px; font-weight:500; cursor:pointer; }
+  .btn:hover { background:rgba(255,255,255,0.06); }
+  .btn.primary { background:var(--accent); color:#000; border-color:var(--accent); }
+  .btn.primary:hover { background:#22c55e; }
+  .btn.primary:disabled { opacity:0.4; cursor:not-allowed; }
+  .btn.danger-btn { border-color:var(--danger); color:var(--danger); }
+  .btn:disabled { opacity:0.4; cursor:not-allowed; }
+
+  .submit-row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .submit-status { font-size:12px; color:var(--muted); font-family:var(--mono); }
+
+  .result-box { border-radius:12px; padding:24px; border:1px solid var(--border); margin-top:24px; display:none; }
+  .result-box.verified { border-color:var(--accent); background:var(--accent-dim); }
+  .result-box.rejected { border-color:var(--danger); background:var(--danger-dim); }
+  .result-verdict { font-size:28px; font-weight:600; letter-spacing:-1px; margin-bottom:6px; }
+  .result-box.verified .result-verdict { color:var(--accent); }
+  .result-box.rejected .result-verdict { color:var(--danger); }
+  .result-msg { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .result-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:20px; }
+  .stat-card { background:rgba(255,255,255,0.04); border-radius:8px; padding:12px 14px; }
+  .stat-label { font-size:11px; color:var(--muted); font-family:var(--mono); margin-bottom:4px; }
+  .stat-value { font-size:20px; font-weight:600; font-family:var(--mono); }
+  .pairs-title { font-size:12px; color:var(--muted); font-family:var(--mono); margin-bottom:10px; }
+  .pair-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-top:1px solid var(--border); font-size:12px; font-family:var(--mono); }
+  .pair-badge { padding:2px 8px; border-radius:4px; font-size:11px; }
+  .pair-badge.match    { background:var(--accent-dim); color:var(--accent); }
+  .pair-badge.no-match { background:var(--danger-dim); color:var(--danger); }
+  .pair-info { color:var(--muted); flex:1; }
+  .pair-score { color:var(--text); margin-left:auto; }
+  .loading-bar { height:2px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:14px; display:none; }
+  .loading-bar.show { display:block; }
+  .loading-bar-inner { height:100%; background:var(--accent); animation:load 2.5s ease-in-out infinite; }
+  @keyframes load { 0%{width:0%;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0%;margin-left:100%} }
+  .error-box { background:var(--danger-dim); border:1px solid var(--danger); border-radius:10px; padding:14px 16px; font-size:13px; color:var(--danger); margin-top:14px; display:none; font-family:var(--mono); }
+  canvas#snap-canvas, canvas#pose-canvas { display:none; }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Face Verification — Test Client</h1>
+    <p>Guided 4-angle selfie capture → local pose feedback → selfie-only consistency check (no reference photo)</p>
+  </header>
+
+  <div class="api-bar">
+    <label>VERIFY API</label>
+    <input type="text" id="api-url"  value="http://localhost:8000/api/v1/verify"/>
+  </div>
+  <div class="api-bar">
+    <label>POSE</label>
+    <span style="color:var(--muted);font-family:var(--mono);font-size:12px;">local MediaPipe (in-browser, no API call)</span>
+  </div>
+
+  <div class="steps">
+
+    <!-- STEP 1 -->
+    <div class="step active" id="step1">
+      <div class="step-header">
+        <div class="step-num" id="num1">1</div>
+        <div>
+          <div class="step-title">Capture 4 selfies</div>
+          <div class="step-sub">front → left → right → front again. We only check these 4 shots are the same person — no reference photo needed.</div>
+        </div>
+      </div>
+      <div class="step-body">
+
+        <div class="angle-steps" id="angle-steps">
+          <div class="angle-step current" id="astep-0"><span class="dot"></span>front</div>
+          <div class="angle-step"          id="astep-1"><span class="dot"></span>left</div>
+          <div class="angle-step"          id="astep-2"><span class="dot"></span>right</div>
+          <div class="angle-step"          id="astep-3"><span class="dot"></span>front (confirm)</div>
+        </div>
+
+        <div class="camera-wrap" id="camera-wrap" style="display:none">
+          <video id="camera-feed" autoplay playsinline muted></video>
+          <svg class="camera-svg-overlay" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet">
+            <ellipse id="face-oval" class="face-oval gray" cx="320" cy="230" rx="130" ry="170"/>
+          </svg>
+          <div class="hold-badge" id="hold-badge" style="display:none">
+            <svg class="hold-ring" viewBox="0 0 60 60">
+              <circle class="hold-ring-bg" cx="30" cy="30" r="26"/>
+              <circle class="hold-ring-fg" id="hold-ring-fg" cx="30" cy="30" r="26"/>
+            </svg>
+            <span class="hold-badge-text" id="hold-badge-text">HOLD STEADY</span>
+          </div>
+          <div class="camera-hint gray" id="camera-hint">position your face inside the oval</div>
+          <div class="pose-gauge" id="pose-gauge">
+            <div class="pg-item"><div class="pg-label">YAW</div>  <div class="pg-value" id="pg-yaw">—</div></div>
+            <div class="pg-item"><div class="pg-label">PITCH</div><div class="pg-value" id="pg-pitch">—</div></div>
+            <div class="pg-item"><div class="pg-label">ROLL</div> <div class="pg-value" id="pg-roll">—</div></div>
+          </div>
+        </div>
+
+        <canvas id="snap-canvas"></canvas>
+        <canvas id="pose-canvas"></canvas>
+
+        <div class="preview-grid" id="selfie-preview"></div>
+        <p class="img-count" id="selfie-count" style="display:none"><span id="selfie-num">0</span> / 4 selfies captured</p>
+
+        <div class="cam-controls">
+          <button class="btn"           id="start-cam-btn" onclick="startCamera()">Start camera</button>
+          <button class="btn danger-btn" id="stop-cam-btn" onclick="stopCamera()"  style="display:none">Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="step" id="step2">
+      <div class="step-header">
+        <div class="step-num" id="num2">2</div>
+        <div>
+          <div class="step-title">Run verification</div>
+          <div class="step-sub">Send the 4 selfies to the API and get the result</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <div class="submit-row">
+          <button class="btn primary" id="verify-btn" onclick="runVerification()" disabled>Verify identity</button>
+          <button class="btn" onclick="resetAll()">Reset</button>
+          <span class="submit-status" id="submit-status"></span>
+        </div>
+        <div class="loading-bar" id="loading-bar"><div class="loading-bar-inner"></div></div>
+        <div class="error-box" id="error-box"></div>
+        <div class="result-box" id="result-box">
+          <div class="result-verdict" id="result-verdict"></div>
+          <div class="result-msg" id="result-msg"></div>
+          <div class="result-stats">
+            <div class="stat-card"><div class="stat-label">confidence</div>  <div class="stat-value" id="stat-confidence">—</div></div>
+            <div class="stat-card"><div class="stat-label">matched pairs</div><div class="stat-value" id="stat-pairs">—</div></div>
+            <div class="stat-card"><div class="stat-label">match ratio</div>  <div class="stat-value" id="stat-ratio">—</div></div>
+          </div>
+          <div class="pairs-title">pair breakdown</div>
+          <div id="pair-list"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Local, in-browser pose detection. No server, no Android Studio, no native
+     scaffold — this is the entire "setup". First load downloads the model
+     (~a few MB) via CDN and the browser caches it; after that it's offline. -->
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+let landmarker = null;
+let initPromise = null;
+
+async function init() {
+  const fileset = await FilesetResolver.forVisionTasks(
+    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+  );
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+      delegate: "GPU"
+    },
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: true,
+    runningMode: "VIDEO",
+    numFaces: 1
+  });
+}
+
+window.__ensureFaceLandmarker = function () {
+  if (!initPromise) initPromise = init();
+  return initPromise;
+};
+
+// Row-major 4x4 facial transformation matrix -> yaw/pitch/roll (degrees).
+// Same YXZ Tait-Bryan decomposition used by three.js Euler('YXZ'), just
+// re-indexed for a row-major input. If your camera shows a flipped sign for
+// any axis, adjust the SIGN constants in the main script below — no need to
+// touch this function.
+function matrixToEuler(m) {
+  const clamp = (v) => Math.max(-1, Math.min(1, v));
+  const m23 = m[6];
+  let pitch, yaw, roll;
+  pitch = Math.asin(-clamp(m23));
+  if (Math.abs(m23) < 0.9999999) {
+    yaw  = Math.atan2(m[2], m[10]);
+    roll = Math.atan2(m[4], m[5]);
+  } else {
+    yaw  = Math.atan2(-m[8], m[0]);
+    roll = 0;
+  }
+  const toDeg = (r) => r * 180 / Math.PI;
+  return { pitch: toDeg(pitch), yaw: toDeg(yaw), roll: toDeg(roll) };
+}
+
+window.__detectPose = function (video, timestampMs) {
+  if (!landmarker) return { detected: false };
+  const result = landmarker.detectForVideo(video, timestampMs);
+  if (!result.facialTransformationMatrixes || !result.facialTransformationMatrixes.length) {
+    return { detected: false };
+  }
+  const { pitch, yaw, roll } = matrixToEuler(result.facialTransformationMatrixes[0].data);
+
+  // Face POSITION in frame — the matrix above only gives rotation, never
+  // translation, so a correctly-rotated face sitting outside the oval was
+  // passing before. Compute a normalized bounding box from the raw
+  // landmarks (468 points, x/y already 0..1 relative to the video frame)
+  // so the caller can check the face actually sits inside the oval region.
+  let box = null;
+  const lm = result.faceLandmarks && result.faceLandmarks[0];
+  if (lm && lm.length) {
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+    for (const p of lm) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    box = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, w: maxX - minX, h: maxY - minY };
+  }
+
+  return { detected: true, pitch, yaw, roll, box };
+};
+</script>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+// SELFIE-ONLY MODE: no reference photo. 4 selfies, front-confirm repeats the
+// front pose so the backend can cross-check all 4 shots are the same person.
+const ANGLES = ['front', 'left', 'right', 'front_confirm'];
+const ANGLE_INSTRUCTIONS = {
+  front:         'Look straight at the camera',
+  left:          '← Turn your face to your LEFT',
+  right:         '→ Turn your face to your RIGHT',
+  front_confirm: 'Look straight at the camera again to confirm',
+};
+const DETECT_EVERY_MS = 150;     // throttle local inference, not an API call so this is just CPU budget
+const HOLD_SECONDS = 1.2;        // shortened from 2.5 — thresholds are looser now so less time needed
+const HOLD_FRAMES_REQUIRED = Math.round(HOLD_SECONDS * 1000 / DETECT_EVERY_MS);
+const HOLD_RING_CIRC = 2 * Math.PI * 26;
+
+// Mirrors config.py — same numbers as the backend, just evaluated in-browser.
+// Loosened further: phone selfies naturally tilt pitch, and backend pose
+// checks are now advisory-only anyway (see service.py) — this is purely a
+// live-feedback gate, not the thing enforcing security. Face DETECTION
+// (pose.detected below) is what actually gates capture, not angle precision.
+const LOCAL_THRESHOLDS = {
+  front: { yaw_max: 25.0, pitch_max: 45.0, roll_max: 25.0 },
+  left:  { yaw_min: 12.0, yaw_max: 75.0, roll_max: 28.0 },
+  right: { yaw_min: 12.0, yaw_max: 75.0, roll_max: 28.0 },
+};
+// front_confirm reuses the front thresholds/rules — same pose, just a 2nd shot.
+LOCAL_THRESHOLDS.front_confirm = LOCAL_THRESHOLDS.front;
+
+// If yaw/pitch/roll seem inverted for your camera, flip the relevant sign here —
+// takes 10 seconds, no rebuild needed. Watch the pg-yaw/pg-pitch/pg-roll numbers
+// while turning your head and adjust until turning LEFT gives positive yaw.
+const SIGN = { yaw: 1, pitch: 1, roll: 1 };
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let selfieBlobs    = [];
+let stream         = null;
+let currentAngle   = 0;
+let currentOvalState = 'gray';
+let rafId          = null;
+let lastDetectTs   = 0;
+let consecutiveOk  = 0;
+let lastPose       = null;
+let autoCapturing  = false;  // true while countdown or capture in progress
+let countdownTimer = null;
+
+// ── Oval / hint helpers ───────────────────────────────────────────────────────
+function setOvalState(state, hint) {
+  currentOvalState = state;
+  document.getElementById('face-oval').className = `face-oval ${state}`;
+  const h = document.getElementById('camera-hint');
+  h.className = `camera-hint ${state}`;
+  h.textContent = hint;
+  // snap-btn removed — auto-capture handles triggering
+}
+
+// ── Pose gauge — uses nested per-slot thresholds ──────────────────────────────
+// pose.thresholds shape from backend:
+//   { front:{yaw_max,pitch_max,roll_max}, left:{yaw_min,yaw_max,roll_max},
+//     right:{yaw_min,yaw_max,roll_max} }
+//
+// Axes checked per slot:
+//   front         : yaw + pitch + roll
+//   left  / right : yaw + roll only  (pitch shown but dimmed / not judged)
+
+function updatePoseGauge(pose) {
+  const yawEl   = document.getElementById('pg-yaw');
+  const pitchEl = document.getElementById('pg-pitch');
+  const rollEl  = document.getElementById('pg-roll');
+
+  if (!pose || !pose.detected) {
+    yawEl.textContent = pitchEl.textContent = rollEl.textContent = '—';
+    yawEl.className = pitchEl.className = rollEl.className = 'pg-value';
+    return;
+  }
+
+  const slot = ANGLES[currentAngle];
+  const t    = pose.thresholds[slot]; // per-slot threshold object
+
+  yawEl.textContent   = pose.yaw.toFixed(1)   + '°';
+  pitchEl.textContent = pose.pitch.toFixed(1) + '°';
+  rollEl.textContent  = pose.roll.toFixed(1)  + '°';
+
+  // Yaw: range check for side slots, magnitude check for frontal slots
+  let yawOk;
+  if (slot === 'left')       yawOk = (pose.yaw >= t.yaw_min  && pose.yaw <=  t.yaw_max);
+  else if (slot === 'right') yawOk = (pose.yaw <= -t.yaw_min && pose.yaw >= -t.yaw_max);
+  else                       yawOk = (Math.abs(pose.yaw) <= t.yaw_max);
+
+  // Pitch: only judged for front; shown as neutral (na) for side slots
+  const isSide   = (slot === 'left' || slot === 'right');
+  const pitchOk  = isSide ? null : (Math.abs(pose.pitch) <= t.pitch_max);
+
+  // Roll: checked for all slots
+  const rollOk = Math.abs(pose.roll) <= t.roll_max;
+
+  yawEl.className   = 'pg-value ' + (yawOk  ? 'ok' : 'bad');
+  pitchEl.className = 'pg-value ' + (isSide ? 'na' : (pitchOk ? 'ok' : 'bad'));
+  rollEl.className  = 'pg-value ' + (rollOk ? 'ok' : 'bad');
+}
+
+// ── Camera ────────────────────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 640, height: 480, facingMode: 'user' }, audio: false
+    });
+    document.getElementById('camera-feed').srcObject = stream;
+    document.getElementById('camera-wrap').style.display = 'block';
+    document.getElementById('start-cam-btn').style.display = 'none';
+    document.getElementById('stop-cam-btn').style.display = 'inline-flex';
+    updateAngleSteps();
+    setOvalState('gray', ANGLE_INSTRUCTIONS[ANGLES[currentAngle]]);
+    document.getElementById('camera-feed').onloadeddata = () => startPoseDetection();
+  } catch(err) {
+    showError('Camera access denied. Please allow camera permission and try again.');
+  }
+}
+
+function stopCamera() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  document.getElementById('camera-wrap').style.display = 'none';
+  document.getElementById('start-cam-btn').style.display = 'inline-flex';
+  document.getElementById('stop-cam-btn').style.display = 'none';
+  clearTimeout(countdownTimer); countdownTimer = null; autoCapturing = false;
+  updatePoseGauge(null);
+  hideHoldBadge();
+}
+
+// ── Real-time pose detection — fully local, zero network calls ────────────────
+async function startPoseDetection() {
+  consecutiveOk = 0;
+  if (rafId) cancelAnimationFrame(rafId);
+  try {
+    await window.__ensureFaceLandmarker();
+  } catch (err) {
+    showError('Could not load local pose model (check internet access for the CDN/model download, this happens once and is then cached).');
+    return;
+  }
+  lastDetectTs = 0;
+  rafId = requestAnimationFrame(detectLoop);
+}
+
+function detectLoop(ts) {
+  if (!stream) return; // camera was stopped
+  const video = document.getElementById('camera-feed');
+  if (video.readyState >= 2 && ts - lastDetectTs >= DETECT_EVERY_MS) {
+    lastDetectTs = ts;
+    const pose = buildPoseObject(window.__detectPose(video, ts));
+    lastPose = pose;
+    applyPose(pose);
+  }
+  rafId = requestAnimationFrame(detectLoop);
+}
+
+// Local module returns raw {detected, yaw, pitch, roll}; here we attach the
+// same thresholds/slots shape the old /pose response had, so applyPose,
+// updatePoseGauge and buildHint below don't need to change at all.
+function buildPoseObject(raw) {
+  if (!raw || !raw.detected) return { detected: false };
+  const yaw   = raw.yaw   * SIGN.yaw;
+  const pitch = raw.pitch * SIGN.pitch;
+  const roll  = raw.roll  * SIGN.roll;
+  const inOval = raw.box ? isFaceInOval(raw.box) : false;
+  return {
+    detected: true, yaw, pitch, roll, box: raw.box, inOval,
+    thresholds: LOCAL_THRESHOLDS,
+    slots: {
+      front:         inOval && computeSlotOk(yaw, pitch, roll, 'front'),
+      left:          inOval && computeSlotOk(yaw, pitch, roll, 'left'),
+      right:         inOval && computeSlotOk(yaw, pitch, roll, 'right'),
+      front_confirm: inOval && computeSlotOk(yaw, pitch, roll, 'front'),
+    }
+  };
+}
+
+// ── Face-in-oval check — position, not rotation ────────────────────────────
+// The SVG oval is drawn at cx=320,cy=230,rx=130,ry=170 in a 640x480 viewBox
+// (see the <ellipse id="face-oval"> markup). Normalize those to 0..1 so this
+// works regardless of actual camera resolution. A face can have perfect
+// yaw/pitch/roll and still be sitting outside the oval — that's the gap that
+// let the last selfie above capture with the face outside frame-center.
+const OVAL_NORM = { cx: 320/640, cy: 230/480, rx: 130/640, ry: 170/480 };
+const OVAL_TOLERANCE = 1.15; // slight slack so it's not pixel-perfect strict
+
+function isFaceInOval(box) {
+  if (!box) return false;
+  const dx = (box.cx - OVAL_NORM.cx) / OVAL_NORM.rx;
+  const dy = (box.cy - OVAL_NORM.cy) / OVAL_NORM.ry;
+  const centeredEnough = (dx * dx + dy * dy) <= (OVAL_TOLERANCE * OVAL_TOLERANCE);
+  // also reject a face that's way too small (far away / background face) or
+  // way too large (pressed against the camera) relative to the frame
+  const sizeOk = box.w >= 0.14 && box.w <= 0.95;
+  return centeredEnough && sizeOk;
+}
+
+function computeSlotOk(yaw, pitch, roll, slot) {
+  const t = LOCAL_THRESHOLDS[slot];
+  if (slot === 'front') return Math.abs(yaw) <= t.yaw_max && Math.abs(pitch) <= t.pitch_max && Math.abs(roll) <= t.roll_max;
+  if (slot === 'left')  return yaw >= t.yaw_min  && yaw <= t.yaw_max  && Math.abs(roll) <= t.roll_max;
+  if (slot === 'right') return yaw <= -t.yaw_min && yaw >= -t.yaw_max && Math.abs(roll) <= t.roll_max;
+  return false;
+}
+
+function applyPose(pose) {
+  updatePoseGauge(pose);
+
+  // HARD GATE: no real face landmarks detected → no countdown, no capture,
+  // ever. This is what stops a blank frame / random object / photo of a
+  // wall from being auto-captured — capture can only start once MediaPipe
+  // actually locks onto a face.
+  if (!pose.detected) {
+    consecutiveOk = 0;
+    hideHoldBadge();
+    setOvalState('gray', 'No face detected — position your face inside the oval');
+    return;
+  }
+
+  const slot   = ANGLES[currentAngle];
+  const slotOk = pose.slots[slot] === true;
+
+  if (slotOk) {
+    consecutiveOk++;
+    if (consecutiveOk >= HOLD_FRAMES_REQUIRED && !autoCapturing) {
+      autoCapturing = true;
+      hideHoldBadge();
+      if (rafId) cancelAnimationFrame(rafId); // pause detection during capture
+      rafId = null;
+      triggerAutoCapture(slot);
+    } else if (!autoCapturing) {
+      // In range: oval turns green immediately, badge shows countdown ring
+      const remainingSec = ((HOLD_FRAMES_REQUIRED - consecutiveOk) * DETECT_EVERY_MS / 1000).toFixed(1);
+      setOvalState('green', `Hold steady… ${remainingSec}s`);
+      showHoldBadge(consecutiveOk / HOLD_FRAMES_REQUIRED, remainingSec);
+    }
+  } else {
+    if (!autoCapturing) {
+      consecutiveOk = 0;
+      hideHoldBadge();
+      // Position problem takes priority over angle problem in the hint —
+      // no point telling someone to "turn left" when the real issue is
+      // their face isn't inside the oval at all.
+      const hint = !pose.inOval ? 'Move your face into the oval' : buildHint(slot, pose);
+      setOvalState('red', hint);
+    }
+  }
+}
+
+// ── Hold-steady badge — ring fills as user holds correct pose ─────────────────
+function showHoldBadge(progress, remainingSec) {
+  const badge = document.getElementById('hold-badge');
+  badge.style.display = 'flex';
+  document.getElementById('hold-badge-text').textContent = `HOLD STEADY ${remainingSec}s`;
+  const ring = document.getElementById('hold-ring-fg');
+  ring.style.strokeDashoffset = HOLD_RING_CIRC * (1 - progress);
+}
+function hideHoldBadge() {
+  document.getElementById('hold-badge').style.display = 'none';
+  document.getElementById('hold-ring-fg').style.strokeDashoffset = HOLD_RING_CIRC;
+}
+
+// ── Hint builder — uses nested per-slot thresholds ────────────────────────────
+// Axes per slot:
+//   front : yaw_max + pitch_max + roll_max
+//   left  : yaw_min, yaw_max, roll_max  (no pitch)
+//   right : yaw_min, yaw_max, roll_max  (no pitch, yaw is negative)
+
+function buildHint(slot, pose) {
+  const t = pose.thresholds[slot === 'front_confirm' ? 'front' : slot];
+
+  if (slot === 'front' || slot === 'front_confirm') {
+    if (Math.abs(pose.yaw)   > t.yaw_max)   return `Face forward (yaw=${pose.yaw.toFixed(1)}°, max ±${t.yaw_max}°)`;
+    if (Math.abs(pose.pitch) > t.pitch_max) return `Level your head (pitch=${pose.pitch.toFixed(1)}°, max ±${t.pitch_max}°)`;
+    if (Math.abs(pose.roll)  > t.roll_max)  return `Don't tilt (roll=${pose.roll.toFixed(1)}°, max ±${t.roll_max}°)`;
+    return ANGLE_INSTRUCTIONS[slot];
+  }
+
+  if (slot === 'left') {
+    if (Math.abs(pose.roll) > t.roll_max) return `Don't tilt (roll=${pose.roll.toFixed(1)}°, max ±${t.roll_max}°)`;
+    if (pose.yaw < t.yaw_min)  return `Turn further LEFT (yaw=${pose.yaw.toFixed(1)}°, need ≥${t.yaw_min}°)`;
+    if (pose.yaw > t.yaw_max)  return `Turn back slightly (yaw=${pose.yaw.toFixed(1)}°, max ${t.yaw_max}°)`;
+  }
+
+  if (slot === 'right') {
+    if (Math.abs(pose.roll) > t.roll_max)   return `Don't tilt (roll=${pose.roll.toFixed(1)}°, max ±${t.roll_max}°)`;
+    if (pose.yaw > -t.yaw_min) return `Turn further RIGHT (yaw=${pose.yaw.toFixed(1)}°, need ≤-${t.yaw_min}°)`;
+    if (pose.yaw < -t.yaw_max) return `Turn back slightly (yaw=${pose.yaw.toFixed(1)}°, max -${t.yaw_max}°)`;
+  }
+
+  return ANGLE_INSTRUCTIONS[slot];
+}
+
+// ── Auto-capture — grab frame immediately on green, no countdown drift ────────
+function triggerAutoCapture(slot) {
+  // Capture the frame RIGHT NOW while pose is still correct
+  // Then show a brief flash so user knows it happened
+  setOvalState('green', `✅ ${slot} — captured!`);
+  doCapture();
+}
+
+function doCapture() {
+  if (selfieBlobs.length >= 4) return;
+  const video  = document.getElementById('camera-feed');
+  const canvas = document.getElementById('snap-canvas');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  canvas.toBlob(blob => {
+    const angleName = ANGLES[currentAngle];
+    selfieBlobs.push({ blob, angle: angleName });
+    currentAngle++;
+    consecutiveOk  = 0;
+    autoCapturing  = false;
+    countdownTimer = null;
+    renderSelfiePreviews();
+    updateAngleSteps();
+
+    if (selfieBlobs.length >= 4) {
+      stopCamera();
+      updateStepStates();
+      return;
+    }
+
+    // Reset oval and RESUME polling for next angle
+    setOvalState('gray', ANGLE_INSTRUCTIONS[ANGLES[currentAngle]]);
+    updateStepStates();
+    // Small delay so user can reposition before polling resumes
+    setTimeout(() => {
+      if (stream) startPoseDetection();
+    }, 600);
+  }, 'image/jpeg', 0.92);
+}
+
+function updateAngleSteps() {
+  ANGLES.forEach((_, i) => {
+    const el = document.getElementById(`astep-${i}`);
+    if (!el) return;
+    if      (i < selfieBlobs.length)          el.className = 'angle-step done';
+    else if (i === currentAngle && stream)    el.className = 'angle-step current';
+    else                                       el.className = 'angle-step';
+  });
+}
+
+function renderSelfiePreviews() {
+  const grid = document.getElementById('selfie-preview');
+  grid.innerHTML = '';
+  selfieBlobs.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'preview-item';
+    item.innerHTML = `
+      <img src="${URL.createObjectURL(s.blob)}"/>
+      <button class="remove-btn" onclick="removeSelfie(${i})">✕</button>
+      <div class="angle-label">${s.angle}</div>`;
+    grid.appendChild(item);
+  });
+  document.getElementById('selfie-count').style.display = selfieBlobs.length ? 'block' : 'none';
+  document.getElementById('selfie-num').textContent = selfieBlobs.length;
+}
+
+function removeSelfie(i) {
+  selfieBlobs.splice(i, 1);
+  currentAngle = selfieBlobs.length;
+  renderSelfiePreviews();
+  updateAngleSteps();
+  updateStepStates();
+}
+
+// ── Step state ────────────────────────────────────────────────────────────────
+function updateStepStates() {
+  const hasSelfies = selfieBlobs.length === 4;
+  document.getElementById('step1').className = 'step' + (hasSelfies ? ' done' : ' active');
+  document.getElementById('step2').className = 'step' + (hasSelfies ? ' active' : '');
+  document.getElementById('num1').textContent = hasSelfies ? '✓' : '1';
+  document.getElementById('verify-btn').disabled = !hasSelfies;
+}
+
+// ── Verification call ─────────────────────────────────────────────────────────
+async function runVerification() {
+  hideError();
+  document.getElementById('result-box').style.display = 'none';
+  document.getElementById('loading-bar').className = 'loading-bar show';
+  document.getElementById('submit-status').textContent = 'Sending to API...';
+  document.getElementById('verify-btn').disabled = true;
+
+  const apiUrl   = document.getElementById('api-url').value.trim();
+  const formData = new FormData();
+  selfieBlobs.forEach((s, i) => formData.append('selfie_images', s.blob, `selfie_${s.angle}_${i}.jpg`));
+
+  try {
+    const res  = await fetch(apiUrl, { method: 'POST', body: formData });
+    const data = await res.json();
+    document.getElementById('loading-bar').className = 'loading-bar';
+    document.getElementById('submit-status').textContent = '';
+    if (!res.ok) { showError(data.detail || JSON.stringify(data)); return; }
+    showResult(data);
+  } catch(err) {
+    document.getElementById('loading-bar').className = 'loading-bar';
+    document.getElementById('submit-status').textContent = '';
+    showError(`Could not reach the API at "${apiUrl}".`);
+  } finally {
+    document.getElementById('verify-btn').disabled = false;
+  }
+}
+
+function showResult(data) {
+  const box        = document.getElementById('result-box');
+  const isVerified = data.status === 'verified';
+  box.className    = 'result-box ' + (isVerified ? 'verified' : 'rejected');
+  box.style.display = 'block';
+  document.getElementById('result-verdict').textContent     = isVerified ? 'Identity verified' : 'Identity rejected';
+  document.getElementById('result-msg').textContent         = data.message;
+  document.getElementById('stat-confidence').textContent    = (data.confidence_score * 100).toFixed(1) + '%';
+  document.getElementById('stat-pairs').textContent         = `${data.matched_pairs} / ${data.total_pairs}`;
+  document.getElementById('stat-ratio').textContent         = (data.match_ratio * 100).toFixed(0) + '%';
+  const pairList = document.getElementById('pair-list');
+  pairList.innerHTML = '';
+  data.pair_results.forEach(p => {
+    const labelA = ANGLES[p.selfie_a_index] || p.selfie_a_index;
+    const labelB = ANGLES[p.selfie_b_index] || p.selfie_b_index;
+    const row = document.createElement('div');
+    row.className = 'pair-row';
+    row.innerHTML = `
+      <span class="pair-badge ${p.is_match ? 'match' : 'no-match'}">${p.is_match ? 'match' : 'no match'}</span>
+      <span class="pair-info">${labelA} vs ${labelB} selfie</span>
+      <span class="pair-score">${(p.confidence_score * 100).toFixed(1)}% · dist ${p.distance.toFixed(3)}</span>`;
+    pairList.appendChild(row);
+  });
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function showError(msg) {
+  const b = document.getElementById('error-box');
+  b.textContent  = 'Error: ' + msg;
+  b.style.display = 'block';
+}
+function hideError() { document.getElementById('error-box').style.display = 'none'; }
+
+function resetAll() {
+  selfieBlobs = []; currentAngle = 0; consecutiveOk = 0;
+  stopCamera();
+  renderSelfiePreviews(); updateAngleSteps(); updateStepStates();
+  document.getElementById('result-box').style.display = 'none';
+  hideError();
+  document.getElementById('submit-status').textContent = '';
+  setOvalState('gray', 'position your face inside the oval');
+  ANGLES.forEach((_, i) => {
+    const el = document.getElementById(`astep-${i}`);
+    if (el) el.className = i === 0 ? 'angle-step current' : 'angle-step';
+  });
+}
+
+updateStepStates();
+</script>
+</body>
+</html>

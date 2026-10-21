@@ -1,0 +1,33 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="smartBusinessGradientFavicon" x1="88%" y1="8%" x2="12%" y2="92%">
+      <stop offset="0%" stopColor="#7E0B80" />
+      <stop offset="50%" stopColor="#4E109B" />
+      <stop offset="100%" stopColor="#1252DF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle Rounded Background Badge -->
+  <rect width="200" height="200" rx="46" fill="url(#smartBusinessGradientFavicon)" />
+
+  <!-- 3D Isometric Wireframe Impossible S -->
+  <g stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Top-Right End Cap (Isometric Rhombus Face) -->
+    <polygon points="138,47.6 156,58.0 156,82.0 138,71.6" />
+
+    <!-- Bottom-Left End Cap (Isometric Rhombus Face) -->
+    <polygon points="62,152.4 44,142.0 44,118.0 62,128.4" />
+
+    <!-- Line 0: Outermost Contour Path -->
+    <path d="M 138,47.6 L 100,25.6 L 44,58.0 L 44,90.0 L 156,110.0 L 156,142.0 L 100,174.4 L 62,152.4" />
+
+    <!-- Line 1: First Parallel Inner Track -->
+    <path d="M 138,55.6 L 100,33.6 L 50,62.5 L 50,86.5 L 150,113.5 L 150,137.5 L 100,166.4 L 62,144.4" />
+
+    <!-- Line 2: Second Parallel Inner Track -->
+    <path d="M 138,63.6 L 100,41.6 L 56,67.0 L 56,83.0 L 144,117.0 L 144,133.0 L 100,158.4 L 62,136.4" />
+
+    <!-- Line 3: Innermost Track -->
+    <path d="M 138,71.6 L 100,49.6 L 62,71.6 L 62,79.6 L 138,120.4 L 138,128.4 L 100,150.4 L 62,128.4" />
+  </g>
+</svg>

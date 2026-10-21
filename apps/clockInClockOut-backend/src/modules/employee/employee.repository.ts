@@ -1,0 +1,94 @@
+import { prisma } from "@smartbusiness/database";
+
+export class EmployeeRepository {
+  /**
+   * Find employee attendance profile by User ID and Tenant ID
+   */
+  async findEmployeeByUserIdAndTenant(userId: string, tenantId: string) {
+    return prisma.attendanceEmployeeDetails.findFirst({
+      where: {
+        deletedAt: null,
+        workspaceMember: {
+          userId,
+          workspace: {
+            tenantId,
+          },
+        },
+      },
+      include: {
+        workspaceMember: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                isActive: true,
+              },
+            },
+            workspace: {
+              select: {
+                id: true,
+                businessName: true,
+                tenantId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  /**
+   * List all employees in a tenant workspace (for Admin/Manager directory, optionally filtered by workspaceId)
+   */
+  async findEmployeesByTenant(tenantId: string, workspaceId?: string) {
+    return prisma.attendanceEmployeeDetails.findMany({
+      where: {
+        deletedAt: null,
+        workspaceMember: {
+          ...(workspaceId ? { workspaceId } : {}),
+          workspace: {
+            tenantId,
+          },
+        },
+      },
+      include: {
+        workspaceMember: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+                isActive: true,
+              },
+            },
+            workspace: {
+              select: {
+                id: true,
+                businessName: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        employeeCode: "asc",
+      },
+    });
+  }
+
+  /**
+   * Update employee profile (biometricPhotoUrl) by employee detail ID
+   */
+  async updateEmployeeProfile(id: string, data: { biometricPhotoUrl?: string }) {
+    return prisma.attendanceEmployeeDetails.update({
+      where: { id },
+      data: {
+        ...(data.biometricPhotoUrl ? { biometricPhotoUrl: data.biometricPhotoUrl } : {}),
+      },
+    });
+  }
+}
+

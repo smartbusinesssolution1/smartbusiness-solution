@@ -1,0 +1,177 @@
+export type UserRole = 'admin' | 'employee' | 'super_admin';
+
+export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
+export interface Tenant {
+  id: string;
+  name: string;
+  role?: TenantRole;
+  status?: 'ACTIVE' | 'SUSPENDED' | 'CLOSED';
+  billingEmail?: string;
+}
+
+export interface Workspace {
+  id: string;
+  tenantId: string;
+  name: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  phone?: string;
+  isDefault?: boolean;
+  employeeCount?: number;
+  createdAt?: string;
+}
+
+export type DayOfWeek = 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT' | 'SUN';
+
+export interface DayShiftConfig {
+  day: DayOfWeek;
+  isWorkDay: boolean;
+  startTime: string; // HH:mm
+  endTime: string;   // HH:mm
+}
+
+export type WeeklySchedule = DayShiftConfig[];
+
+export interface User {
+  id: string;
+  userId?: string;
+  employeeId: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: UserRole;
+  isSuperAdmin?: boolean;
+  status: 'active' | 'inactive';
+  designation: string;
+  department: string;
+  joinedDate: string;
+  avatarUrl?: string;
+  shiftType?: 'general' | 'custom';
+  shiftStartTime?: string;
+  shiftEndTime?: string;
+  weeklySchedule?: WeeklySchedule;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  avatarUrl?: string | null;
+  date: string; // YYYY-MM-DD
+  checkIn: string | null; // HH:mm:ss or null
+  checkOut: string | null; // HH:mm:ss or null
+  status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
+  workingHours: number; // in hours
+  notes?: string;
+  selfieUrl?: string;
+  workspaceId?: string;
+  workspaceName?: string;
+}
+
+export interface AttendanceReportSummary {
+  totalShifts: number;
+  lateCount: number;
+  latePercentage: number;
+  averageWorkingHours: number;
+  absentCount?: number;
+}
+
+export interface AdminAttendanceReportResponse {
+  items: AttendanceRecord[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+  summary: AttendanceReportSummary;
+}
+
+export interface WorkspaceGeofenceDetails {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  graceMinutes: number;
+  defaultShiftStartTime: string;
+  defaultShiftEndTime: string;
+  updatedAt?: string;
+}
+
+export interface GeofenceSettingsResponse {
+  corporateName: string;
+  tenantId: string;
+  workspaceId: string;
+  workspaceName: string;
+  address?: string;
+  isConfigured: boolean;
+  geofence: WorkspaceGeofenceDetails | null;
+}
+
+export interface UpdateGeofencePayload {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  graceMinutes?: number;
+  defaultShiftStartTime: string;
+  defaultShiftEndTime: string;
+}
+
+export interface WorkspaceGeofenceOverviewItem {
+  corporateName: string;
+  tenantId: string;
+  workspaceId: string;
+  workspaceName: string;
+  address: string;
+  isConfigured: boolean;
+  radiusMeters: number | null;
+  defaultShiftStartTime: string | null;
+  defaultShiftEndTime: string | null;
+  graceMinutes: number | null;
+}
+
+export interface OrganizationSettings {
+  companyName: string;
+  officeName: string;
+  latitude: number;
+  longitude: number;
+  radius: number; // in meters
+  officeStartTime: string; // HH:mm
+  officeEndTime: string; // HH:mm
+}
+
+export interface DepartmentAttendanceStat {
+  name: string;
+  rate: number;
+  present: number;
+  late: number;
+  absent: number;
+  total?: number;
+}
+
+export interface AdminDashboardMetrics {
+  totalEmployees: number;
+  presentToday: number;
+  lateToday: number;
+  autoClosedToday: number;
+  attendanceRate: number;
+  absentCount?: number;
+  weeklyStats: {
+    day: string;
+    present: number;
+    late: number;
+    absent: number;
+  }[];
+  departmentStats?: DepartmentAttendanceStat[];
+}
+
+export interface EmployeeDashboardMetrics {
+  todayAttendance: AttendanceRecord | null;
+  totalPresent: number;
+  totalLate: number;
+  totalWorkingHours: number;
+  attendanceRate: number;
+  recentAttendance: AttendanceRecord[];
+}

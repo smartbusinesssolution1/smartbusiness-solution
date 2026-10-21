@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Attendance Face Match — Test</title>
+<!-- MediaPipe FaceMesh, run entirely in the browser, purely so we can
+     turn the guide circle green the instant a real blink is detected
+     while the user is being recorded. This is a UX signal only — the
+     server independently re-checks blink + motion + face match on the
+     frames you actually send, and is what decides marked/rejected. -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/face_mesh.js" crossorigin="anonymous"></script>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 1.4rem; }
+  .row { display: flex; gap: 24px; flex-wrap: wrap; margin: 16px 0; }
+  .card { flex: 1; min-width: 260px; border: 1px solid #ddd; border-radius: 10px; padding: 16px; }
+  .card h3 { margin-top: 0; font-size: 1rem; }
+  img.preview { display: block; width: 100%; max-height: 220px; object-fit: contain; border-radius: 8px; background: #fafafa; margin-top: 8px; }
+  canvas.overlay { position: absolute; left: 0; top: 8px; width: 100%; height: calc(100% - 8px); pointer-events: none; }
+  video { width: 100%; border-radius: 8px; background: #000; display: block; }
+  button { cursor: pointer; border: none; border-radius: 8px; padding: 10px 16px; font-size: 0.95rem; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .primary { background: #2563eb; color: white; }
+  .secondary { background: #eee; color: #222; margin-right: 8px; }
+  #apiBase { width: 100%; padding: 8px; margin-bottom: 8px; box-sizing: border-box; }
+  #result { margin-top: 20px; padding: 16px; border-radius: 10px; white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85rem; }
+  .status-marked { background: #ecfdf5; border: 1px solid #10b981; }
+  .status-rejected { background: #fef2f2; border: 1px solid #ef4444; }
+  .status-spoof_suspected { background: #fffbeb; border: 1px solid #f59e0b; }
+  .status-error { background: #fef2f2; border: 1px solid #ef4444; }
+  #blinkStatus { font-size: 0.85rem; font-weight: 600; margin-top: 8px; }
+  #blinkStatus.pending { color: #b45309; }
+  #blinkStatus.ok { color: #16a34a; }
+  #blinkStatus.fail { color: #dc2626; }
+</style>
+</head>
+<body>
+
+<h1>Attendance Face Match — Test Page</h1>
+<p>Upload a stored profile photo, then use the webcam — capture is
+<strong>automatic</strong>: the oval turns green once your face is
+correctly centered, sized, and facing forward, and a blink while it's green
+triggers the burst capture (camera turns off right after). A blink from far
+away, off-center, or at an angle will <strong>not</strong> capture — the
+oval must be green first. This exercises
+<code>POST /api/v1/attendance/mark-burst</code> (recommended) or falls back to
+<code>POST /api/v1/attendance/mark</code> for plain photo uploads (no blink
+check possible on a single still photo).</p>
+
+<input id="apiBase" type="text" value="http://localhost:8000" />
+
+<div class="row">
+  <div class="card">
+    <h3>1. Profile photo (reference)</h3>
+    <input type="file" accept="image/*" id="profileInput" />
+    <div class="preview-wrap" style="position:relative;display:none" id="profileWrap">
+      <img id="profilePreview" class="preview" />
+      <canvas id="profileOverlay" class="overlay"></canvas>
+    </div>
+    <p id="profileFaceMsg" style="font-size:0.8rem;color:#666;margin:6px 0 0"></p>
+  </div>
+
+  <div class="card">
+    <h3>2. Live capture (recommended)</h3>
+    <div style="position:relative">
+      <video id="video" autoplay playsinline muted style="display:none"></video>
+      <div id="guideOval" style="display:none;position:absolute;border:4px dashed rgba(37,99,235,0.85);border-radius:50%;pointer-events:none;transition:border-color 0.15s, border-style 0.15s"></div>
+    </div>
+    <div style="margin-top:8px">
+      <button class="secondary" id="startCam">Start camera</button>
+    </div>
+    <p id="blinkStatus" class="pending" style="display:none"></p>
+    <canvas id="canvas" style="display:none"></canvas>
+
+    <div class="preview-wrap" style="position:relative;display:none;margin-top:10px" id="captureWrap">
+      <img id="capturePreview" class="preview" />
+      <canvas id="captureOverlay" class="overlay"></canvas>
+    </div>
+    <p id="captureFaceMsg" style="font-size:0.8rem;color:#666;margin:6px 0 0"></p>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid #eee" />
+    <p style="margin:4px 0;font-size:0.8rem;color:#666">...or fall back to a plain photo upload (no blink check, weaker):</p>
+    <input type="file" accept="image/*" id="captureInput" />
+  </div>
+</div>
+
+<button class="primary" id="submitBtn">Check attendance</button>
+
+<div id="result" style="display:none"></div>
+
+<script>
+const profileInput = document.getElementById('profileInput');
+const captureInput = document.getElementById('captureInput');
+const profilePreview = document.getElementById('profilePreview');
+const capturePreview = document.getElementById('capturePreview');
+const profileWrap = document.getElementById('profileWrap');
+const captureWrap = document.getElementById('captureWrap');
+const profileOverlay = document.getElementById('profileOverlay');
+const captureOverlay = document.getElementById('captureOverlay');
+const profileFaceMsg = document.getElementById('profileFaceMsg');
+const captureFaceMsg = document.getElementById('captureFaceMsg');
+const video = document.getElementById('video');
+const guideOval = document.getElementById('guideOval');
+const canvas = document.getElementById('canvas');
+const startCamBtn = document.getElementById('startCam');
+// (manual "snap" button removed — capture is fully automatic: blink while
+// the oval is green triggers it, matching the mobile blink-to-capture flow)
+const resultBox = document.getElementById('result');
+const blinkStatusEl = document.getElementById('blinkStatus');
+
+let profileFile = null;
+let captureFile = null;
+let burstFrames = [];
+let burstHadBlink = false; // set true client-side, once, the moment a blink is seen — a
+                            // one-time gate. Frames captured after this don't need to
+                            // individually contain a blink (server no longer requires
+                            // that either — see config.REQUIRE_BLINK).
+
+// ── Live client-side blink detection (MediaPipe FaceMesh) ───────────────
+// This ONLY drives the green-circle UX feedback and gates the capture
+// button — it is not trusted for the actual security decision. The
+// server re-runs its own blink + motion + passive-liveness checks on the
+// frames you send and is the authority on marked/rejected/spoof_suspected.
+//
+// Why detection used to be flaky:
+//  1. Frames were sent to MediaPipe on a fixed setInterval WITHOUT waiting
+//     for the previous frame to finish processing. If a frame took longer
+//     than 120ms (slower device, first few frames while the WASM model is
+//     still warming up), calls piled up and the graph would silently drop
+//     or choke on frames — some blinks just never got seen.
+//  2. A single hardcoded EAR threshold (0.19 / 0.24) does not fit everyone
+//     — eye shape, camera angle, distance, and lighting all shift your
+//     personal EAR range. What's "closed" for one person's camera setup
+//     can be another person's "open".
+// Fixes: (1) strictly sequential polling — never send a new frame until
+// the previous one has resolved; (2) short-window smoothing to reduce
+// per-frame noise; (3) auto-calibration — the first ~1.2s of tracking
+// samples YOUR baseline open-eye EAR and derives closed/open thresholds
+// from it, instead of using fixed numbers.
+const LEFT_EYE = [33, 160, 158, 133, 153, 144];
+const RIGHT_EYE = [362, 385, 387, 263, 373, 380];
+
+const CALIBRATION_MS = 800;    // how long to sample baseline open-eye EAR (trimmed from 1200ms)
+const SMOOTHING_WINDOW = 3;    // moving-average window over recent EAR samples
+const NO_FACE_TIMEOUT_MS = 1500;
+
+let faceMesh = null;
+let livePollActive = false;
+let sendBusy = false;          // true while a send() is in flight — never overlap
+let earHistory = [];           // recent smoothed-input samples
+let calibrationSamples = [];
+let calibrationStartTs = 0;
+let calibrated = false;
+let earClosedThresh = 0.19;    // overwritten once calibrated
+let earOpenThresh = 0.24;      // overwritten once calibrated
+let liveEarOpenSeen = false;
+let liveEarClosedSeen = false;
+let lastFaceSeenTs = 0;
+
+function ear(landmarks, idxs) {
+  const p = idxs.map(i => landmarks[i]);
+  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const v1 = dist(p[1], p[5]);
+  const v2 = dist(p[2], p[4]);
+  const h = dist(p[0], p[3]);
+  return h === 0 ? 0.3 : (v1 + v2) / (2 * h);
+}
+
+function smoothedEar(raw) {
+  earHistory.push(raw);
+  if (earHistory.length > SMOOTHING_WINDOW) earHistory.shift();
+  return earHistory.reduce((a, b) => a + b, 0) / earHistory.length;
+}
+
+function setGuideNotPositioned() {
+  guideOval.style.borderColor = '#ef4444';
+  guideOval.style.borderStyle = 'dashed';
+}
+
+function setGuidePositioned() {
+  guideOval.style.borderColor = '#22c55e';
+  guideOval.style.borderStyle = 'solid';
+}
+
+// PHASE 1 (test page): real position/size/pose check, same math as the
+// React component. Oval target is in normalized (0-1) landmark space.
+const OVAL_CENTER_X = 0.5;
+const OVAL_CENTER_Y = 0.47;
+const CENTER_TOL_X = 0.13;
+const CENTER_TOL_Y = 0.16;
+const MIN_FACE_HEIGHT_RATIO = 0.32;
+const MAX_FACE_HEIGHT_RATIO = 0.82;
+const MAX_ROLL_DEV_DEG = 15;   // no angle-tilt selector on this page — target is always 0
+const MAX_YAW_RATIO = 0.18;
+let positionOk = false;
+
+function onFaceMeshResults(results) {
+  const now = performance.now();
+
+  if (!results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0) {
+    if (!calibrated || (now - lastFaceSeenTs) > NO_FACE_TIMEOUT_MS) {
+      blinkStatusEl.textContent = 'No face detected — center your face in the oval';
+      blinkStatusEl.className = 'fail';
+      positionOk = false;
+      setGuideNotPositioned();
+    }
+    return;
+  }
+  lastFaceSeenTs = now;
+
+  const lm = results.multiFaceLandmarks[0];
+
+  // Bounding box across all landmarks — is the face centered/sized right?
+  let minX = 1, maxX = 0, minY = 1, maxY = 0;
+  for (let i = 0; i < lm.length; i++) {
+    const p = lm[i];
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  const faceCenterX = (minX + maxX) / 2;
+  const faceCenterY = (minY + maxY) / 2;
+  const faceHeight = maxY - minY;
+
+  const leftEyeOuter = lm[33];
+  const rightEyeOuter = lm[263];
+  const noseTip = lm[1];
+  const rollDeg = Math.atan2(rightEyeOuter.y - leftEyeOuter.y, rightEyeOuter.x - leftEyeOuter.x) * 180 / Math.PI;
+  const eyeDist = Math.hypot(rightEyeOuter.x - leftEyeOuter.x, rightEyeOuter.y - leftEyeOuter.y);
+  const yawRatio = eyeDist === 0 ? 0 : (noseTip.x - (leftEyeOuter.x + rightEyeOuter.x) / 2) / eyeDist;
+
+  const centeredOk = Math.abs(faceCenterX - OVAL_CENTER_X) <= CENTER_TOL_X
+    && Math.abs(faceCenterY - OVAL_CENTER_Y) <= CENTER_TOL_Y;
+  const sizeOk = faceHeight >= MIN_FACE_HEIGHT_RATIO && faceHeight <= MAX_FACE_HEIGHT_RATIO;
+  const rollOk = Math.abs(rollDeg) <= MAX_ROLL_DEV_DEG;
+  const yawOk = Math.abs(yawRatio) <= MAX_YAW_RATIO;
+  const nextPositionOk = centeredOk && sizeOk && rollOk && yawOk;
+
+  const wasPositionOk = positionOk;
+  positionOk = nextPositionOk;
+
+  if (!positionOk) {
+    setGuideNotPositioned();
+    let msg = 'Position your face inside the oval';
+    if (faceHeight < MIN_FACE_HEIGHT_RATIO) msg = 'Move closer to the camera';
+    else if (faceHeight > MAX_FACE_HEIGHT_RATIO) msg = 'Move back a little';
+    else if (!centeredOk) msg = 'Center your face inside the oval';
+    else if (!yawOk) msg = 'Face the camera directly';
+    else if (!rollOk) msg = 'Straighten your head — no tilt';
+    blinkStatusEl.textContent = msg;
+    blinkStatusEl.className = 'fail';
+    // Position lost — drop in-progress blink so a stray blink off-oval or
+    // from far away can never trigger a capture.
+    liveEarOpenSeen = false;
+    liveEarClosedSeen = false;
+    return;
+  }
+
+  // Oval is green now — face is centered, correctly sized, facing forward.
+  setGuidePositioned();
+
+  // Just became positioned — restart the calibration window so the baseline
+  // is sampled from genuinely well-positioned frames.
+  if (!wasPositionOk && !calibrated) {
+    calibrationStartTs = now;
+    calibrationSamples = [];
+  }
+
+  const rawEar = (ear(lm, LEFT_EYE) + ear(lm, RIGHT_EYE)) / 2;
+  const avgEar = smoothedEar(rawEar);
+
+  // ── Calibration phase: sample this user/camera's baseline open EAR ────
+  if (!calibrated) {
+    calibrationSamples.push(avgEar);
+    const elapsed = now - calibrationStartTs;
+    blinkStatusEl.textContent = `Calibrating... keep your eyes open (${Math.max(0, Math.ceil((CALIBRATION_MS - elapsed) / 100) / 10)}s)`;
+    blinkStatusEl.className = 'pending';
+    if (elapsed >= CALIBRATION_MS && calibrationSamples.length >= 5) {
+      const baseline = calibrationSamples.reduce((a, b) => a + b, 0) / calibrationSamples.length;
+      earOpenThresh = baseline * 0.88;
+      earClosedThresh = baseline * 0.68;
+      calibrated = true;
+      blinkStatusEl.textContent = 'Ready — please blink naturally';
+      blinkStatusEl.className = 'pending';
+    }
+    return;
+  }
+
+  // ── Blink detection: open -> closed -> open (one-time gate), only while
+  // correctly positioned (re-checked every frame above) — a blink from far
+  // away or off-oval can never reach here. ─────────────────────────────
+  if (avgEar >= earOpenThresh) {
+    if (liveEarClosedSeen && !burstHadBlink) {
+      burstHadBlink = true;
+      blinkStatusEl.textContent = 'Blink detected ✓ — capturing...';
+      blinkStatusEl.className = 'ok';
+      performCapture();
+    }
+    liveEarOpenSeen = true;
+  } else if (avgEar <= earClosedThresh && liveEarOpenSeen) {
+    liveEarClosedSeen = true;
+  }
+  if (!burstHadBlink) {
+    blinkStatusEl.textContent = `Waiting for a blink... (EAR: ${avgEar.toFixed(3)}, closed<${earClosedThresh.toFixed(3)}, open>${earOpenThresh.toFixed(3)})`;
+  }
+}
+
+async function initFaceMesh() {
+  if (faceMesh) return;
+  faceMesh = new FaceMesh({
+    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619/${file}`,
+  });
+  faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+  faceMesh.onResults(onFaceMeshResults);
+  // Warm the model up once before we start relying on timing — the very
+  // first inference call is much slower than subsequent ones and used to
+  // be a common source of an early dropped/overlapping frame.
+  const warm = document.createElement('canvas');
+  warm.width = 64; warm.height = 64;
+  await faceMesh.send({ image: warm });
+}
+
+async function livePollLoop() {
+  if (!livePollActive) return;
+
+  if (!sendBusy && video.readyState >= 2) {
+    sendBusy = true;
+    try {
+      await faceMesh.send({ image: video });
+    } catch (e) {
+      // A transient WASM/graph error on one frame shouldn't kill the loop.
+      console.warn('faceMesh.send error (skipping frame):', e);
+    }
+    sendBusy = false;
+  }
+  // requestAnimationFrame naturally paces this to the display refresh rate
+  // and — critically — never queues a second call while one is pending,
+  // unlike the previous setInterval approach.
+  requestAnimationFrame(livePollLoop);
+}
+
+function startLivePolling() {
+  stopLivePolling();
+  livePollActive = true;
+  requestAnimationFrame(livePollLoop);
+}
+
+function stopLivePolling() {
+  livePollActive = false;
+}
+
+function resetBlinkState() {
+  liveEarOpenSeen = false;
+  liveEarClosedSeen = false;
+  burstHadBlink = false;
+  earHistory = [];
+  calibrationSamples = [];
+  calibrationStartTs = performance.now();
+  calibrated = false;
+  positionOk = false;
+  setGuideNotPositioned();
+  blinkStatusEl.style.display = 'block';
+  blinkStatusEl.textContent = 'Looking for your face...';
+  blinkStatusEl.className = 'pending';
+}
+
+// ── API helpers ───────────────────────────────────────────────────────
+function apiBase() {
+  return document.getElementById('apiBase').value.replace(/\/$/, '');
+}
+
+function drawFaceCircle(overlayCanvas, imgEl, box, imgW, imgH) {
+  const rect = imgEl.getBoundingClientRect();
+  overlayCanvas.width = rect.width;
+  overlayCanvas.height = rect.height;
+  const ctx = overlayCanvas.getContext('2d');
+  ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  if (!box) return;
+  const sx = rect.width / imgW;
+  const sy = rect.height / imgH;
+  const cx = ((box.x1 + box.x2) / 2) * sx;
+  const cy = ((box.y1 + box.y2) / 2) * sy;
+  const rx = ((box.x2 - box.x1) / 2) * sx * 1.15;
+  const ry = ((box.y2 - box.y1) / 2) * sy * 1.25;
+  ctx.strokeStyle = '#22c55e';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+async function runFaceDetect(file, imgEl, overlayCanvas, msgEl) {
+  msgEl.textContent = 'Detecting face...';
+  const form = new FormData();
+  form.append('image', file);
+  try {
+    const res = await fetch(`${apiBase()}/api/v1/face/detect`, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      msgEl.textContent = `Detection error: ${data.detail || res.statusText}`;
+      return;
+    }
+    if (!data.detected) {
+      msgEl.textContent = 'No face detected in this photo.';
+      overlayCanvas.getContext('2d').clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      return;
+    }
+    msgEl.textContent = 'Face detected ✓';
+    drawFaceCircle(overlayCanvas, imgEl, data.box, data.image_width, data.image_height);
+  } catch (e) {
+    msgEl.textContent = 'Could not reach API for face detection: ' + e.message;
+  }
+}
+
+function previewFile(file, imgEl, wrapEl, overlayCanvas, msgEl) {
+  const url = URL.createObjectURL(file);
+  imgEl.onload = () => runFaceDetect(file, imgEl, overlayCanvas, msgEl);
+  imgEl.src = url;
+  wrapEl.style.display = 'block';
+}
+
+profileInput.addEventListener('change', () => {
+  profileFile = profileInput.files[0] || null;
+  if (profileFile) previewFile(profileFile, profilePreview, profileWrap, profileOverlay, profileFaceMsg);
+});
+
+captureInput.addEventListener('change', () => {
+  captureFile = captureInput.files[0] || null;
+  burstFrames = [];
+  burstHadBlink = false; // plain upload never satisfies the blink requirement
+  if (captureFile) previewFile(captureFile, capturePreview, captureWrap, captureOverlay, captureFaceMsg);
+});
+
+let isCapturing = false;
+
+startCamBtn.addEventListener('click', async () => {
+  try {
+    await initFaceMesh();
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+
+    // Fresh attempt — clear out any previous capture/result so the UI
+    // doesn't show a stale preview next to a live camera.
+    burstFrames = [];
+    captureFile = null;
+    captureWrap.style.display = 'none';
+    captureFaceMsg.textContent = '';
+    resultBox.style.display = 'none';
+
+    video.srcObject = stream;
+    video.style.display = 'block';
+    startCamBtn.disabled = true;
+    startCamBtn.textContent = 'Camera active...';
+
+    video.addEventListener('loadedmetadata', () => {
+      const rect = video.getBoundingClientRect();
+      // PHASE 1: vertical (portrait) oval — narrower than tall, matching a
+      // real face outline instead of the old wide/horizontal guide.
+      const w = rect.width * 0.38;
+      const h = rect.height * 0.78;
+      guideOval.style.width = w + 'px';
+      guideOval.style.height = h + 'px';
+      guideOval.style.left = (rect.width - w) / 2 + 'px';
+      guideOval.style.top = (rect.height - h) / 2 + 'px';
+      guideOval.style.display = 'block';
+      resetBlinkState();
+      startLivePolling();
+    }, { once: true });
+  } catch (e) {
+    startCamBtn.disabled = false;
+    startCamBtn.textContent = 'Start camera';
+    alert('Camera access failed: ' + e.message);
+  }
+});
+
+async function performCapture() {
+  // Defensive re-check: only a blink caught while correctly positioned
+  // (green oval) ever gets here — never off-oval, never from far away.
+  if (isCapturing || !burstHadBlink || !positionOk) return;
+  isCapturing = true;
+
+  stopLivePolling();
+  captureFaceMsg.textContent = 'Capturing...';
+  burstFrames = [];
+
+  const numFrames = 4;      // just enough for the server's motion + passive checks
+  const intervalMs = 120;   // tightened from 150ms — still plenty for motion detection
+
+  for (let i = 0; i < numFrames; i++) {
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.9));
+    if (blob) burstFrames.push(new File([blob], `frame_${i}.jpg`, { type: 'image/jpeg' }));
+    await new Promise((res) => setTimeout(res, intervalMs));
+  }
+
+  captureFile = burstFrames[burstFrames.length - 1];
+  // Show the captured frame immediately WITHOUT the extra /face/detect
+  // round-trip that previewFile() would normally trigger — that call was
+  // adding a full extra network + detection cycle right in the capture
+  // path for a purely cosmetic outline circle. Skipping it here is one of
+  // the bigger wins for perceived capture speed. (The server still runs
+  // its own real detection on these frames when you hit "Check
+  // attendance" — this only skips the redundant UI preview call.)
+  captureWrap.style.display = 'block';
+  capturePreview.src = URL.createObjectURL(captureFile);
+  captureOverlay.getContext('2d').clearRect(0, 0, captureOverlay.width, captureOverlay.height);
+  captureFaceMsg.textContent = `Captured ${burstFrames.length} frames ✓ (blink already confirmed — no blink needed in these frames)`;
+
+  // PHASE 1: camera turns OFF after a successful capture instead of staying
+  // live in the background — matches the mobile "blink to capture" flow.
+  if (video.srcObject) {
+    video.srcObject.getTracks().forEach((t) => t.stop());
+    video.srcObject = null;
+  }
+  video.style.display = 'none';
+  guideOval.style.display = 'none';
+  blinkStatusEl.textContent = 'Captured ✓ — camera stopped';
+  blinkStatusEl.className = 'ok';
+
+  startCamBtn.disabled = false;
+  startCamBtn.textContent = 'Retake';
+  isCapturing = false;
+}
+
+document.getElementById('submitBtn').addEventListener('click', async () => {
+  if (!profileFile || !captureFile) {
+    alert('Please provide both a profile photo and a capture.');
+    return;
+  }
+
+  // Client-side gate: a webcam capture with no confirmed blink never gets
+  // sent as a burst — force the plain-upload fallback path instead, which
+  // the server will very likely reject/flag since it has no active
+  // liveness challenge to check at all. This mirrors "no blink = rejected".
+  const usingBurst = burstFrames.length >= 3;
+
+  const base = apiBase();
+  const form = new FormData();
+  form.append('profile_image', profileFile);
+
+  let url;
+  if (usingBurst) {
+    url = `${base}/api/v1/attendance/mark-burst`;
+    burstFrames.forEach((f) => form.append('capture_images', f));
+  } else {
+    url = `${base}/api/v1/attendance/mark`;
+    form.append('capture_image', captureFile);
+  }
+
+  resultBox.style.display = 'block';
+  resultBox.className = '';
+  resultBox.textContent = 'Checking...';
+
+  try {
+    const res = await fetch(url, { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      resultBox.className = 'status-error';
+      resultBox.textContent = JSON.stringify(data, null, 2);
+      return;
+    }
+    resultBox.className = `status-${data.status}`;
+    resultBox.textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    resultBox.className = 'status-error';
+    resultBox.textContent = 'Request failed: ' + e.message;
+  }
+});
+</script>
+
+</body>
+</html>

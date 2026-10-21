@@ -34,7 +34,12 @@ export const resetPasswordSchema = z.object({
   password: passwordSchema,
 });
 
+export const updateProfileSchema = z.object({
+  fullName: z.string().min(1, "Full Name is required").max(255).trim().optional(),
+});
+
 export type RegisterInputType = z.infer<typeof registerSchema>;
 export type LoginInputType = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type UpdateProfileInputType = z.infer<typeof updateProfileSchema>;

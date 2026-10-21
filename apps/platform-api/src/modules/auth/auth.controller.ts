@@ -36,7 +36,7 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendCreated(res, { user: result.user, tenants: result.tenants });
+    sendCreated(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
@@ -46,7 +46,7 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
@@ -59,8 +59,9 @@ export class AuthController {
     const result = await this.authService.refresh(rawRefreshToken);
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    sendSuccess(res, { user: result.user, tenants: result.tenants, tokens: result.tokens });
   };
+
 
   logout = async (req: Request, res: Response): Promise<void> => {
     const rawRefreshToken = req.cookies?.refresh_token;
@@ -114,6 +115,11 @@ export class AuthController {
   me = async (req: Request, res: Response): Promise<void> => {
     const result = await this.authService.getCurrentUser(req.user!.userId);
     sendSuccess(res, result);
+  };
+
+  updateProfile = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.authService.updateProfile(req.user!.userId, req.body);
+    sendSuccess(res, { user: result, message: "Profile updated successfully." });
   };
 
   // ─── Cookie Helpers ──────────────────────────────────────────

@@ -8,6 +8,7 @@
   "scripts": {
     "generate": "prisma generate",
     "build": "pnpm run generate && tsc",
+    "dev": "tsc --watch --preserveWatchOutput",
     "clean": "rm -rf dist generated/prisma",
     "check-types": "tsc --noEmit",
     "db:migrate:dev": "prisma migrate dev",
@@ -19,6 +20,8 @@
     "test": "tsx --test prisma/seed-guard.test.ts src/bank-fingerprint.test.ts",
     "test:seed": "tsx --test --test-concurrency=1 prisma/seed.e2e.test.ts prisma/backfill-bank-fingerprints.e2e.test.ts",
     "backfill:bank-fingerprints": "tsx prisma/backfill-bank-fingerprints.ts",
+    "seed:attendance": "tsx scripts/seed-attendance.ts",
+    "seed:workspaces": "tsx scripts/add-test-workspaces.ts",
     "db:studio": "prisma studio"
   },
   "exports": {

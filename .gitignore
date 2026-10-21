@@ -5,6 +5,10 @@ node_modules
 .pnp
 .pnp.js
 
+# Lock files (this repo uses pnpm-lock.yaml)
+package-lock.json
+pnpm-lock.json
+
 # Local env files: every .env variant holds secrets; only templates are committed
 .env
 .env.*
