@@ -23,7 +23,17 @@ import { AttachmentController } from "./attachment.controller.js";
 import { CheckRegisterRepository } from "./check-register.repository.js";
 import { CheckRegisterService } from "./check-register.service.js";
 import { CheckRegisterController } from "./check-register.controller.js";
-import { agingQuerySchema, checkFilterQuerySchema, numberIntegrityQuerySchema, viewsQuerySchema } from "./check-filter.js";
+import { CheckExportRepository } from "./check-export.repository.js";
+import { CheckExportService } from "./check-export.service.js";
+import { CheckExportController } from "./check-export.controller.js";
+import { exportFormat } from "../export/index.js";
+import {
+  agingQuerySchema,
+  checkFilterQuerySchema,
+  numberIntegrityQuerySchema,
+  positivePayQuerySchema,
+  viewsQuerySchema,
+} from "./check-filter.js";
 import {
   createCheckSchema,
   updateCheckSchema,
@@ -56,8 +66,10 @@ const attachmentController = new AttachmentController(
   new AttachmentService(new AttachmentRepository(), auditService, fileStorage),
 );
 const attachmentUpload = singleFileUpload("file", ATTACHMENT_LIMITS.maxFileBytes, "10 MB");
-const registerController = new CheckRegisterController(
-  new CheckRegisterService(new CheckRegisterRepository(), checkRepository, checkService, checkPrintingSettingsService),
+const registerService = new CheckRegisterService(new CheckRegisterRepository(), checkRepository, checkService, checkPrintingSettingsService);
+const registerController = new CheckRegisterController(registerService);
+const exportController = new CheckExportController(
+  new CheckExportService(new CheckExportRepository(), registerService, encryptionService, auditService),
 );
 
 // ═════════════════════════════════════════════════════════════
@@ -86,6 +98,23 @@ router.get(
 router.get("/views", validate(viewsQuerySchema, "query"), registerController.views);
 router.get("/number-integrity", validate(numberIntegrityQuerySchema, "query"), registerController.numberIntegrity);
 router.get("/aging", validate(agingQuerySchema, "query"), registerController.aging);
+
+// ── Exports (CSV, Excel, PDF): BEFORE /:checkId ──
+// Anyone who can view reports. Each takes exactly its screen's filters plus ?format=, so
+// the file holds exactly what the screen shows. Every download is audited first.
+router.get("/export", requirePermission(P.REPORT_VIEW), exportFormat(), validate(checkFilterQuerySchema, "query"), exportController.register);
+router.get("/aging/export", requirePermission(P.REPORT_VIEW), exportFormat(), validate(agingQuerySchema, "query"), exportController.outstanding);
+router.get(
+  "/number-integrity/export",
+  requirePermission(P.REPORT_VIEW),
+  exportFormat(),
+  validate(numberIntegrityQuerySchema, "query"),
+  exportController.numberAudit,
+);
+
+// ── Positive Pay file for the bank ──
+// Holds the FULL account and routing numbers, so only people who manage bank accounts.
+router.get("/positive-pay", requirePermission(P.BANK_ACCOUNT_MANAGE), validate(positivePayQuerySchema, "query"), exportController.positivePay);
 
 // ── Print jobs: several checks in one PDF (BEFORE /:checkId) ──
 // The batch id is a UUID; anything else is a 404 from the lookup, never a database error.

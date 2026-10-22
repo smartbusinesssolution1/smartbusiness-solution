@@ -192,3 +192,20 @@ export const numberIntegrityQuerySchema = z
 
 export const agingQuerySchema = z.strictObject({ bankAccountId: z.uuid().optional() });
 export const viewsQuerySchema = z.strictObject({});
+
+// Positive Pay: the checks issued (printed) between two days, both included.
+export const POSITIVE_PAY_MAX_DAYS = 366;
+export const positivePayQuerySchema = z
+  .strictObject({
+    bankAccountId: z.uuid(),
+    from: day,
+    to: day,
+  })
+  .superRefine((q, ctx) => {
+    // Runs even when a day failed its own check (then it is still the raw string).
+    if (!(q.from instanceof Date) || !(q.to instanceof Date)) return;
+    if (q.to < q.from) ctx.addIssue({ code: "custom", path: ["to"], message: "The end is before the start" });
+    else if ((q.to.getTime() - q.from.getTime()) / 86_400_000 >= POSITIVE_PAY_MAX_DAYS) {
+      ctx.addIssue({ code: "custom", path: ["to"], message: `At most ${POSITIVE_PAY_MAX_DAYS} days per file` });
+    }
+  });

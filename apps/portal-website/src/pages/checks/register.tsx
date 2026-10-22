@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { ArrowDown, ArrowUp, ChevronDown, Copy, FileSearch, Filter, Paperclip, PenLine, Search, X } from "lucide-react";
-import { useViews } from "@/api/checks";
+import { exportRegister, useViews } from "@/api/checks";
+import { ExportMenu } from "@/components/app/export-menu";
 import { useBankAccounts } from "@/api/setup";
 import type { CheckStatus, RegisterItem, RegisterMeta, RegisterView } from "@/api/types";
 import { useWorkspaceContext } from "@/app/workspace-context";
@@ -84,8 +85,17 @@ export function RegisterPage() {
             <X /> Clear
           </Button>
         )}
-        <div className="ml-auto font-mono text-xs text-muted num" aria-live="polite">
-          {totals && `${totals.count.toLocaleString()} check${totals.count === 1 ? "" : "s"} · ${money(totals.amount)}`}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="font-mono text-xs text-muted num" aria-live="polite">
+            {totals && `${totals.count.toLocaleString()} check${totals.count === 1 ? "" : "s"} · ${money(totals.amount)}`}
+          </span>
+          {can("report:view") && (
+            <ExportMenu
+              disabled={!totals || totals.count === 0}
+              note={`All ${totals?.count.toLocaleString() ?? ""} checks matching this view and these filters, in this order. Up to 10,000 per file.`}
+              onExport={(format) => exportRegister(wid, { ...filters, view: view || undefined, sortBy, sortOrder }, format)}
+            />
+          )}
         </div>
       </div>
 

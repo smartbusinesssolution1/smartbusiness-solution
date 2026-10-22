@@ -57,10 +57,17 @@ export class CheckRegisterService {
 
   // ─── The list ─────────────────────────────────────────────
 
-  async list(workspaceId: string, f: CheckFilter, viewer: Viewer) {
+  // The exact query behind the list for these filters and this viewer (views included).
+  // Exports use it too, so a file always holds exactly the checks the list shows.
+  async query(workspaceId: string, f: CheckFilter, viewer: Viewer) {
     const extra = await this.extraConditions(workspaceId, f, viewer);
     const where = buildCheckWhere(workspaceId, f, { extra });
     const orderBy: Prisma.CheckOrderByWithRelationInput[] = [{ [f.sortBy]: f.sortOrder }, { id: f.sortOrder }];
+    return { where, orderBy, extra };
+  }
+
+  async list(workspaceId: string, f: CheckFilter, viewer: Viewer) {
+    const { where, orderBy, extra } = await this.query(workspaceId, f, viewer);
 
     let rows: RegisterRow[];
     let meta: Record<string, unknown>;

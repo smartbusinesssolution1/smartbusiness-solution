@@ -1,8 +1,9 @@
 import * as React from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
-import { Hash, Hourglass } from "lucide-react";
-import { useAging, useCheckList, useNumberIntegrity } from "@/api/checks";
+import { toast } from "sonner";
+import { Download, Hash, Hourglass, Landmark } from "lucide-react";
+import { downloadPositivePay, exportNumberAudit, exportOutstanding, useAging, useCheckList, useNumberIntegrity } from "@/api/checks";
 import { useBankAccounts } from "@/api/setup";
 import { useWorkspaceContext } from "@/app/workspace-context";
 import { Button } from "@/components/ui/button";
@@ -10,15 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectItem } from "@/components/ui/controls";
 import { Tooltip } from "@/components/ui/menu";
 import { ErrorState, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
-import { money } from "@/lib/format";
+import { ExportMenu } from "@/components/app/export-menu";
+import { errorMessage } from "@/lib/api";
+import { money, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 export function ReportsPage() {
+  const { can } = useWorkspaceContext();
   return (
     <Page>
-      <PageHeader eyebrow="Reports" title="Reports" description="Outstanding checks for reconciliation, and an audit of every check number. Exports to Excel and PDF are coming with the full report set." />
+      <PageHeader eyebrow="Reports" title="Reports" description="Outstanding checks for reconciliation, and an audit of every check number. Each report downloads as Excel, CSV or PDF; the full check register exports from the Checks page." />
       <AgingReport />
       <NumberIntegrityReport />
+      {can("bank-account:manage") && <PositivePayPanel />}
     </Page>
   );
 }
@@ -63,14 +68,21 @@ function AgingReport() {
         title={<span className="inline-flex items-center gap-2"><Hourglass className="size-4 text-muted" /> Outstanding checks by age</span>}
         description="Printed and not yet cleared. Compare with your bank statement; stale checks may need to be voided and reissued."
         action={
-          (banks.data?.length ?? 0) > 1 && (
-            <div className="w-56">
-              <Select value={bankId} onValueChange={setBankId} aria-label="Bank account">
-                <SelectItem value="all">All accounts</SelectItem>
-                {banks.data!.map((b) => <SelectItem key={b.id} value={b.id}>{b.bankName.split(",")[0]} {b.accountNumber}</SelectItem>)}
-              </Select>
-            </div>
-          )
+          <div className="flex items-center gap-2">
+            {(banks.data?.length ?? 0) > 1 && (
+              <div className="w-56">
+                <Select value={bankId} onValueChange={setBankId} aria-label="Bank account">
+                  <SelectItem value="all">All accounts</SelectItem>
+                  {banks.data!.map((b) => <SelectItem key={b.id} value={b.id}>{b.bankName.split(",")[0]} {b.accountNumber}</SelectItem>)}
+                </Select>
+              </div>
+            )}
+            <ExportMenu
+              disabled={!aging.data || aging.data.total.count === 0}
+              note="Every outstanding check, oldest first, with how many days it has been out."
+              onExport={(format) => exportOutstanding(wid, bankId === "all" ? undefined : bankId, format)}
+            />
+          </div>
         }
       />
       {aging.error ? (
@@ -159,6 +171,13 @@ function NumberIntegrityReport() {
           <label className="flex flex-col gap-1 text-xs text-muted">From<Input type="number" min={1} className="h-9 w-28 font-mono" value={from ?? ""} onChange={(e) => setRange((r) => ({ ...r, from: Number(e.target.value) || undefined }))} /></label>
           <label className="flex flex-col gap-1 text-xs text-muted">To<Input type="number" min={1} className="h-9 w-28 font-mono" value={to ?? ""} onChange={(e) => setRange((r) => ({ ...r, to: Number(e.target.value) || undefined }))} /></label>
           {bank?.exact && <span className="pb-2 text-xs text-muted">Next number to issue: <span className="font-mono text-ink">{bank.nextCheckNumber}</span></span>}
+          <div className="ml-auto pb-0.5">
+            <ExportMenu
+              disabled={!bank || !from || !to || !report.data}
+              note={from && to ? `Numbers ${from} to ${to}: each one and what became of it, for your auditor.` : undefined}
+              onExport={(format) => exportNumberAudit(wid, { bankAccountId: bank!.id, from: from!, to: to! }, format)}
+            />
+          </div>
         </div>
 
         {!bank ? (
@@ -192,6 +211,69 @@ function NumberIntegrityReport() {
             </div>
           </>
         )}
+      </div>
+    </Panel>
+  );
+}
+
+// "YYYY-MM-DD" for the first day of this month (local time, like the date inputs).
+function monthStartIso(): string {
+  return `${todayIso().slice(0, 8)}01`;
+}
+
+// The issued-checks file a bank's Positive Pay service compares every presented check
+// against. Admins only: it carries the full account and routing numbers.
+function PositivePayPanel() {
+  const { wid } = useWorkspaceContext();
+  const banks = useReportAccounts();
+  const [bankId, setBankId] = React.useState<string | undefined>();
+  const bank = banks.data?.find((b) => b.id === bankId) ?? banks.data?.[0];
+  const [from, setFrom] = React.useState(monthStartIso);
+  const [to, setTo] = React.useState(todayIso);
+  const [busy, setBusy] = React.useState(false);
+  const invalid = !from || !to || from > to;
+
+  const run = async () => {
+    if (!bank || invalid) return;
+    setBusy(true);
+    try {
+      await downloadPositivePay(wid, { bankAccountId: bank.id, from, to });
+    } catch (err) {
+      toast.error("Couldn't create the Positive Pay file", { description: errorMessage(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel>
+      <PanelHeader
+        title={<span className="inline-flex items-center gap-2"><Landmark className="size-4 text-muted" /> Positive Pay file</span>}
+        description="Upload this to your bank's Positive Pay service. The bank pays a check only if it is on this list with the same number and amount; checks marked V (printed, then voided) are refused."
+      />
+      <div className="flex flex-col gap-4 p-5">
+        {!bank ? (
+          <p className="text-sm text-muted">Add a bank account to create its Positive Pay file.</p>
+        ) : (
+          <div className="flex flex-wrap items-end gap-3">
+            {(banks.data?.length ?? 0) > 1 && (
+              <div className="w-56">
+                <Select value={bank.id} onValueChange={setBankId} aria-label="Bank account">
+                  {banks.data!.map((b) => <SelectItem key={b.id} value={b.id}>{b.bankName.split(",")[0]} {b.accountNumber}</SelectItem>)}
+                </Select>
+              </div>
+            )}
+            <label className="flex flex-col gap-1 text-xs text-muted">Printed from<Input type="date" className="h-9 w-40" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">to<Input type="date" className="h-9 w-40" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
+            <Button variant="ghost" size="sm" className="mb-0.5" onClick={() => { setFrom(todayIso()); setTo(todayIso()); }}>Today only</Button>
+            <Button size="sm" className="mb-0.5 ml-auto" loading={busy} disabled={invalid} onClick={() => void run()}>
+              <Download /> Download CSV
+            </Button>
+          </div>
+        )}
+        <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs leading-snug text-warning-700">
+          This file contains the full account and routing numbers. Upload it straight to the bank and delete the copy; every download is recorded in the audit log.
+        </p>
       </div>
     </Panel>
   );

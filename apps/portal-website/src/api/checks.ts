@@ -5,7 +5,7 @@ import {
   useQueryClient,
   type QueryClient,
 } from "@tanstack/react-query";
-import { api, apiBlob } from "@/lib/api";
+import { api, apiBlob, apiFile, saveFile } from "@/lib/api";
 import type {
   Aging,
   Attachment,
@@ -320,3 +320,29 @@ export function useNumberIntegrity(
     enabled: Boolean(params.bankAccountId && params.from && params.to),
   });
 }
+
+// ─── Exports ───────────────────────────────────────────────
+
+export type ExportFormat = "csv" | "xlsx" | "pdf";
+
+type ExportQuery = Record<string, string | number | undefined>;
+
+// Each export takes exactly the filters of the screen it comes from, so the file holds
+// what the screen shows. The server records every download in the audit log.
+async function download(path: string, query: ExportQuery) {
+  const { blob, fileName } = await apiFile(path, { query });
+  saveFile(blob, fileName);
+}
+
+export const exportRegister = (wid: string, filters: ExportQuery, format: ExportFormat) =>
+  download(`/workspaces/${wid}/checks/export`, { ...filters, format });
+
+export const exportOutstanding = (wid: string, bankAccountId: string | undefined, format: ExportFormat) =>
+  download(`/workspaces/${wid}/checks/aging/export`, { bankAccountId, format });
+
+export const exportNumberAudit = (wid: string, params: { bankAccountId: string; from: number; to: number }, format: ExportFormat) =>
+  download(`/workspaces/${wid}/checks/number-integrity/export`, { ...params, format });
+
+// The issued-checks file for the bank. Admins only: it holds the full account number.
+export const downloadPositivePay = (wid: string, params: { bankAccountId: string; from: string; to: string }) =>
+  download(`/workspaces/${wid}/checks/positive-pay`, params);

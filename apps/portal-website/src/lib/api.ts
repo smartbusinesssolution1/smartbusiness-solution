@@ -159,6 +159,28 @@ export async function apiBlob(path: string, options: RequestOptions = {}): Promi
   return response.blob();
 }
 
+// For exports: the file and the name the server gave it (Content-Disposition).
+export async function apiFile(path: string, options: RequestOptions = {}): Promise<{ blob: Blob; fileName: string }> {
+  const response = await send(path, options, "blob");
+  if (!response.ok) throw await toError(response);
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? "export";
+  return { blob: await response.blob(), fileName };
+}
+
+// Hands a downloaded file to the browser's "save" flow.
+export function saveFile(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoked after the click has been handled, or some browsers cancel the download.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
   if (err instanceof Error) return err.message;
