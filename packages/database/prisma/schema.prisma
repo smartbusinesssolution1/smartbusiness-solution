@@ -74,12 +74,27 @@ model User {
   failedLoginCount  Int       @default(0) @map("failed_login_count")
   lastFailedLoginAt DateTime? @map("last_failed_login_at")
   lockedUntil       DateTime? @map("locked_until")
-  emailVerifiedAt   DateTime? @map("email_verified_at")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  deletedAt         DateTime? @map("deleted_at")
+
+  // Two-factor sign-in (authenticator app codes, RFC 6238). The secret is stored
+  // ENCRYPTED, never hashed: the server needs it to calculate the expected code.
+  // pending = shown during setup, not active until a correct code proves the phone has it.
+  mfaSecretEncrypted        String?   @map("mfa_secret_encrypted")
+  mfaPendingSecretEncrypted String?   @map("mfa_pending_secret_encrypted")
+  mfaPendingCreatedAt       DateTime? @map("mfa_pending_created_at")
+  mfaEnabledAt              DateTime? @map("mfa_enabled_at")
+  // The last 30-second step a code was accepted for: the same code never works twice.
+  mfaLastUsedStep           Int?      @map("mfa_last_used_step")
+  // Wrong codes, counted and locked like wrong passwords.
+  mfaFailedCount            Int       @default(0) @map("mfa_failed_count")
+  mfaLastFailedAt           DateTime? @map("mfa_last_failed_at")
+  mfaLockedUntil            DateTime? @map("mfa_locked_until")
+  emailVerifiedAt           DateTime? @map("email_verified_at")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+  updatedAt                 DateTime  @updatedAt @map("updated_at")
+  deletedAt                 DateTime? @map("deleted_at")
 
   tenantMembers             TenantMember[]
+  mfaBackupCodes            MfaBackupCode[]
   workspaceMembers          WorkspaceMember[]
   workspaceMemberRoles      WorkspaceMemberRole[]
   createdChecks             Check[]                    @relation("CheckCreatedBy")
@@ -743,20 +758,38 @@ model UserToken {
 }
 
 model Session {
-  id        String    @id @default(uuid())
-  userId    String    @map("user_id")
-  tokenHash String    @map("token_hash")
-  expiresAt DateTime  @map("expires_at")
-  ipAddress String?   @map("ip_address") @db.VarChar(45)
-  userAgent String?   @map("user_agent") @db.VarChar(512)
-  createdAt DateTime  @default(now()) @map("created_at")
-  revokedAt DateTime? @map("revoked_at")
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  tokenHash     String    @map("token_hash")
+  expiresAt     DateTime  @map("expires_at")
+  ipAddress     String?   @map("ip_address") @db.VarChar(45)
+  userAgent     String?   @map("user_agent") @db.VarChar(512)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  revokedAt     DateTime? @map("revoked_at")
+  // When this session entered a correct two-factor code. Products that require it
+  // (Check Printing for its admins) look at the access token's amr, built from this.
+  mfaVerifiedAt DateTime? @map("mfa_verified_at")
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([tokenHash])
   @@map("sessions")
+}
+
+// One-time codes for when the phone is lost. Stored as keyed fingerprints (HMAC with a
+// server key), so a stolen copy of the database can't be used to test guesses offline.
+model MfaBackupCode {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  codeHash  String    @map("code_hash") @db.Char(64)
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, codeHash])
+  @@map("mfa_backup_codes")
 }
 
 // ═══════════════════════════════════════════════════════════════
