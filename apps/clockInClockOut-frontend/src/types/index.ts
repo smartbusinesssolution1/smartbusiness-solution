@@ -58,6 +58,7 @@ export interface User {
 export interface AttendanceSessionLog {
   id: string;
   sessionNumber: number;
+  isFirstSession?: boolean;
   checkIn: string | null;
   checkOut: string | null;
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
@@ -89,6 +90,8 @@ export interface AttendanceRecord {
   workspaceName?: string;
   totalSessions?: number;
   sessions?: AttendanceSessionLog[];
+  sessionNumber?: number;
+  isFirstSession?: boolean;
 }
 
 export interface AttendanceReportSummary {

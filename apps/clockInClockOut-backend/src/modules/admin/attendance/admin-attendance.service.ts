@@ -119,9 +119,10 @@ export class AdminAttendanceService {
         sessions: (rec.sessions || []).map((s: any, idx: number) => ({
           id: s.id,
           sessionNumber: idx + 1,
+          isFirstSession: idx === 0,
           checkIn: this.formatTimeOnly(s.clockInTime),
           checkOut: this.formatTimeOnly(s.clockOutTime),
-          status: s.status.toLowerCase(),
+          status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
           selfieUrl: s.selfieUrl || null,
@@ -237,9 +238,10 @@ export class AdminAttendanceService {
         sessions: (rec.sessions || []).map((s: any, idx: number) => ({
           id: s.id,
           sessionNumber: idx + 1,
+          isFirstSession: idx === 0,
           checkIn: this.formatTimeOnly(s.clockInTime),
           checkOut: this.formatTimeOnly(s.clockOutTime),
-          status: s.status.toLowerCase(),
+          status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
           selfieUrl: s.selfieUrl || null,

@@ -304,6 +304,43 @@ export class AttendanceRepository {
   }
 
   /**
+   * Updates a single attendance record status
+   */
+  async updateAttendanceRecordStatus(
+    recordId: string,
+    status: AttendanceStatus
+  ) {
+    return prisma.attendanceRecord.update({
+      where: { id: recordId },
+      data: {
+        status,
+        updatedAt: new Date(),
+      },
+    });
+  }
+
+  /**
+   * Finds all session punch times for an employee across given calendar dates
+   */
+  async findDateSessionPunches(employeeId: string, dates: Date[]) {
+    if (dates.length === 0) return [];
+    return prisma.attendanceRecord.findMany({
+      where: {
+        employeeId,
+        clockInDate: { in: dates },
+      },
+      select: {
+        id: true,
+        clockInDate: true,
+        clockInTime: true,
+      },
+      orderBy: {
+        clockInTime: "asc",
+      },
+    });
+  }
+
+  /**
    * Fetch paginated attendance records for an employee
    */
   async findAttendanceHistory(
@@ -331,9 +368,10 @@ export class AttendanceRepository {
     const [records, total] = await Promise.all([
       prisma.attendanceRecord.findMany({
         where,
-        orderBy: {
-          clockInDate: "desc",
-        },
+        orderBy: [
+          { clockInDate: "desc" },
+          { clockInTime: "desc" },
+        ],
         skip,
         take,
         include: {

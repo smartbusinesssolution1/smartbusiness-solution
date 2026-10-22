@@ -338,7 +338,7 @@ export const AttendanceAuditDrawer: React.FC<AttendanceAuditDrawerProps> = ({
                         <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
                           Duration: {session.workingHours || 0} hrs
                         </Typography>
-                        {getStatusChip(session.status)}
+                        {sessionNum === 1 && getStatusChip(session.status)}
                       </Box>
                     </Box>
 

@@ -441,7 +441,7 @@ export const EmployeeDashboard: React.FC = () => {
                               Logged Time
                             </Typography>
                           </Box>
-                          {getStatusChip(record.status)}
+                          {record.isFirstSession !== false && getStatusChip(record.status)}
                         </Box>
                       </Paper>
                     ))}

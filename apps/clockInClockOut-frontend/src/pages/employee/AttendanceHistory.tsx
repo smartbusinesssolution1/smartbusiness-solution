@@ -217,7 +217,7 @@ export const AttendanceHistory: React.FC = () => {
                           {dayjs(record.date).format('YYYY-MM-DD')}
                         </TableCell>
                         <TableCell sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                          {dayjs(record.date).format('dddd')}
+                          {dayjs(record.date).format('dddd')} {record.sessionNumber && record.sessionNumber > 1 ? `(Punch #${record.sessionNumber})` : ''}
                         </TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>
                           {record.checkIn 
@@ -229,7 +229,15 @@ export const AttendanceHistory: React.FC = () => {
                             ? dayjs(`${record.date} ${record.checkOut}`).format('hh:mm A') 
                             : record.checkIn ? <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>Active Shift</span> : '--'}
                         </TableCell>
-                        <TableCell>{getStatusChip(record.status)}</TableCell>
+                        <TableCell>
+                          {record.isFirstSession !== false ? (
+                            getStatusChip(record.status)
+                          ) : (
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                              --
+                            </Typography>
+                          )}
+                        </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700 }}>
                           {record.workingHours ? `${record.workingHours} hrs` : '--'}
                         </TableCell>

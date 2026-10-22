@@ -417,6 +417,16 @@ export class AttendanceService {
     // Resolve attendance status based on cumulative working hours (Approach 1)
     const resolvedStatus = resolveAttendanceStatusByHours(totalWorkingHoursToday, isLateArrival);
 
+    // If this active session is NOT the first session of the day, it is a subsequent punch (session 2+).
+    // An individual subsequent punch record must NEVER be marked as LATE arrival.
+    // Punctuality (LATE) belongs strictly to the first session of the day.
+    const isFirstSession = priorTodaySessions.length === 0 || firstSessionToday.id === activeSession.id;
+    const sessionRecordStatus = isFirstSession
+      ? resolvedStatus
+      : resolvedStatus === AttendanceStatus.LATE
+      ? AttendanceStatus.PRESENT
+      : resolvedStatus;
+
     const updated = await this.attendanceRepo.updateClockOutRecord(activeSession.id, {
       clockOutDate: todayDate,
       clockOutTime: now,
@@ -425,12 +435,18 @@ export class AttendanceService {
       clockOutFaceMatchConfidence: 98.0,
       workingHours: sessionWorkingHours,
       notes: input.notes,
-      status: resolvedStatus,
+      status: sessionRecordStatus,
     });
 
-    // Synchronize all completed sessions today to the day's resolved status
+    // Synchronize day records status:
+    // If the overall day resolved to LATE, ONLY the first session is marked LATE.
+    // Subsequent sessions remain PRESENT.
     if (priorTodaySessions.length > 0) {
-      await this.attendanceRepo.updateTodayRecordsStatus(employee.id, todayDate, resolvedStatus);
+      if (resolvedStatus === AttendanceStatus.LATE) {
+        await this.attendanceRepo.updateAttendanceRecordStatus(firstSessionToday.id, AttendanceStatus.LATE);
+      } else {
+        await this.attendanceRepo.updateTodayRecordsStatus(employee.id, todayDate, resolvedStatus);
+      }
     }
 
     // Invalidate cached attendance datasets and reports for admin dashboard
@@ -562,9 +578,10 @@ export class AttendanceService {
       ? formatTimeAMPM(new Date(lastSession.clockOutTime))
       : null;
 
+    const isFirstActiveSession = todaySessions.length === 0 || todaySessions[0].id === activeSession?.id;
     const status = activeSession
-      ? todaySessions.some((s) => s.status === AttendanceStatus.LATE)
-        ? AttendanceStatus.LATE
+      ? isFirstActiveSession
+        ? (activeSession.status === AttendanceStatus.LATE ? AttendanceStatus.LATE : AttendanceStatus.PRESENT)
         : AttendanceStatus.PRESENT
       : firstSession
       ? firstSession.status
@@ -573,10 +590,11 @@ export class AttendanceService {
     const sessions = todaySessions.map((s, idx) => ({
       id: s.id,
       sessionNumber: idx + 1,
+      isFirstSession: idx === 0,
       checkInTime: formatTimeAMPM(new Date(s.clockInTime)),
       checkOutTime: s.clockOutTime ? formatTimeAMPM(new Date(s.clockOutTime)) : null,
       workingHours: Number(s.workingHours || 0),
-      status: s.status,
+      status: idx === 0 ? s.status : (s.status === AttendanceStatus.LATE ? AttendanceStatus.PRESENT : s.status),
       isActive: !s.clockOutTime,
     }));
 
@@ -648,9 +666,37 @@ export class AttendanceService {
       take: limit,
     });
 
+    const uniqueDates = Array.from(
+      new Set(records.map((r) => r.clockInDate.toISOString().split("T")[0]))
+    ).map((dStr) => new Date(dStr));
+
+    const datePunches = await this.attendanceRepo.findDateSessionPunches(employee.id, uniqueDates);
+
+    // Group punches chronologically by calendar date
+    const datePunchMap = new Map<string, string[]>();
+    for (const p of datePunches) {
+      const dtKey = p.clockInDate.toISOString().split("T")[0];
+      const list = datePunchMap.get(dtKey) || [];
+      list.push(p.id);
+      datePunchMap.set(dtKey, list);
+    }
+
     const items = records.map((rec) => {
       const clockIn = new Date(rec.clockInTime);
       const clockOut = rec.clockOutTime ? new Date(rec.clockOutTime) : null;
+      const dtKey = rec.clockInDate.toISOString().split("T")[0];
+      const dayPunches = datePunchMap.get(dtKey) || [rec.id];
+      const sessionIdx = dayPunches.indexOf(rec.id);
+      const sessionNumber = sessionIdx >= 0 ? sessionIdx + 1 : 1;
+      const isFirstSession = sessionNumber === 1;
+
+      // Only the first session of the day can hold arrival punctuality (late vs on-time).
+      // Subsequent sessions (session 2+) never show late check-in.
+      const normalizedStatus = isFirstSession
+        ? rec.status.toLowerCase()
+        : rec.status === AttendanceStatus.LATE
+        ? "present"
+        : rec.status.toLowerCase();
 
       return {
         id: rec.id,
@@ -660,7 +706,9 @@ export class AttendanceService {
         checkOut: clockOut ? formatTimeAMPM(clockOut) : "--:--",
         hoursLogged: rec.workingHours ? `${rec.workingHours} hrs` : "In Progress",
         rawHours: Number(rec.workingHours || 0),
-        status: rec.status.toLowerCase(),
+        status: normalizedStatus,
+        isFirstSession,
+        sessionNumber,
         selfieUrl: rec.selfieUrl,
         notes: rec.notes,
       };
@@ -902,25 +950,53 @@ export class AttendanceService {
       take: 10,
     });
 
-    const recentAttendance = recentHistory.records.slice(0, 5).map((rec) => ({
-      id: rec.id,
-      employeeId: employee.employeeCode,
-      employeeName: employee.workspaceMember.user.fullName,
-      date: rec.clockInDate.toISOString().split("T")[0],
-      checkIn: formatTimeAMPM(new Date(rec.clockInTime)),
-      checkOut: rec.clockOutTime ? formatTimeAMPM(new Date(rec.clockOutTime)) : null,
-      status: rec.status.toLowerCase(),
-      workingHours: Number(rec.workingHours || 0),
-      notes: rec.notes,
-    }));
+    const recentRecords = recentHistory.records.slice(0, 5);
+    const recentDates = Array.from(
+      new Set(recentRecords.map((r) => r.clockInDate.toISOString().split("T")[0]))
+    ).map((dStr) => new Date(dStr));
+    const recentPunches = await this.attendanceRepo.findDateSessionPunches(employee.id, recentDates);
+    const recentPunchMap = new Map<string, string[]>();
+    for (const p of recentPunches) {
+      const dtKey = p.clockInDate.toISOString().split("T")[0];
+      const list = recentPunchMap.get(dtKey) || [];
+      list.push(p.id);
+      recentPunchMap.set(dtKey, list);
+    }
+
+    const recentAttendance = recentRecords.map((rec) => {
+      const dtKey = rec.clockInDate.toISOString().split("T")[0];
+      const dayPunches = recentPunchMap.get(dtKey) || [rec.id];
+      const sessionIdx = dayPunches.indexOf(rec.id);
+      const sessionNumber = sessionIdx >= 0 ? sessionIdx + 1 : 1;
+      const isFirstSession = sessionNumber === 1;
+
+      return {
+        id: rec.id,
+        employeeId: employee.employeeCode,
+        employeeName: employee.workspaceMember.user.fullName,
+        date: rec.clockInDate.toISOString().split("T")[0],
+        checkIn: formatTimeAMPM(new Date(rec.clockInTime)),
+        checkOut: rec.clockOutTime ? formatTimeAMPM(new Date(rec.clockOutTime)) : null,
+        status: isFirstSession
+          ? rec.status.toLowerCase()
+          : rec.status === AttendanceStatus.LATE
+          ? "present"
+          : rec.status.toLowerCase(),
+        workingHours: Number(rec.workingHours || 0),
+        notes: rec.notes,
+        isFirstSession,
+        sessionNumber,
+      };
+    });
 
     const formattedTodaySessions = todaySessions.map((s, idx) => ({
       id: s.id,
       sessionNumber: idx + 1,
+      isFirstSession: idx === 0,
       checkIn: formatTimeAMPM(new Date(s.clockInTime)),
       checkOut: s.clockOutTime ? formatTimeAMPM(new Date(s.clockOutTime)) : null,
       workingHours: Number(s.workingHours || 0),
-      status: s.status.toLowerCase(),
+      status: idx === 0 ? s.status.toLowerCase() : (s.status === AttendanceStatus.LATE ? "present" : s.status.toLowerCase()),
       isActive: !s.clockOutTime,
     }));
 
