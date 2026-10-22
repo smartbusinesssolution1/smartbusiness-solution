@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import type { ExportFormat, RenderedFile } from "../export/index.js";
 import type { CheckFilter } from "./check-filter.js";
-import type { CheckExportService, ExportContext } from "./check-export.service.js";
+import type { CheckExportService, ExportContext, PositivePayFormat } from "./check-export.service.js";
 
 // Sends a generated file as a download. no-store: these files hold financial data and
 // must not stay in a browser or proxy cache; nosniff: the browser keeps the declared type.
@@ -44,7 +44,7 @@ export class CheckExportController {
   };
 
   positivePay = async (req: Request, res: Response) => {
-    const q = req.query as unknown as { bankAccountId: string; from: Date; to: Date };
-    sendFile(res, await this.service.positivePay(req.params.wid as string, q.bankAccountId, q.from, q.to, this.ctx(req)));
+    const q = req.query as unknown as { bankAccountId: string; from: Date; to: Date; format: PositivePayFormat };
+    sendFile(res, await this.service.positivePay(req.params.wid as string, q.bankAccountId, q.from, q.to, q.format, this.ctx(req)));
   };
 }

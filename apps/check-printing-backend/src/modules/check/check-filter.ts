@@ -200,6 +200,8 @@ export const positivePayQuerySchema = z
     bankAccountId: z.uuid(),
     from: day,
     to: day,
+    // csv: the file for the bank. xlsx: a copy for people to review.
+    format: z.enum(["csv", "xlsx"]).default("csv"),
   })
   .superRefine((q, ctx) => {
     // Runs even when a day failed its own check (then it is still the raw string).

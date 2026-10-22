@@ -2,7 +2,7 @@ import * as React from "react";
 import { Link } from "react-router";
 import { motion } from "motion/react";
 import { toast } from "sonner";
-import { Download, Hash, Hourglass, Landmark } from "lucide-react";
+import { Download, FileSpreadsheet, Hash, Hourglass, Landmark, TriangleAlert } from "lucide-react";
 import { downloadPositivePay, exportNumberAudit, exportOutstanding, useAging, useCheckList, useNumberIntegrity } from "@/api/checks";
 import { useBankAccounts } from "@/api/setup";
 import { useWorkspaceContext } from "@/app/workspace-context";
@@ -180,7 +180,9 @@ function NumberIntegrityReport() {
           </div>
         </div>
 
-        {!bank ? (
+        {!banks.data ? (
+          <Skeleton className="h-40" />
+        ) : !bank ? (
           <p className="text-sm text-muted">Add a bank account to audit its check numbers.</p>
         ) : report.error ? (
           <ErrorState error={report.error} onRetry={() => report.refetch()} />
@@ -230,18 +232,18 @@ function PositivePayPanel() {
   const bank = banks.data?.find((b) => b.id === bankId) ?? banks.data?.[0];
   const [from, setFrom] = React.useState(monthStartIso);
   const [to, setTo] = React.useState(todayIso);
-  const [busy, setBusy] = React.useState(false);
+  const [busy, setBusy] = React.useState<"csv" | "xlsx" | null>(null);
   const invalid = !from || !to || from > to;
 
-  const run = async () => {
+  const run = async (format: "csv" | "xlsx") => {
     if (!bank || invalid) return;
-    setBusy(true);
+    setBusy(format);
     try {
-      await downloadPositivePay(wid, { bankAccountId: bank.id, from, to });
+      await downloadPositivePay(wid, { bankAccountId: bank.id, from, to }, format);
     } catch (err) {
       toast.error("Couldn't create the Positive Pay file", { description: errorMessage(err) });
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
@@ -252,7 +254,9 @@ function PositivePayPanel() {
         description="Upload this to your bank's Positive Pay service. The bank pays a check only if it is on this list with the same number and amount; checks marked V (printed, then voided) are refused."
       />
       <div className="flex flex-col gap-4 p-5">
-        {!bank ? (
+        {!banks.data ? (
+          <Skeleton className="h-9" />
+        ) : !bank ? (
           <p className="text-sm text-muted">Add a bank account to create its Positive Pay file.</p>
         ) : (
           <div className="flex flex-wrap items-end gap-3">
@@ -266,14 +270,26 @@ function PositivePayPanel() {
             <label className="flex flex-col gap-1 text-xs text-muted">Printed from<Input type="date" className="h-9 w-40" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
             <label className="flex flex-col gap-1 text-xs text-muted">to<Input type="date" className="h-9 w-40" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} /></label>
             <Button variant="ghost" size="sm" className="mb-0.5" onClick={() => { setFrom(todayIso()); setTo(todayIso()); }}>Today only</Button>
-            <Button size="sm" className="mb-0.5 ml-auto" loading={busy} disabled={invalid} onClick={() => void run()}>
-              <Download /> Download CSV
-            </Button>
+            <div className="mb-0.5 ml-auto flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" loading={busy === "xlsx"} disabled={invalid || busy !== null} onClick={() => void run("xlsx")}>
+                <FileSpreadsheet /> Excel copy for review
+              </Button>
+              <Button size="sm" loading={busy === "csv"} disabled={invalid || busy !== null} onClick={() => void run("csv")}>
+                <Download /> CSV for the bank
+              </Button>
+            </div>
           </div>
         )}
-        <p className="rounded-lg bg-warning-50 px-3 py-2 text-xs leading-snug text-warning-700">
-          This file contains the full account and routing numbers. Upload it straight to the bank and delete the copy; every download is recorded in the audit log.
-        </p>
+        <div className="flex gap-2.5 rounded-lg bg-warning-50 px-3 py-2.5 text-xs leading-snug text-warning-700">
+          <TriangleAlert className="mt-px size-4 shrink-0" />
+          <div className="flex flex-col gap-1">
+            <p>
+              <span className="font-medium">Upload the CSV to the bank exactly as downloaded. Don't open and save it in Excel.</span>{" "}
+              Excel shows long numbers like 987654321012 as 9.87654E+11 and drops leading zeros (021000021 becomes 21000021); saving writes those changes into the file and the bank will reject it or mismatch your checks. To look at the checks, use the Excel copy.
+            </p>
+            <p>Both files contain the full account and routing numbers. Delete them once uploaded; every download is recorded in the audit log.</p>
+          </div>
+        </div>
       </div>
     </Panel>
   );

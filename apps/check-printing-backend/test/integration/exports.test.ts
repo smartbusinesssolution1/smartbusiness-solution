@@ -7,6 +7,7 @@ import { getApp } from "../helpers/api.js";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
 import { CheckExportRepository } from "../../src/modules/check/check-export.repository.js";
 import { AuditService } from "../../src/shared/services/audit.service.js";
+import { encryptionService } from "../../src/shared/services/encryption.service.js";
 
 // #3 Reports and exports: the check register, outstanding checks and the check-number
 // audit as CSV, Excel and PDF, and the Positive Pay file for the bank.
@@ -394,6 +395,72 @@ describe("exports (#3)", () => {
       const rows = parseCsv((await api(world, world.admin).positivePay(period(world))).body as Buffer).slice(1);
 
       expect(rows.map((r) => [Number(r[2]), r[6]])).toEqual([[untyped.checkNumber, "V"]]);
+    });
+
+    describe("account and routing numbers stay exact (leading zeros, 12+ digits)", () => {
+      // Chase New York's routing number starts with 0; Excel would show it as 21000021.
+      const leadingZeroAccount = async () =>
+        (
+          await prisma.bankAccount.create({
+            data: {
+              workspaceId: world.workspaceId,
+              bankName: "JPMorgan Chase NY",
+              routingNumberEncrypted: encryptionService.encrypt("021000021"),
+              routingNumberLast4: "0021",
+              accountNumberEncrypted: encryptionService.encrypt("0004567890123456"),
+              accountNumberLast4: "3456",
+              accountType: "CHECKING",
+              nextCheckNumber: 3000,
+              checkNumberPadding: 6,
+              encryptionKeyVersion: 1,
+            },
+          })
+        ).id;
+
+      it("the CSV for the bank keeps them as quoted text", async () => {
+        const bankAccountId = await leadingZeroAccount();
+        await makeCheck(world, { status: "PRINTED", printedAt: inPeriod, bankAccountId });
+
+        const res = await api(world, world.admin).positivePay({ ...period(world), bankAccountId });
+
+        expect(res.headers["content-type"]).toBe("text/csv; charset=utf-8");
+        expect((res.body as Buffer).toString("utf8").split("\r\n")[1]).toMatch(/^"0004567890123456","021000021",/);
+      });
+
+      it("the Excel review copy stores them as text cells, so they show in full", async () => {
+        const bankAccountId = await leadingZeroAccount();
+        await makeCheck(world, { status: "PRINTED", printedAt: inPeriod, bankAccountId, amount: 1250.5 });
+        await makeCheck(world, { status: "VOID", voidType: "SPOILED", printedAt: inPeriod, bankAccountId, amount: 99 });
+
+        const res = await api(world, world.admin).positivePay({ ...period(world), bankAccountId, format: "xlsx" });
+
+        expect(res.status).toBe(200);
+        expect(res.headers["content-type"]).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        expect(res.headers["content-disposition"]).toBe('attachment; filename="positive-pay-3456-10012026-10312026-review.xlsx"');
+        const sheet = await readXlsx(res.body as Buffer);
+        expect(sheet.getCell("A1").value).toBe("Positive Pay review copy");
+        let headerRow = 0;
+        sheet.eachRow((row, n) => {
+          if (row.getCell(1).value === "Account Number") headerRow = n;
+        });
+        const first = sheet.getRow(headerRow + 1);
+        for (const [col, expected] of [[1, "0004567890123456"], [2, "021000021"]] as const) {
+          const cell = first.getCell(col);
+          expect(cell.value).toBe(expected);
+          expect(cell.type).toBe(ExcelJS.ValueType.String);
+          expect(cell.numFmt).toBe("@");
+        }
+        expect(sheet.getRow(headerRow + 2).getCell(7).value).toBe("V");
+        // The total is what the bank will pay: the void check is not counted.
+        const totals = sheet.getRow(headerRow + 3);
+        expect(totals.getCell(6).value).toBe("To be paid: 1 check (1 void)");
+        expect(totals.getCell(5).value).toBe(1250.5);
+        expect((await auditRows("POSITIVE_PAY_EXPORTED"))[0]!.detailsJson).toMatchObject({ format: "xlsx", rowCount: 2, voidCount: 1 });
+      });
+
+      it("only CSV and Excel are offered", async () => {
+        expect((await api(world, world.admin).positivePay({ ...period(world), format: "pdf" })).status).toBe(400);
+      });
     });
 
     it("the last day of the period counts in full", async () => {

@@ -20,6 +20,9 @@ import { STALE_AFTER_DAYS, type CheckRegisterService, type Viewer } from "./chec
 // bank account), which also keeps each request quick.
 export const EXPORT_MAX_ROWS = 10_000;
 
+// The bank's file, or a spreadsheet copy for people to read (see positivePay).
+export type PositivePayFormat = "csv" | "xlsx";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const STATUS: Record<string, string> = {
@@ -280,50 +283,93 @@ export class CheckExportService {
   // Generic layout every bank portal can map: Account, Routing, Check number, Issue date
   // (MM/DD/YYYY), Amount (1250.50), Payee, Void ("V"). No byte-order mark: some bank
   // uploaders reject it. Once the client's bank is known, its exact template goes here.
+  //
+  // csv: the file for the bank, uploaded as is. xlsx: a copy for people to review. A CSV
+  // opened in Excel shows 987654321012 as 9.87654E+11 and drops the leading zero of a
+  // routing number like 021000021, and saving it writes that damage into the file. In the
+  // review copy those numbers are text cells, so they always show in full.
   // ═════════════════════════════════════════════════════════════
 
-  async positivePay(workspaceId: string, bankAccountId: string, from: Date, to: Date, ctx: ExportContext): Promise<RenderedFile> {
+  async positivePay(
+    workspaceId: string,
+    bankAccountId: string,
+    from: Date,
+    to: Date,
+    format: PositivePayFormat,
+    ctx: ExportContext,
+  ): Promise<RenderedFile> {
     const account = await this.repo.bankAccountForPositivePay(bankAccountId, workspaceId);
     if (!account) throw new NotFoundError("Bank account");
 
     const accountNumber = this.encryption.decrypt(account.accountNumberEncrypted);
     const routingNumber = this.encryption.decrypt(account.routingNumberEncrypted);
     const checks = await this.repo.issuedChecks(account.id, workspaceId, from, new Date(to.getTime() + DAY_MS));
+    const now = new Date();
 
+    // Text, never numbers: an account or routing number is an identifier, not a quantity.
     const columns: ExportColumn[] = [
-      { key: "account", label: "Account Number", type: "text" },
-      { key: "routing", label: "Routing Number", type: "text" },
-      { key: "checkNumber", label: "Check Number", type: "integer" },
-      { key: "issueDate", label: "Issue Date", type: "text" },
-      { key: "amount", label: "Amount", type: "money" },
-      { key: "payee", label: "Payee", type: "text" },
-      { key: "void", label: "Void", type: "text" },
+      { key: "account", label: "Account Number", type: "text", width: 1.4 },
+      { key: "routing", label: "Routing Number", type: "text", width: 1.2 },
+      { key: "checkNumber", label: "Check Number", type: "integer", width: 1 },
+      { key: "issueDate", label: "Issue Date", type: "text", width: 1 },
+      { key: "amount", label: "Amount", type: "money", width: 1.1 },
+      { key: "payee", label: "Payee", type: "text", width: 2.4 },
+      { key: "void", label: "Void", type: "text", width: 0.5 },
     ];
-    const rows = checks.map((c) => ({
-      account: accountNumber,
-      routing: routingNumber,
-      checkNumber: c.checkNumber,
-      issueDate: usDay(c.checkDate),
-      amount: c.amount.toFixed(2),
-      payee: c.payeeName,
-      void: c.status === "VOID" ? "V" : "",
-    }));
+    let payCents = 0;
+    const rows = checks.map((c) => {
+      const isVoid = c.status === "VOID";
+      if (!isVoid) payCents += Math.round(Number(c.amount) * 100);
+      return {
+        account: accountNumber,
+        routing: routingNumber,
+        checkNumber: c.checkNumber,
+        issueDate: usDay(c.checkDate),
+        amount: c.amount.toFixed(2),
+        payee: c.payeeName,
+        void: isVoid ? "V" : "",
+      };
+    });
+    const voidCount = rows.filter((r) => r.void === "V").length;
+    const baseName = `positive-pay-${account.accountNumberLast4}-${usDay(from).replace(/\//g, "")}-${usDay(to).replace(/\//g, "")}`;
 
-    const file: RenderedFile = {
-      buffer: renderCsv({ columns, rows }, { byteOrderMark: false }),
-      contentType: "text/csv; charset=utf-8",
-      fileName: `positive-pay-${account.accountNumberLast4}-${usDay(from).replace(/\//g, "")}-${usDay(to).replace(/\//g, "")}.csv`,
-    };
+    const file: RenderedFile =
+      format === "csv"
+        ? {
+            buffer: renderCsv({ columns, rows }, { byteOrderMark: false }),
+            contentType: "text/csv; charset=utf-8",
+            fileName: `${baseName}.csv`,
+          }
+        : await renderExport(
+            {
+              title: "Positive Pay review copy",
+              subtitle: await this.subtitle(
+                workspaceId,
+                ctx.userId,
+                now,
+                `${account.bankName} ****${account.accountNumberLast4} · checks printed ${usDay(from)} to ${usDay(to)}`,
+                "For checking only. Upload the CSV file to the bank, not this one.",
+              ),
+              columns,
+              rows,
+              totals: { payee: `To be paid: ${rows.length - voidCount} ${rows.length - voidCount === 1 ? "check" : "checks"} (${voidCount} void)`, amount: (payCents / 100).toFixed(2) },
+              fileName: `${baseName}-review`,
+            },
+            "xlsx",
+            now,
+          );
+
     await this.record(workspaceId, ctx, file, {
       action: "POSITIVE_PAY_EXPORTED",
       report: "positive-pay",
       entityType: "BankAccount",
       entityId: account.id,
       details: {
+        format,
         from: from.toISOString().slice(0, 10),
         to: to.toISOString().slice(0, 10),
         rowCount: rows.length,
-        voidCount: rows.filter((r) => r.void === "V").length,
+        voidCount,
         checkNumbers: checks.map((c) => c.checkNumber),
       },
     });

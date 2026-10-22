@@ -343,6 +343,10 @@ export const exportOutstanding = (wid: string, bankAccountId: string | undefined
 export const exportNumberAudit = (wid: string, params: { bankAccountId: string; from: number; to: number }, format: ExportFormat) =>
   download(`/workspaces/${wid}/checks/number-integrity/export`, { ...params, format });
 
-// The issued-checks file for the bank. Admins only: it holds the full account number.
-export const downloadPositivePay = (wid: string, params: { bankAccountId: string; from: string; to: string }) =>
-  download(`/workspaces/${wid}/checks/positive-pay`, params);
+// The issued-checks file for the bank (csv), or an Excel copy for people to review (xlsx).
+// Admins only: both hold the full account number.
+export const downloadPositivePay = (
+  wid: string,
+  params: { bankAccountId: string; from: string; to: string },
+  format: "csv" | "xlsx",
+) => download(`/workspaces/${wid}/checks/positive-pay`, { ...params, format });
