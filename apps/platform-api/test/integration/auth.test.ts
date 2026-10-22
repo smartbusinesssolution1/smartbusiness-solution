@@ -236,12 +236,14 @@ describe("access token", () => {
     expect(res.body.data.tenants).toHaveLength(1);
   });
 
-  it("carries only the user id and email, never the tenant", async () => {
+  it("carries only the user id, email and how the session signed in, never the tenant", async () => {
     const client = new AuthClient();
     await client.register();
     const payload = JSON.parse(Buffer.from(client.accessToken!.split(".")[1]!, "base64url").toString());
 
-    expect(Object.keys(payload).sort()).toEqual(["email", "exp", "iat", "userId"]);
+    // amr: how this session proved who it is (a password, until a two-factor code is entered).
+    expect(Object.keys(payload).sort()).toEqual(["amr", "email", "exp", "iat", "userId"]);
+    expect(payload.amr).toEqual(["pwd"]);
     expect(payload.exp - payload.iat).toBe(15 * 60);
   });
 

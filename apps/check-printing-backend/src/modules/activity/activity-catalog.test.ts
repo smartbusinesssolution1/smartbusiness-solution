@@ -23,8 +23,12 @@ function actionsInSource(): Set<string> {
         for (const m of text.matchAll(/\baction(?::|\s*=)\s*([^,;\n}]+)/g)) {
           for (const code of m[1]!.matchAll(/"([A-Z][A-Z_]+)"/g)) found.add(code[1]!);
         }
-        // platform-api's helper: this.auditForUser(user, "X", ip).
+        // platform-api's helpers: this.auditForUser(user, "X", ip) and, in two-factor,
+        // this.record(user, ctx, "X" or cond ? "X" : "Y", details).
         for (const m of text.matchAll(/auditForUser\([^,]+,\s*"([A-Z][A-Z_]+)"/g)) found.add(m[1]!);
+        for (const m of text.matchAll(/this\.record\(([^;]+)\);/g)) {
+          for (const code of m[1]!.matchAll(/"([A-Z][A-Z_]+)"/g)) found.add(code[1]!);
+        }
       }
     }
   };

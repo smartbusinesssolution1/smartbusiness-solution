@@ -292,6 +292,34 @@ export class WorkspaceService {
     return { message: `A new invitation is on its way to ${member.user.email}. Earlier links no longer work.` };
   }
 
+  // The company owner resets two-factor for someone who lost their phone and their backup
+  // codes. Not for yourself: turn it off from your own account (password + code) instead.
+  async resetMemberTwoFactor(workspaceId: string, tenantId: string, memberId: string, ctx: AuditContext) {
+    const member = await this.workspaceRepository.findMemberById(memberId);
+    if (!member || member.workspaceId !== workspaceId || member.workspace.tenantId !== tenantId || member.deletedAt) {
+      throw new NotFoundError("Member");
+    }
+    if (member.userId === ctx.userId) {
+      throw new ValidationError("You can't reset your own two-factor sign-in here. Use Two-factor sign-in in your account menu.", {
+        member: ["That's you"],
+      });
+    }
+    if (!member.user.mfaEnabledAt) throw new ConflictError(`${member.user.fullName} doesn't have two-factor sign-in on.`);
+
+    await this.workspaceRepository.resetTwoFactor(member.userId);
+    await this.auditService.log({
+      tenantId,
+      userId: ctx.userId,
+      workspaceId,
+      action: "MFA_RESET_BY_OWNER",
+      entityType: "WorkspaceMember",
+      entityId: memberId,
+      details: { memberEmail: member.user.email },
+      ipAddress: ctx.ipAddress,
+    });
+    return { message: `${member.user.fullName} will set up two-factor sign-in again next time they open Check Printing.` };
+  }
+
   async updateMember(
     workspaceId: string,
     tenantId: string,
@@ -464,6 +492,7 @@ export class WorkspaceService {
       fullName: member.user.fullName,
       isActive: member.user.isActive,
       lastLoginAt: member.user.lastLoginAt,
+      twoFactorEnabled: Boolean(member.user.mfaEnabledAt),
       ...this.memberStatus(member, invitation),
       roles: roleSlugs,
       permissions: [...permissionSet],

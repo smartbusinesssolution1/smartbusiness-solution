@@ -6,24 +6,7 @@ import {
   type TenantMember,
   type Session,
 } from "@smartbusiness/database";
-
-// ─── Account lockout ──────────────────────────────────────────
-//
-// Wrong passwords are counted per account, whichever IP they come from. Every 5th one in a
-// row locks the account, each time for longer: 1 minute, then 5, 15, then 60. A correct
-// password (or a password reset) starts the count again, and so does a day with no
-// attempts, so last week's typo doesn't count today.
-export const LOCKOUT = {
-  threshold: 5,
-  minutes: [1, 5, 15, 60],
-  windowHours: 24,
-} as const;
-
-// Timestamps are stored as UTC without a time zone, so "now" must be UTC too, whatever
-// time zone the database session happens to use.
-const NOW_UTC = Prisma.sql`(now() AT TIME ZONE 'UTC')`;
-
-export type LoginAttempt = { allowed: false } | { allowed: true; count: number; lockedNow: boolean };
+import { clearAttempts, lockedUntil, reserveAttempt, type Attempt } from "./attempts.js";
 
 interface CreateUserWithTenantData {
   email: string;
@@ -229,44 +212,17 @@ export class AuthRepository {
     });
   }
 
-  // One sign-in attempt, counted BEFORE the password is checked, in a single statement:
-  // add 1 to the count only if the account isn't locked, and lock it if this was the 5th,
-  // 10th… attempt. Postgres updates one row at a time, so a burst of 1,000 simultaneous
-  // guesses gets 5 password checks, not 1,000. A correct password then clears the count.
-  async reserveLoginAttempt(userId: string): Promise<LoginAttempt> {
-    const { threshold, minutes, windowHours } = LOCKOUT;
-    // Every expression in SET reads the row as it was, so the new count is spelled out once
-    // here and used three times.
-    const next = Prisma.sql`CASE
-      WHEN last_failed_login_at IS NULL OR last_failed_login_at < ${NOW_UTC} - make_interval(hours => ${windowHours}::int) THEN 1
-      ELSE failed_login_count + 1 END`;
-    const lockMinutes = Prisma.sql`CASE (${next}) / ${threshold}::int
-      WHEN 1 THEN ${minutes[0]}::int WHEN 2 THEN ${minutes[1]}::int WHEN 3 THEN ${minutes[2]}::int ELSE ${minutes[3]}::int END`;
-
-    const rows = await prisma.$queryRaw<Array<{ count: number; lockedNow: boolean }>>`
-      UPDATE users SET
-        failed_login_count = ${next},
-        last_failed_login_at = ${NOW_UTC},
-        locked_until = CASE WHEN (${next}) % ${threshold}::int = 0
-          THEN ${NOW_UTC} + make_interval(mins => ${lockMinutes})
-          ELSE locked_until END
-      WHERE id = ${userId} AND (locked_until IS NULL OR locked_until <= ${NOW_UTC})
-      RETURNING failed_login_count AS count, (locked_until IS NOT NULL AND locked_until > ${NOW_UTC}) AS "lockedNow"`;
-
-    const row = rows[0];
-    return row ? { allowed: true, count: row.count, lockedNow: row.lockedNow } : { allowed: false };
+  // Account lockout lives in attempts.ts (shared with two-factor codes): see there.
+  async reserveLoginAttempt(userId: string): Promise<Attempt> {
+    return reserveAttempt(userId, "password");
   }
 
   async findLockedUntil(userId: string): Promise<Date | null> {
-    return (await prisma.user.findUnique({ where: { id: userId }, select: { lockedUntil: true } }))?.lockedUntil ?? null;
+    return lockedUntil(userId, "password");
   }
 
-  // A correct password: the count of wrong ones starts again.
   async clearLoginFailures(userId: string): Promise<void> {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null },
-    });
+    await clearAttempts(userId, "password");
   }
 
   async updateLastLogin(userId: string): Promise<void> {

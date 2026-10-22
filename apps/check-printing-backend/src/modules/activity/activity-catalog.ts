@@ -43,6 +43,13 @@ export const SECURITY_ACTIONS = [
   "ACCOUNT_LOCKED",
   "PASSWORD_RESET_REQUESTED",
   "PASSWORD_RESET",
+  "MFA_ENABLED",
+  "MFA_VERIFIED",
+  "MFA_FAILED",
+  "MFA_LOCKED",
+  "MFA_BACKUP_CODE_USED",
+  "MFA_BACKUP_CODES_REGENERATED",
+  "MFA_DISABLED",
 ];
 
 // ─── What a describer can look up ───────────────────────────
@@ -262,6 +269,7 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
     describe: (_e, d) => `email delivered to ${str(d.email) || "a member"}: they now have access to this workspace`,
   },
   INVITATION_ACCEPTED: { category: "team", describe: () => "accepted the invitation and joined" },
+  MFA_RESET_BY_OWNER: { category: "team", describe: (_e, d) => `reset two-factor sign-in for ${member(d)} (they set it up again next time)` },
 
   // ── Business details ──
   WORKSPACE_CREATED: { category: "business", describe: (_e, d) => `created the workspace${d.businessName ? ` "${str(d.businessName)}"` : ""}` },
@@ -293,6 +301,23 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
   },
   PASSWORD_RESET_REQUESTED: { category: "security", describe: () => "asked for a password reset link" },
   PASSWORD_RESET: { category: "security", describe: () => "reset their password (all sessions ended)" },
+  MFA_ENABLED: { category: "security", describe: () => "turned on two-factor sign-in" },
+  MFA_VERIFIED: { category: "security", describe: () => "entered a two-factor code" },
+  MFA_FAILED: {
+    category: "security",
+    describe: (_e, d) => `entered a wrong two-factor code${d.during && d.during !== "sign-in" ? ` (${str(d.during)})` : ""}`,
+  },
+  MFA_LOCKED: {
+    category: "security",
+    describe: (_e, d) =>
+      `was locked out of two-factor for ${plural(Number(d.lockedForMinutes ?? 0), "minute")} after ${plural(Number(d.failedAttempts ?? 0), "wrong code")}`,
+  },
+  MFA_BACKUP_CODE_USED: {
+    category: "security",
+    describe: (_e, d) => `used a two-factor backup code${d.backupCodesRemaining !== undefined ? ` (${plural(Number(d.backupCodesRemaining), "code")} left)` : ""}`,
+  },
+  MFA_BACKUP_CODES_REGENERATED: { category: "security", describe: () => "made new two-factor backup codes (the old ones stopped working)" },
+  MFA_DISABLED: { category: "security", describe: () => "turned off two-factor sign-in" },
 };
 
 export function categoryOf(action: string): ActivityCategory {

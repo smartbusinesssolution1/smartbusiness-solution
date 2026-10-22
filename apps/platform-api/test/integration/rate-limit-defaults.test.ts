@@ -8,7 +8,7 @@ async function limitsFor(env: Record<string, string | undefined>) {
   // Only the values given here: not whatever the developer's own .env says.
   vi.doMock("dotenv", () => ({ default: { config: () => ({}) } }));
   vi.resetModules();
-  for (const name of ["RATE_LIMIT_MAX", "AUTH_RATE_LIMIT_MAX", "REFRESH_RATE_LIMIT_MAX", "INVITATION_RATE_LIMIT_MAX"]) vi.stubEnv(name, undefined);
+  for (const name of ["RATE_LIMIT_MAX", "AUTH_RATE_LIMIT_MAX", "REFRESH_RATE_LIMIT_MAX", "INVITATION_RATE_LIMIT_MAX", "MFA_RATE_LIMIT_MAX"]) vi.stubEnv(name, undefined);
   for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value);
   return (await import("../../src/config/index.js")).rateLimits;
 }
@@ -23,7 +23,7 @@ describe("rate limit defaults", () => {
   it("production keeps the strict limits", async () => {
     const limits = await limitsFor({ NODE_ENV: "production", EMAIL_TRANSPORT: "smtp", SMTP_HOST: "email-smtp.us-east-1.amazonaws.com", SMTP_USER: "u", SMTP_PASS: "p" });
 
-    expect(limits).toEqual({ globalPerMinute: 100, authPer15Minutes: 10, refreshPer15Minutes: 300, invitationPer15Minutes: 60 });
+    expect(limits).toEqual({ globalPerMinute: 100, authPer15Minutes: 10, refreshPer15Minutes: 300, invitationPer15Minutes: 60, mfaPer15Minutes: 60 });
   });
 
   it("staging keeps the strict limits too", async () => {
@@ -36,6 +36,7 @@ describe("rate limit defaults", () => {
       authPer15Minutes: 300,
       refreshPer15Minutes: 3000,
       invitationPer15Minutes: 600,
+      mfaPer15Minutes: 600,
     });
   });
 

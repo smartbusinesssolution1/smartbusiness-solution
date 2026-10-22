@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { Prisma } from "@smartbusiness/database";
 import { AppError } from "@smartbusiness/auth";
-import { AccountLockedError, ValidationError } from "../shared/errors/index.js";
+import { LockedOutError, ValidationError } from "../shared/errors/index.js";
 import { server } from "../config/index.js";
 import { logger } from "../shared/services/logger.js";
 
@@ -55,7 +55,7 @@ export function errorHandler(
   if (err instanceof AppError && err.isOperational) {
     const error: Record<string, unknown> = { code: err.code, message: err.message };
     if (err instanceof ValidationError) error.details = err.details;
-    if (err instanceof AccountLockedError) {
+    if (err instanceof LockedOutError) {
       res.setHeader("Retry-After", String(err.retryAfterSeconds));
       error.lockedUntil = err.lockedUntil.toISOString();
     }

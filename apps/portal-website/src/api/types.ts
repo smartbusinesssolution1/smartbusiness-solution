@@ -67,6 +67,8 @@ export interface Member {
   invitationExpiresAt: string | null;
   roles: RoleSlug[];
   permissions: Permission[];
+  // Two-factor sign-in is on (required for Check Printing admins).
+  twoFactorEnabled: boolean;
   createdAt: string;
 }
 

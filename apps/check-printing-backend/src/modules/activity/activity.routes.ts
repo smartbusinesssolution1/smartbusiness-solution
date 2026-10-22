@@ -1,8 +1,8 @@
-import { Router, type NextFunction, type Request, type Response } from "express";
+import { Router } from "express";
 import { validate } from "../../middleware/validate.js";
 import { requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
-import { ForbiddenError } from "../../shared/errors/index.js";
+import { requireCompanyOwner } from "../../middleware/company-owner.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { exportFormat } from "../export/index.js";
 import { ActivityController } from "./activity.controller.js";
@@ -12,16 +12,10 @@ import { ActivityService } from "./activity.service.js";
 
 const controller = new ActivityController(new ActivityService(new ActivityRepository(), new AuditService()));
 
-// Sign-ins concern the whole company, not one workspace: only its owner sees them.
-function requireCompanyOwner(req: Request, _res: Response, next: NextFunction) {
-  if (req.tenant?.role !== "OWNER") throw new ForbiddenError("Only the company owner can see sign-in and security events.");
-  next();
-}
-
 // Mounted at /:wid/activity, after the workspace middleware.
 const router: ReturnType<typeof Router> = Router({ mergeParams: true });
 
-// ── The company's sign-ins and security events (the owner) ──
+// ── The company's sign-ins and security events: they concern the whole company, so only its owner ──
 router.get("/security", requireCompanyOwner, validate(securityQuerySchema, "query"), controller.security);
 router.get("/security/people", requireCompanyOwner, controller.securityPeople);
 router.get("/security/export", requireCompanyOwner, exportFormat(), validate(securityQuerySchema, "query"), controller.securityExport);

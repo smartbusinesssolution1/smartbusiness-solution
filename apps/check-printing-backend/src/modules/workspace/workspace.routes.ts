@@ -3,6 +3,8 @@ import { validate } from "../../middleware/validate.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
 import { workspaceMiddleware } from "../../middleware/workspace.middleware.js";
+import { requireTwoFactor } from "../../middleware/two-factor.middleware.js";
+import { requireCompanyOwner } from "../../middleware/company-owner.js";
 import { requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { WorkspaceRepository } from "./workspace.repository.js";
@@ -45,6 +47,8 @@ const router: Router = Router();
 router.use(authMiddleware);
 router.use(tenantMiddleware);
 router.use(requireProduct("check-printing"));
+// Admins (and anyone who turned it on) must have entered a two-factor code this session.
+router.use(requireTwoFactor);
 
 // Workspace CRUD
 router.post(
@@ -102,6 +106,15 @@ router.post(
   workspaceMiddleware,
   requirePermission(P.MEMBER_MANAGE),
   workspaceController.resendInvitation,
+);
+
+// Someone lost their phone and their backup codes: only the company owner can reset their
+// two-factor sign-in (audited); they set it up again on their next visit.
+router.post(
+  "/:wid/members/:mid/two-factor/reset",
+  workspaceMiddleware,
+  requireCompanyOwner,
+  workspaceController.resetTwoFactor,
 );
 
 // Removing someone who was invited but never accepted is how an invitation is cancelled:

@@ -2,9 +2,9 @@ import * as React from "react";
 import { useForm } from "react-hook-form";
 import { AnimatePresence, motion } from "motion/react";
 import { toast } from "sonner";
-import { MailCheck, MoreHorizontal, Pencil, Plus, Send, ShieldCheck, Trash2, UserPlus, Users } from "lucide-react";
-import { useSession } from "@/api/auth";
-import { useAddMember, useCheckSettings, useMembers, useRemoveMember, useResendInvitation, useUpdateCheckSettings, useUpdateMember, useUpdateWorkspace, type WorkspaceInput } from "@/api/workspace";
+import { MailCheck, MoreHorizontal, Pencil, Plus, Send, ShieldCheck, ShieldOff, Trash2, UserPlus, Users } from "lucide-react";
+import { useIsCompanyOwner, useSession } from "@/api/auth";
+import { useAddMember, useCheckSettings, useMembers, useRemoveMember, useResendInvitation, useResetTwoFactor, useUpdateCheckSettings, useUpdateMember, useUpdateWorkspace, type WorkspaceInput } from "@/api/workspace";
 import { useApprovalRules, useEligibleApprovers, useRuleApprovers, useRuleState, useSaveRule, useToggleApproval } from "@/api/setup";
 import type { ApprovalRule, InvitedMember, Member, RoleSlug } from "@/api/types";
 import { useWorkspaceContext } from "@/app/workspace-context";
@@ -324,9 +324,13 @@ export function TeamSettingsPage() {
   const members = useMembers(wid);
   const remove = useRemoveMember(wid);
   const resend = useResendInvitation(wid);
+  const resetTwoFactor = useResetTwoFactor(wid);
+  const isOwner = useIsCompanyOwner();
   const [dialog, setDialog] = React.useState<Member | "new" | null>(null);
   const [removing, setRemoving] = React.useState<Member | null>(null);
+  const [resetting, setResetting] = React.useState<Member | null>(null);
   const canManage = can("member:manage");
+  const ownerCanReset = (m: Member) => isOwner && m.twoFactorEnabled && m.userId !== session?.user.id;
 
   return (
     <Page className="max-w-4xl">
@@ -342,18 +346,19 @@ export function TeamSettingsPage() {
               <li key={m.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-xs font-semibold text-white">{initials(m.fullName)}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{m.fullName}{m.userId === session?.user.id && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}{!m.isActive && <span className="ml-2 rounded-full bg-danger-50 px-2 py-0.5 text-[0.6875rem] font-medium text-danger-700">Deactivated · can't sign in</span>}<InvitationBadge member={m} /></span>
+                  <span className="truncate font-medium">{m.fullName}{m.userId === session?.user.id && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}{!m.isActive && <span className="ml-2 rounded-full bg-danger-50 px-2 py-0.5 text-[0.6875rem] font-medium text-danger-700">Deactivated · can't sign in</span>}<InvitationBadge member={m} />{m.twoFactorEnabled && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-[0.6875rem] font-medium text-success-700"><ShieldCheck className="size-3" /> 2FA</span>}</span>
                   <span className="truncate text-xs text-muted">{m.email} · {m.status !== "ACTIVE" ? "hasn't set up their account yet" : m.lastLoginAt ? `last signed in ${ago(m.lastLoginAt)}` : "never signed in"}</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {m.roles.map((r) => <span key={r} className={cn("rounded-full px-2 py-0.5 text-xs font-medium", r === "check-admin" ? "bg-ink text-white" : "bg-subtle text-ink-soft")}>{roleLabel(r)}</span>)}
                 </div>
-                {canManage && (
+                {(canManage || ownerCanReset(m)) && (
                   <Menu>
                     <MenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={`Actions for ${m.fullName}`}><MoreHorizontal /></Button></MenuTrigger>
                     <MenuContent>
-                      <MenuItem onSelect={() => setDialog(m)}><Pencil /> Change roles</MenuItem>
-                      {m.status !== "ACTIVE" && (
+                      {canManage && <MenuItem onSelect={() => setDialog(m)}><Pencil /> Change roles</MenuItem>}
+                      {ownerCanReset(m) && <MenuItem onSelect={() => setResetting(m)}><ShieldOff /> Reset two-factor sign-in</MenuItem>}
+                      {canManage && m.status !== "ACTIVE" && (
                         <MenuItem
                           onSelect={() =>
                             resend.mutate(m.id, {
@@ -365,7 +370,7 @@ export function TeamSettingsPage() {
                           <Send /> Resend invitation
                         </MenuItem>
                       )}
-                      {m.userId !== session?.user.id && <><MenuSeparator /><MenuItem destructive onSelect={() => setRemoving(m)}><Trash2 /> {m.status === "ACTIVE" ? "Remove from workspace" : "Cancel invitation"}</MenuItem></>}
+                      {canManage && m.userId !== session?.user.id && <><MenuSeparator /><MenuItem destructive onSelect={() => setRemoving(m)}><Trash2 /> {m.status === "ACTIVE" ? "Remove from workspace" : "Cancel invitation"}</MenuItem></>}
                     </MenuContent>
                   </Menu>
                 )}
@@ -375,6 +380,34 @@ export function TeamSettingsPage() {
         </Panel>
       )}
       {dialog && <MemberDialog member={dialog === "new" ? null : dialog} onClose={() => setDialog(null)} />}
+      <Dialog open={resetting !== null} onOpenChange={(o) => !o && setResetting(null)}>
+        <DialogContent>
+          <DialogHeader
+            icon={<ShieldOff />}
+            title={`Reset two-factor sign-in for ${resetting?.fullName}?`}
+            description="Only for someone who lost their phone and their backup codes. Their authenticator and backup codes stop working, and they set it up again the next time they open Check Printing. This is recorded in the activity log."
+          />
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setResetting(null)}>Cancel</Button>
+            <Button
+              variant="danger"
+              loading={resetTwoFactor.isPending}
+              onClick={() =>
+                resetting &&
+                resetTwoFactor.mutate(resetting.id, {
+                  onSuccess: (r) => {
+                    toast.success("Two-factor sign-in reset", { description: r.message });
+                    setResetting(null);
+                  },
+                  onError: (e) => toast.error(errorMessage(e)),
+                })
+              }
+            >
+              Reset
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Dialog open={removing !== null} onOpenChange={(o) => !o && setRemoving(null)}>
         <DialogContent>
           {removing?.status === "ACTIVE" || !removing ? (

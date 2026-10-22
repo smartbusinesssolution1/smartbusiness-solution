@@ -300,6 +300,9 @@ function UserMenu() {
         <MenuItem onSelect={() => navigate("/workspaces")}>
           <Building2 /> Switch workspace
         </MenuItem>
+        <MenuItem onSelect={() => navigate("/account/security")}>
+          <ShieldCheck /> Two-factor sign-in
+        </MenuItem>
         <MenuItem onSelect={() => signOut(true)}>
           <MonitorSmartphone /> Sign out of all devices
         </MenuItem>

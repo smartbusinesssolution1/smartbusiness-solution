@@ -77,6 +77,16 @@ export function useResendInvitation(wid: string) {
   });
 }
 
+// The company owner resets someone's two-factor (lost phone and backup codes).
+export function useResetTwoFactor(wid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (memberId: string) =>
+      (await api<{ message: string }>(`/workspaces/${wid}/members/${memberId}/two-factor/reset`, { method: "POST" })).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["members", wid] }),
+  });
+}
+
 export function useUpdateMember(wid: string) {
   const qc = useQueryClient();
   return useMutation({

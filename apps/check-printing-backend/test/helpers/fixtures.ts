@@ -110,8 +110,17 @@ export async function createWorld(options: { approvalEnabled?: boolean } = {}): 
 
   const makeMember = async (name: string, roles: string[]): Promise<TestUser> => {
     const email = `${name}-${suffix}@example.test`;
+    // Admins need two-factor in Check Printing, so fixture admins have it set up (the
+    // standard test session below has also entered a code). Tests of the two-factor door
+    // build unenrolled users and password-only sessions explicitly.
     const user = await prisma.user.create({
-      data: { fullName: name, email, passwordHash: "not-a-real-hash", isActive: true },
+      data: {
+        fullName: name,
+        email,
+        passwordHash: "not-a-real-hash",
+        isActive: true,
+        ...(roles.includes(ROLES.ADMIN) && { mfaEnabledAt: new Date() }),
+      },
     });
     await prisma.tenantMember.create({
       data: { tenantId: tenant.id, userId: user.id, role: name === "admin" ? "OWNER" : "MEMBER" },
@@ -223,8 +232,10 @@ export async function createPrinterProfile(world: TestWorld): Promise<string> {
 }
 
 /** Request headers that authenticate as `user` in its tenant. */
-export function authHeaders(user: TestUser): Record<string, string> {
-  const token = jwt.sign({ userId: user.id, email: user.email }, TEST_JWT_SECRET, { expiresIn: "15m" });
+// A signed-in session. By default it has also entered a two-factor code (amr "otp"), as a
+// real admin's session would; pass { amr: ["pwd"] } for a password-only session.
+export function authHeaders(user: TestUser, options: { amr?: string[] } = {}): Record<string, string> {
+  const token = jwt.sign({ userId: user.id, email: user.email, amr: options.amr ?? ["pwd", "otp"] }, TEST_JWT_SECRET, { expiresIn: "15m" });
   return {
     Cookie: `access_token=${token}`,
     "X-Tenant-Id": user.tenantId,

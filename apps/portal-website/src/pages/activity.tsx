@@ -11,14 +11,13 @@ import {
   type ActivityFilters,
   type ActivityItem,
 } from "@/api/activity";
-import { useSession } from "@/api/auth";
+import { useIsCompanyOwner } from "@/api/auth";
 import { useWorkspaceContext } from "@/app/workspace-context";
 import { ExportMenu } from "@/components/app/export-menu";
 import { EmptyState, ErrorState, Page, PageHeader, Panel, Skeleton } from "@/components/app/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Segmented, Select, SelectItem } from "@/components/ui/controls";
-import { tenantStore } from "@/lib/api";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -34,13 +33,7 @@ import { cn } from "@/lib/utils";
 const FILTER_KEYS = ["userId", "category", "entityId", "from", "to", "outcome"] as const;
 type Tab = "workspace" | "security";
 
-const FAILED = new Set(["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED", "ACCOUNT_LOCKED"]);
-
-function useIsCompanyOwner(): boolean {
-  const { data: session } = useSession();
-  const current = tenantStore.get();
-  return session?.tenants.find((t) => t.tenantId === current)?.role === "OWNER";
-}
+const FAILED = new Set(["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED", "ACCOUNT_LOCKED", "MFA_FAILED", "MFA_LOCKED"]);
 
 export function ActivityPage() {
   const { wid } = useWorkspaceContext();

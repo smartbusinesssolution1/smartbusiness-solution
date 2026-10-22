@@ -121,6 +121,16 @@ export class WorkspaceController {
     sendSuccess(res, result, 202);
   };
 
+  resetTwoFactor = async (req: Request, res: Response): Promise<void> => {
+    const result = await this.workspaceService.resetMemberTwoFactor(
+      req.params.wid as string,
+      req.tenant!.tenantId,
+      req.params.mid as string,
+      this.auditCtx(req),
+    );
+    sendSuccess(res, result);
+  };
+
   removeMember = async (req: Request, res: Response): Promise<void> => {
     await this.workspaceService.removeMember(
       req.params.wid as string,

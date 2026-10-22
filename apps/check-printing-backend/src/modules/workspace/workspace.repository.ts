@@ -32,7 +32,7 @@ export interface MemberWithRoles {
   deletedAt: Date | null;
   // passwordHash is read only to tell "invited, not set up yet" (null) from a working
   // account; formatMember turns it into a status and never returns it.
-  user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt" | "passwordHash">;
+  user: Pick<User, "id" | "email" | "fullName" | "isActive" | "lastLoginAt" | "passwordHash" | "mfaEnabledAt">;
   assignedRoles: Array<{
     role: {
       productId: string;
@@ -58,6 +58,7 @@ const memberInclude = {
       isActive: true,
       lastLoginAt: true,
       passwordHash: true,
+      mfaEnabledAt: true,
     },
   },
   assignedRoles: {
@@ -253,6 +254,29 @@ export class WorkspaceRepository {
   // ─── Member Management ────────────────────────────────
 
   // Members who hold at least one role in this product.
+  // The company owner's reset for someone who lost their phone and their backup codes:
+  // the secret, backup codes and attempt counts go, and no session of theirs counts as
+  // verified any more. They set it up again at their next visit (Check Printing requires it).
+  async resetTwoFactor(userId: string): Promise<void> {
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          mfaSecretEncrypted: null,
+          mfaPendingSecretEncrypted: null,
+          mfaPendingCreatedAt: null,
+          mfaEnabledAt: null,
+          mfaLastUsedStep: null,
+          mfaFailedCount: 0,
+          mfaLastFailedAt: null,
+          mfaLockedUntil: null,
+        },
+      }),
+      prisma.mfaBackupCode.deleteMany({ where: { userId } }),
+      prisma.session.updateMany({ where: { userId, mfaVerifiedAt: { not: null } }, data: { mfaVerifiedAt: null } }),
+    ]);
+  }
+
   async findMembers(workspaceId: string, productId: string): Promise<MemberWithRoles[]> {
     return prisma.workspaceMember.findMany({
       where: { workspaceId, deletedAt: null, assignedRoles: { some: { role: { productId } } } },

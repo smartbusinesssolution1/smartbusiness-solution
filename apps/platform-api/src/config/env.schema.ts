@@ -55,6 +55,8 @@ export const envSchema = z
   // office behind one IP onboarding several people must not lock itself out of signing
   // in. The links are 256-bit secrets, so this only stops floods, not guessing.
   INVITATION_RATE_LIMIT_MAX: optionalLimit,
+  // Two-factor code requests per IP per 15 minutes, a separate budget again.
+  MFA_RATE_LIMIT_MAX: optionalLimit,
 
   // The web app's address. Every link in an email is built from this, never from the
   // request, so a forged Host header cannot put someone else's site into our emails.
@@ -108,6 +110,13 @@ export const envSchema = z
     .default("60")
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().int().min(5).max(24 * 60)),
+
+  // Two-factor sign-in: encrypts authenticator secrets (AES-256-GCM) and keys the
+  // backup-code fingerprints. Exactly 64 hex characters (256 bits). Keep it out of the
+  // database: whoever holds both could calculate every admin's codes.
+  MFA_ENCRYPTION_KEY: z
+    .string({ error: "MFA_ENCRYPTION_KEY is required" })
+    .regex(/^[0-9a-fA-F]{64}$/, "MFA_ENCRYPTION_KEY must be exactly 64 hex characters (generate with: openssl rand -hex 32)"),
   })
   // Emails written to a folder or kept in memory on a production server would never
   // reach anyone. Refuse to start rather than fail silently.

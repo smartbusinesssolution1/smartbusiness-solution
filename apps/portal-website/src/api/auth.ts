@@ -22,6 +22,14 @@ export function useSession() {
   });
 }
 
+// The owner of the company being used now: company-level powers (sign-in history,
+// resetting someone's two-factor) are theirs.
+export function useIsCompanyOwner(): boolean {
+  const { data: session } = useSession();
+  const current = tenantStore.get();
+  return session?.tenants.find((t) => t.tenantId === current)?.role === "OWNER";
+}
+
 // Keep the chosen company if the user still belongs to it, else take the first one.
 export function chooseTenant(session: Session): string | null {
   const current = tenantStore.get();

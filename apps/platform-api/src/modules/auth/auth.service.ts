@@ -110,6 +110,11 @@ function resetLinkError(problem: TokenProblem): AppError {
   return new AppError(e.message, 400, e.code);
 }
 
+// What a session has proved, for the access token's amr claim.
+export function amrFor(session: { mfaVerifiedAt: Date | null }): string[] {
+  return session.mfaVerifiedAt ? ["pwd", "otp"] : ["pwd"];
+}
+
 export class AuthService {
   constructor(
     private authRepository: AuthRepository,
@@ -390,9 +395,12 @@ export class AuthService {
       newExpiry,
     );
 
+    // The session keeps what it proved: a two-factor code entered once stays valid for
+    // the session's life (asked again at the next sign-in, not at every refresh).
     const accessToken = this.tokenService.generateAccessToken({
       userId: session.userId,
       email: session.user.email,
+      amr: amrFor(session),
     });
 
     return {
@@ -681,9 +689,11 @@ export class AuthService {
       userAgent: ctx.userAgent,
     });
 
+    // A new session has proved a password only; a two-factor code adds "otp" later.
     const accessToken = this.tokenService.generateAccessToken({
       userId,
       email,
+      amr: ["pwd"],
     });
 
     return { accessToken, refreshToken: refresh.raw };

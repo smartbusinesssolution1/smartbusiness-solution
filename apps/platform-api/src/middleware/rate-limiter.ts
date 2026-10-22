@@ -47,3 +47,7 @@ export const refreshRateLimiter = createAuthRateLimiter(rateLimits.refreshPer15M
 // Invitation links get their own counter too: new people opening their invitation must
 // not use up the sign-in attempts of everyone else behind the same office IP.
 export const invitationRateLimiter = createAuthRateLimiter(rateLimits.invitationPer15Minutes);
+
+// Two-factor codes get their own budget too: an office of admins signing in each morning
+// sends one code each. Guessing is limited per account (attempts.ts), not by this.
+export const mfaRateLimiter = createAuthRateLimiter(rateLimits.mfaPer15Minutes);

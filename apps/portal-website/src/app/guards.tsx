@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { motion } from "motion/react";
 import { chooseTenant, sessionKey, useSession } from "@/api/auth";
 import { useWorkspace } from "@/api/workspace";
-import { ApiError, onSessionEnded } from "@/lib/api";
+import { ApiError, onSessionEnded, onTwoFactorNeeded } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/app/layout";
 import { BrandMark } from "@/components/app/brand";
@@ -40,8 +40,26 @@ function useSessionEndedHandler() {
   );
 }
 
+// Check Printing wants a two-factor code (or setup) from this admin: go there, then come
+// back to the page they were on.
+function useTwoFactorHandler() {
+  const navigate = useNavigate();
+  React.useEffect(
+    () =>
+      onTwoFactorNeeded((need) => {
+        // Where the person is right now (read when it happens, not when this was set up).
+        const { pathname, search } = window.location;
+        if (pathname.startsWith("/two-factor")) return;
+        const next = encodeURIComponent(pathname + search);
+        navigate(need === "setup" ? `/two-factor/setup?next=${next}` : `/two-factor?next=${next}`, { replace: true });
+      }),
+    [navigate],
+  );
+}
+
 export function RequireAuth() {
   useSessionEndedHandler();
+  useTwoFactorHandler();
   const { data: session, isPending, error, refetch } = useSession();
   const location = useLocation();
 

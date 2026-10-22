@@ -15,7 +15,7 @@ import { PasswordInput, PasswordRules, passwordProblem } from "./password-input"
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function FormError({ message }: { message: string | null }) {
+export function FormError({ message }: { message: string | null }) {
   return (
     <AnimatePresence initial={false}>
       {message && (
@@ -28,7 +28,7 @@ function FormError({ message }: { message: string | null }) {
 }
 
 // Only same-app paths, so a crafted ?next= link can't send someone to another site.
-function safeNext(next: string | null): string {
+export function safeNext(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/workspaces";
 }
 

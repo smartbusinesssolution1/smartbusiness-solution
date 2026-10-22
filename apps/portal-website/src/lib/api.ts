@@ -55,6 +55,15 @@ export function onSessionEnded(listener: Listener): () => void {
   return () => sessionEndedListeners.delete(listener);
 }
 
+// Check Printing refuses an admin's session until a two-factor code is entered (or set
+// up): the app listens and shows the right screen, whichever request hit it first.
+export type TwoFactorNeed = "setup" | "verify";
+const twoFactorListeners = new Set<(need: TwoFactorNeed) => void>();
+export function onTwoFactorNeeded(listener: (need: TwoFactorNeed) => void): () => void {
+  twoFactorListeners.add(listener);
+  return () => twoFactorListeners.delete(listener);
+}
+
 let refreshing: Promise<boolean> | null = null;
 
 // One refresh at a time: ten requests failing together must not start ten refreshes
@@ -126,6 +135,17 @@ async function send(path: string, options: RequestOptions, accept: "json" | "blo
     }
     if (response.status === 401) {
       sessionEndedListeners.forEach((l) => l());
+    }
+  }
+  if (response.status === 403) {
+    // Read a copy: the caller still gets the response (and its error) as usual.
+    const code = await response
+      .clone()
+      .json()
+      .then((j: { error?: { code?: string } }) => j?.error?.code)
+      .catch(() => undefined);
+    if (code === "MFA_REQUIRED" || code === "MFA_SETUP_REQUIRED") {
+      twoFactorListeners.forEach((l) => l(code === "MFA_SETUP_REQUIRED" ? "setup" : "verify"));
     }
   }
   return response;

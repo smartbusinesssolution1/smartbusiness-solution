@@ -31,6 +31,9 @@ const BatchJobPage = page(() => import("@/pages/print-batch"), "BatchJobPage");
 const PayeesPage = page(() => import("@/pages/payees"), "PayeesPage");
 const ReportsPage = page(() => import("@/pages/reports"), "ReportsPage");
 const ActivityPage = page(() => import("@/pages/activity"), "ActivityPage");
+const TwoFactorVerifyPage = page(() => import("@/pages/two-factor"), "TwoFactorVerifyPage");
+const TwoFactorSetupPage = page(() => import("@/pages/two-factor"), "TwoFactorSetupPage");
+const AccountSecurityPage = page(() => import("@/pages/two-factor"), "AccountSecurityPage");
 const BankAccountsPage = page(() => import("@/pages/settings/bank-accounts"), "BankAccountsPage");
 const NewBankAccountPage = page(() => import("@/pages/settings/bank-accounts"), "NewBankAccountPage");
 const BankAccountDetailPage = page(() => import("@/pages/settings/bank-accounts"), "BankAccountDetailPage");
@@ -103,6 +106,10 @@ export const router = createBrowserRouter([
           { path: "/", element: <Navigate to="/workspaces" replace /> },
           { path: "/workspaces", element: <WorkspacePickerPage /> },
           { path: "/workspaces/new", element: <CreateWorkspacePage /> },
+          // Two-factor: Check Printing sends its admins here (see useTwoFactorHandler).
+          { path: "/two-factor", element: <TwoFactorVerifyPage /> },
+          { path: "/two-factor/setup", element: <TwoFactorSetupPage /> },
+          { path: "/account/security", element: <AccountSecurityPage /> },
           {
             path: "/w/:wid",
             element: <WorkspaceLayout />,

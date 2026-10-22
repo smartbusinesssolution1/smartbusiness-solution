@@ -60,6 +60,10 @@ export const passwordReset = {
   ttlMinutes: config.PASSWORD_RESET_TTL_MINUTES,
 } as const;
 
+export const mfa = {
+  encryptionKey: config.MFA_ENCRYPTION_KEY,
+} as const;
+
 export const invitation = {
   ttlDays: config.INVITATION_TTL_DAYS,
 } as const;
@@ -84,6 +88,7 @@ export const rateLimits = {
   authPer15Minutes: limit(config.AUTH_RATE_LIMIT_MAX, 10, 300),
   refreshPer15Minutes: limit(config.REFRESH_RATE_LIMIT_MAX, 300, 3000),
   invitationPer15Minutes: limit(config.INVITATION_RATE_LIMIT_MAX, 60, 600),
+  mfaPer15Minutes: limit(config.MFA_RATE_LIMIT_MAX, 60, 600),
 } as const;
 
 export const cors = {

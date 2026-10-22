@@ -5,6 +5,10 @@ import { AuthError } from "../errors/index.js";
 export interface AccessTokenPayload {
   userId: string;
   email: string;
+  // How this session proved who it is (OpenID Connect's "amr"): ["pwd"] after a
+  // password, ["pwd", "otp"] once a two-factor code was also accepted. Products that
+  // require two-factor (Check Printing, for its admins) look for "otp"; others ignore it.
+  amr?: string[];
 }
 
 export class TokenService {
