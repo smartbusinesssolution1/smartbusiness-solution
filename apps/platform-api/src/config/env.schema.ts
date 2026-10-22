@@ -1,5 +1,14 @@
 import { z } from "zod";
 
+// A rate limit left unset takes its default from config/index.ts, which is strict in
+// production and staging and roomier in development (see rateLimits there).
+const optionalLimit = z
+  .string()
+  .regex(/^\d+$/, "Must be a whole number")
+  .transform((val) => parseInt(val, 10))
+  .pipe(z.number().int().min(1))
+  .optional();
+
 export const envSchema = z
   .object({
   NODE_ENV: z
@@ -35,33 +44,17 @@ export const envSchema = z
   COOKIE_DOMAIN: z.string().optional(),
 
   // Requests per minute per IP, across the whole API.
-  RATE_LIMIT_MAX: z
-    .string()
-    .default("100")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().int().min(1)),
+  RATE_LIMIT_MAX: optionalLimit,
 
   // Sign-in, sign-up and password-reset attempts per IP per 15 minutes (brute-force protection).
-  AUTH_RATE_LIMIT_MAX: z
-    .string()
-    .default("10")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().int().min(1)),
+  AUTH_RATE_LIMIT_MAX: optionalLimit,
   // Session refreshes per IP per 15 minutes: a separate budget, so routine refreshes never
   // use up the sign-in attempts above.
-  REFRESH_RATE_LIMIT_MAX: z
-    .string()
-    .default("300")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().int().min(1)),
+  REFRESH_RATE_LIMIT_MAX: optionalLimit,
   // Invitation page views and accepts per IP per 15 minutes, also a separate budget: an
   // office behind one IP onboarding several people must not lock itself out of signing
   // in. The links are 256-bit secrets, so this only stops floods, not guessing.
-  INVITATION_RATE_LIMIT_MAX: z
-    .string()
-    .default("60")
-    .transform((val) => parseInt(val, 10))
-    .pipe(z.number().int().min(1)),
+  INVITATION_RATE_LIMIT_MAX: optionalLimit,
 
   // The web app's address. Every link in an email is built from this, never from the
   // request, so a forged Host header cannot put someone else's site into our emails.

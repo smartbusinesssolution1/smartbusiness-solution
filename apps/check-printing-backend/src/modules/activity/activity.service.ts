@@ -29,7 +29,7 @@ import { ruleLabel } from "../approval-rule/rule-satisfiability.js";
 
 export const ACTIVITY_EXPORT_MAX_ROWS = 10_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const FAILED_ACTIONS = ["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED"];
+const FAILED_ACTIONS = ["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED", "ACCOUNT_LOCKED"];
 
 export interface ActivityItem {
   id: string;

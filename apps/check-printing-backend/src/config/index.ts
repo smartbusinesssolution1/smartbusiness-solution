@@ -59,9 +59,12 @@ export const server = {
   isTest: config.NODE_ENV === "test",
 } as const
 
+// In development every request comes from the one developer's machine, and each page
+// makes several API calls, so the production budget runs out while clicking around.
+// Production and staging keep the strict default; a value set in the environment wins.
 export const rateLimit = {
   windowMs: config.RATE_LIMIT_WINDOW_MS,
-  max: config.RATE_LIMIT_MAX
+  max: config.RATE_LIMIT_MAX ?? (config.NODE_ENV === "development" ? 2000 : 100),
 } as const
 
 export const storage = {

@@ -56,10 +56,14 @@ export const envSchema = z.object({
         .default("60000")
         .transform((val) => parseInt(val, 10)),
 
+    // Requests per IP per window. Unset: strict in production and staging, roomier in
+    // development (see rateLimit in config/index.ts).
     RATE_LIMIT_MAX: z
         .string()
-        .default("100")
-        .transform((val) => parseInt(val, 10)),
+        .regex(/^\d+$/, "Must be a whole number")
+        .transform((val) => parseInt(val, 10))
+        .pipe(z.number().int().min(1))
+        .optional(),
 
     // The frontends allowed to call this API from a browser, comma-separated (the platform
     // has several: this product's app, the customer portal). Requests carry login cookies,

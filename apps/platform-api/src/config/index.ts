@@ -71,11 +71,19 @@ export const jobs = {
     config.RUN_WORKER_IN_API === undefined ? config.NODE_ENV !== "production" : config.RUN_WORKER_IN_API === "true",
 } as const;
 
+// Per-IP limits. In development every request comes from the one developer's machine, and
+// testing sign-in (lockout included) uses up the production budget in minutes, so the
+// defaults are roomier there. Production and staging keep the strict ones. A value set in
+// the environment always wins. Account lockout counts per account, not per IP, so it is
+// the same everywhere.
+const limit = (value: number | undefined, production: number, development: number) =>
+  value ?? (config.NODE_ENV === "development" ? development : production);
+
 export const rateLimits = {
-  globalPerMinute: config.RATE_LIMIT_MAX,
-  authPer15Minutes: config.AUTH_RATE_LIMIT_MAX,
-  refreshPer15Minutes: config.REFRESH_RATE_LIMIT_MAX,
-  invitationPer15Minutes: config.INVITATION_RATE_LIMIT_MAX,
+  globalPerMinute: limit(config.RATE_LIMIT_MAX, 100, 2000),
+  authPer15Minutes: limit(config.AUTH_RATE_LIMIT_MAX, 10, 300),
+  refreshPer15Minutes: limit(config.REFRESH_RATE_LIMIT_MAX, 300, 3000),
+  invitationPer15Minutes: limit(config.INVITATION_RATE_LIMIT_MAX, 60, 600),
 } as const;
 
 export const cors = {

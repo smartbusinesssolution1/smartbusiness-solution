@@ -18,10 +18,13 @@ function actionsInSource(): Set<string> {
       const full = path.join(dir, name);
       if (fs.statSync(full).isDirectory()) walk(full);
       else if (name.endsWith(".ts") && !name.endsWith(".test.ts")) {
+        const text = fs.readFileSync(full, "utf8");
         // `action: "X"` in an audit call, and `action = "X"` when the code picks it first.
-        for (const m of fs.readFileSync(full, "utf8").matchAll(/\baction(?::|\s*=)\s*([^,;\n}]+)/g)) {
+        for (const m of text.matchAll(/\baction(?::|\s*=)\s*([^,;\n}]+)/g)) {
           for (const code of m[1]!.matchAll(/"([A-Z][A-Z_]+)"/g)) found.add(code[1]!);
         }
+        // platform-api's helper: this.auditForUser(user, "X", ip).
+        for (const m of text.matchAll(/auditForUser\([^,]+,\s*"([A-Z][A-Z_]+)"/g)) found.add(m[1]!);
       }
     }
   };

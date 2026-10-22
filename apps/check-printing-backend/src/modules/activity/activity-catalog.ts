@@ -40,6 +40,9 @@ export const SECURITY_ACTIONS = [
   "USER_REGISTERED",
   "REFRESH_FAILED",
   "ACCESS_DENIED",
+  "ACCOUNT_LOCKED",
+  "PASSWORD_RESET_REQUESTED",
+  "PASSWORD_RESET",
 ];
 
 // ─── What a describer can look up ───────────────────────────
@@ -283,6 +286,13 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
   ALL_SESSIONS_REVOKED: { category: "security", describe: () => "signed out on every device" },
   USER_REGISTERED: { category: "security", describe: () => "created an account" },
   REFRESH_FAILED: { category: "security", describe: () => "had an expired or invalid session refused" },
+  ACCOUNT_LOCKED: {
+    category: "security",
+    describe: (_e, d) =>
+      `was locked out for ${plural(Number(d.lockedForMinutes ?? 0), "minute")} after ${plural(Number(d.failedAttempts ?? 0), "wrong password")}`,
+  },
+  PASSWORD_RESET_REQUESTED: { category: "security", describe: () => "asked for a password reset link" },
+  PASSWORD_RESET: { category: "security", describe: () => "reset their password (all sessions ended)" },
 };
 
 export function categoryOf(action: string): ActivityCategory {

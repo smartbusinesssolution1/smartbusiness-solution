@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { InlineAlert } from "@/components/app/layout";
+import { ApiError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/forms";
 import { AuthLayout } from "./auth-layout";
 import { PasswordInput, PasswordRules, passwordProblem } from "./password-input";
@@ -36,13 +37,19 @@ export function SignInPage() {
   const navigate = useNavigate();
   const login = useLogin();
   const [formError, setFormError] = React.useState<string | null>(null);
+  // Too many wrong passwords: the server says for how long; resetting unlocks it now.
+  const [locked, setLocked] = React.useState<string | null>(null);
   const { register, handleSubmit, setError, formState: { errors } } = useForm<{ email: string; password: string }>();
 
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
+    setLocked(null);
     login.mutate(values, {
       onSuccess: () => navigate(safeNext(params.get("next")), { replace: true }),
-      onError: (err) => setFormError(applyServerErrors(err, setError, ["email", "password"])),
+      onError: (err) => {
+        if (err instanceof ApiError && err.code === "ACCOUNT_LOCKED") setLocked(err.message);
+        else setFormError(applyServerErrors(err, setError, ["email", "password"]));
+      },
     });
   });
 
@@ -62,6 +69,19 @@ export function SignInPage() {
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
         {params.get("reset") === "done" && <InlineAlert tone="success">Your password was changed. Sign in with the new one.</InlineAlert>}
         <FormError message={formError} />
+        {locked && (
+          <InlineAlert
+            tone="warning"
+            title="Account locked"
+            action={
+              <Button variant="secondary" size="sm" asChild>
+                <Link to="/forgot-password">Reset password</Link>
+              </Button>
+            }
+          >
+            {locked}
+          </InlineAlert>
+        )}
         <Field label="Work email" htmlFor="email" error={errors.email?.message}>
           <Input type="email" autoComplete="email" autoFocus placeholder="you@company.com" {...register("email", { required: "Enter your email", pattern: { value: EMAIL, message: "That doesn't look like an email address" } })} />
         </Field>

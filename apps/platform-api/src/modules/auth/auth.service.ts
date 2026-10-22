@@ -5,7 +5,7 @@ import {
 } from "./auth.repository.js";
 import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
-import { AppError, ConflictError } from "../../shared/errors/index.js";
+import { AccountLockedError, AppError, ConflictError } from "../../shared/errors/index.js";
 import { TokenService, PasswordService, UserTokenService, type TokenProblem } from "@smartbusiness/auth";
 import {
   addedToWorkspaceEmail,
@@ -261,7 +261,19 @@ export class AuthService {
       throw new AuthError("Invalid email or password.");
     }
 
-    // The password is checked FIRST. Only someone who knows it may learn anything
+    // Account lockout: the attempt is counted BEFORE the password is checked (see
+    // reserveLoginAttempt), so a locked account never has its password tested, however
+    // many guesses arrive at once.
+    const attempt = await this.authRepository.reserveLoginAttempt(user.id);
+    if (!attempt.allowed) {
+      const lockedUntil = await this.authRepository.findLockedUntil(user.id);
+      // Logged, not audited: an attacker hammering a locked account must not be able to
+      // flood the audit log. The lock itself is audited once, when it starts.
+      logger.warn({ userId: user.id, ipAddress: ctx.ipAddress, lockedUntil }, "Sign-in refused: account locked");
+      throw new AccountLockedError(lockedUntil ?? new Date(Date.now() + 60_000));
+    }
+
+    // The password is checked next. Only someone who knows it may learn anything
     // about the account (deactivated, no active organization); anyone else gets the
     // same answer as for an unknown email, so accounts cannot be discovered.
     const isValidPassword = await this.passwordMatches(data.password, user.passwordHash);
@@ -274,12 +286,35 @@ export class AuthService {
           action: "LOGIN_FAILED",
           entityType: "Auth",
           entityId: user.id,
-          details: { reason: "INVALID_PASSWORD" },
+          details: { reason: "INVALID_PASSWORD", attempt: attempt.count },
           ipAddress: ctx.ipAddress,
         });
       }
+      if (attempt.lockedNow) {
+        const lockedUntil = (await this.authRepository.findLockedUntil(user.id)) ?? new Date(Date.now() + 60_000);
+        if (anyTenantId) {
+          await this.auditService.log({
+            tenantId: anyTenantId,
+            userId: user.id,
+            action: "ACCOUNT_LOCKED",
+            entityType: "User",
+            entityId: user.id,
+            details: {
+              failedAttempts: attempt.count,
+              lockedForMinutes: Math.round((lockedUntil.getTime() - Date.now()) / 60_000),
+              lockedUntil: lockedUntil.toISOString(),
+            },
+            ipAddress: ctx.ipAddress,
+          });
+        }
+        throw new AccountLockedError(lockedUntil);
+      }
       throw new AuthError("Invalid email or password.");
     }
+
+    // Right password: the count of wrong ones starts again (even if this attempt was the
+    // one that reached the limit).
+    await this.authRepository.clearLoginFailures(user.id);
 
     if (!user.isActive) {
       logger.warn(

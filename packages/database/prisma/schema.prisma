@@ -62,17 +62,22 @@ model Tenant {
 }
 
 model User {
-  id              String    @id @default(uuid())
-  fullName        String    @map("full_name")
-  email           String    @unique
+  id                String    @id @default(uuid())
+  fullName          String    @map("full_name")
+  email             String    @unique
   // null = invited, no password set yet: the account cannot sign in until the invitation is accepted
-  passwordHash    String?   @map("password_hash")
-  isActive        Boolean   @default(true) @map("is_active")
-  lastLoginAt     DateTime? @map("last_login_at")
-  emailVerifiedAt DateTime? @map("email_verified_at")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
-  deletedAt       DateTime? @map("deleted_at")
+  passwordHash      String?   @map("password_hash")
+  isActive          Boolean   @default(true) @map("is_active")
+  lastLoginAt       DateTime? @map("last_login_at")
+  // Account lockout: wrong passwords counted per account (wherever they come from), and
+  // the moment the account may be tried again. See the auth service's sign-in.
+  failedLoginCount  Int       @default(0) @map("failed_login_count")
+  lastFailedLoginAt DateTime? @map("last_failed_login_at")
+  lockedUntil       DateTime? @map("locked_until")
+  emailVerifiedAt   DateTime? @map("email_verified_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+  deletedAt         DateTime? @map("deleted_at")
 
   tenantMembers             TenantMember[]
   workspaceMembers          WorkspaceMember[]

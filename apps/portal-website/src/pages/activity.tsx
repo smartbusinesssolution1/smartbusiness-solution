@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils";
 const FILTER_KEYS = ["userId", "category", "entityId", "from", "to", "outcome"] as const;
 type Tab = "workspace" | "security";
 
-const FAILED = new Set(["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED"]);
+const FAILED = new Set(["LOGIN_FAILED", "LOGIN_FAILED_INACTIVE", "LOGIN_FAILED_NO_TENANT", "REFRESH_FAILED", "ACCESS_DENIED", "ACCOUNT_LOCKED"]);
 
 function useIsCompanyOwner(): boolean {
   const { data: session } = useSession();
