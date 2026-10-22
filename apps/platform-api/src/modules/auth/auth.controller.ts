@@ -35,7 +35,7 @@ export class AuthController {
 
   private isAppPlatform(req: Request): boolean {
     const platformHeader = (req.headers["platform"] || req.headers["x-platform"]) as string | undefined;
-    return platformHeader?.toLowerCase() === "app";
+    return platformHeader?.toLowerCase() === "app" || (req.body as any)?.platform === "app";
   }
 
   register = async (req: Request, res: Response): Promise<void> => {
@@ -91,7 +91,7 @@ export class AuthController {
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
 
-    if (this.isAppPlatform(req)) {
+    if (this.isAppPlatform(req) || req.body?.refreshToken) {
       sendSuccess(res, {
         user: result.user,
         tenants: result.tenants,

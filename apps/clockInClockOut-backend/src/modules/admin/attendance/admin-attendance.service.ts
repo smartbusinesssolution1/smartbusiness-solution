@@ -19,20 +19,21 @@ export class AdminAttendanceService {
    * Format a Date into YYYY-MM-DD
    */
   private formatDateOnly(date: Date): string {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-    const day = String(date.getUTCDate()).padStart(2, "0");
+    const dt = new Date(date);
+    const year = dt.getUTCFullYear();
+    const month = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(dt.getUTCDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
 
   /**
-   * Format a Date into HH:mm:ss
+   * Format a Date into HH:mm:ss (using local server timezone rather than raw UTC)
    */
   private formatTimeOnly(date: Date | null): string | null {
     if (!date) return null;
-    const hours = String(date.getUTCHours()).padStart(2, "0");
-    const minutes = String(date.getUTCMinutes()).padStart(2, "0");
-    const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
     return `${hours}:${minutes}:${seconds}`;
   }
 
@@ -95,7 +96,10 @@ export class AdminAttendanceService {
     // Transform DB rows into frontend FormattedAttendanceItem
     const formattedItems: FormattedAttendanceItem[] = items.map((rec) => {
       const statusLower = rec.status.toLowerCase() as FormattedAttendanceItem["status"];
-      const hours = this.calculateWorkingHours(rec.workingHours, rec.clockInTime, rec.clockOutTime);
+      const hours =
+        rec.workingHours !== null && rec.workingHours !== undefined
+          ? Number(rec.workingHours)
+          : this.calculateWorkingHours(rec.workingHours, rec.clockInTime, rec.clockOutTime);
 
       const isAbsent = statusLower === "absent";
       return {
@@ -111,6 +115,24 @@ export class AdminAttendanceService {
         notes: this.resolveNotes(rec.notes, statusLower),
         workspaceId: rec.employee.workspaceMember.workspace.id,
         workspaceName: rec.employee.workspaceMember.workspace.businessName,
+        totalSessions: rec.totalSessions ?? (isAbsent ? 0 : 1),
+        sessions: (rec.sessions || []).map((s: any, idx: number) => ({
+          id: s.id,
+          sessionNumber: idx + 1,
+          checkIn: this.formatTimeOnly(s.clockInTime),
+          checkOut: this.formatTimeOnly(s.clockOutTime),
+          status: s.status.toLowerCase(),
+          workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
+          notes: s.notes || null,
+          selfieUrl: s.selfieUrl || null,
+          clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
+          clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
+          clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
+          clockOutFaceMatchConfidence: s.clockOutFaceMatchConfidence ? Number(s.clockOutFaceMatchConfidence) : null,
+          clockOutLatitude: s.clockOutLatitude ? Number(s.clockOutLatitude) : null,
+          clockOutLongitude: s.clockOutLongitude ? Number(s.clockOutLongitude) : null,
+          isAutoClosed: s.isAutoClosed || false,
+        })),
       };
     });
 
@@ -192,7 +214,10 @@ export class AdminAttendanceService {
 
     const formattedItems: FormattedAttendanceItem[] = rawRecords.map((rec) => {
       const statusLower = rec.status.toLowerCase() as FormattedAttendanceItem["status"];
-      const hours = this.calculateWorkingHours(rec.workingHours, rec.clockInTime, rec.clockOutTime);
+      const hours =
+        rec.workingHours !== null && rec.workingHours !== undefined
+          ? Number(rec.workingHours)
+          : this.calculateWorkingHours(rec.workingHours, rec.clockInTime, rec.clockOutTime);
 
       const isAbsent = statusLower === "absent";
       return {
@@ -208,6 +233,24 @@ export class AdminAttendanceService {
         notes: this.resolveNotes(rec.notes, statusLower),
         workspaceId: rec.employee.workspaceMember.workspace.id,
         workspaceName: rec.employee.workspaceMember.workspace.businessName,
+        totalSessions: rec.totalSessions ?? (isAbsent ? 0 : 1),
+        sessions: (rec.sessions || []).map((s: any, idx: number) => ({
+          id: s.id,
+          sessionNumber: idx + 1,
+          checkIn: this.formatTimeOnly(s.clockInTime),
+          checkOut: this.formatTimeOnly(s.clockOutTime),
+          status: s.status.toLowerCase(),
+          workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
+          notes: s.notes || null,
+          selfieUrl: s.selfieUrl || null,
+          clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
+          clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
+          clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
+          clockOutFaceMatchConfidence: s.clockOutFaceMatchConfidence ? Number(s.clockOutFaceMatchConfidence) : null,
+          clockOutLatitude: s.clockOutLatitude ? Number(s.clockOutLatitude) : null,
+          clockOutLongitude: s.clockOutLongitude ? Number(s.clockOutLongitude) : null,
+          isAutoClosed: s.isAutoClosed || false,
+        })),
       };
     });
 

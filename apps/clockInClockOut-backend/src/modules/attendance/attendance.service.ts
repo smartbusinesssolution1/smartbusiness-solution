@@ -1,8 +1,13 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
 import { AttendanceRepository } from "./attendance.repository.js";
+import {
+  ATTENDANCE_THRESHOLDS,
+  resolveAttendanceStatusByHours,
+} from "./attendance.constants.js";
 import { AppError, NotFoundError, ValidationError } from "../../shared/errors/index.js";
 import { storageService } from "../../shared/services/storage.service.js";
 import { faceRecognitionService } from "../../shared/services/faceRecognition.service.js";
+import { memoryCache } from "../../shared/services/cache.service.js";
 import type {
   VerifyLocationInput,
   CheckInInput,
@@ -299,6 +304,11 @@ export class AttendanceService {
       notes: input.notes,
     });
 
+    // Invalidate cached attendance datasets and reports for admin dashboard
+    memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+
     const timeStr = formatTimeAMPM(now);
     const dateFormatted = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
     const dayFormatted = now.toLocaleDateString("en-US", { weekday: "long" });
@@ -383,6 +393,30 @@ export class AttendanceService {
     const elapsedMs = Math.max(0, now.getTime() - clockInTimestamp);
     const sessionWorkingHours = Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100;
 
+    // Fetch prior completed sessions today to calculate day's cumulative working hours
+    const priorTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
+    const priorHours = priorTodaySessions
+      .filter((s) => s.id !== activeSession.id && s.clockOutTime)
+      .reduce((sum, s) => sum + Number(s.workingHours || 0), 0);
+    const totalWorkingHoursToday = Math.round((priorHours + sessionWorkingHours) * 100) / 100;
+
+    // Determine if the employee's initial arrival was late
+    const firstSessionToday = priorTodaySessions[0] || activeSession;
+    const settings = employee.workspaceMember.workspace.attendanceSettings;
+    const [startHourStr, startMinStr] = (settings?.defaultShiftStartTime || "09:00").split(":");
+    const startHour = parseInt(startHourStr || "9", 10);
+    const startMin = parseInt(startMinStr || "0", 10);
+    const graceMin = settings?.graceMinutes ?? 15;
+    const shiftLimitMinutes = startHour * 60 + startMin + graceMin;
+    const firstArrival = new Date(firstSessionToday.clockInTime);
+    const firstArrivalMinutes = firstArrival.getHours() * 60 + firstArrival.getMinutes();
+    const isLateArrival =
+      firstSessionToday.status === AttendanceStatus.LATE ||
+      firstArrivalMinutes > shiftLimitMinutes;
+
+    // Resolve attendance status based on cumulative working hours (Approach 1)
+    const resolvedStatus = resolveAttendanceStatusByHours(totalWorkingHoursToday, isLateArrival);
+
     const updated = await this.attendanceRepo.updateClockOutRecord(activeSession.id, {
       clockOutDate: todayDate,
       clockOutTime: now,
@@ -391,23 +425,38 @@ export class AttendanceService {
       clockOutFaceMatchConfidence: 98.0,
       workingHours: sessionWorkingHours,
       notes: input.notes,
+      status: resolvedStatus,
     });
+
+    // Synchronize all completed sessions today to the day's resolved status
+    if (priorTodaySessions.length > 0) {
+      await this.attendanceRepo.updateTodayRecordsStatus(employee.id, todayDate, resolvedStatus);
+    }
+
+    // Invalidate cached attendance datasets and reports for admin dashboard
+    memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
 
     // Sum cumulative working hours across all completed sessions today
     const allTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
-    const totalWorkingHoursToday = Math.round(
-      allTodaySessions.reduce((sum, s) => sum + Number(s.workingHours || 0), 0) * 100
-    ) / 100;
 
     const checkInStr = formatTimeAMPM(new Date(activeSession.clockInTime));
     const checkOutStr = formatTimeAMPM(now);
+
+    let statusMessage = `Shift clocked out successfully! (Session: ${sessionWorkingHours} hrs | Today Total: ${totalWorkingHoursToday} hrs)`;
+    if (resolvedStatus === AttendanceStatus.ABSENT) {
+      statusMessage = `Shift clocked out. Logged ${totalWorkingHoursToday} hrs (marked Absent: under ${ATTENDANCE_THRESHOLDS.MIN_HOURS_FOR_ABSENT} hr threshold).`;
+    } else if (resolvedStatus === AttendanceStatus.HALF_DAY) {
+      statusMessage = `Shift clocked out successfully! Logged ${totalWorkingHoursToday} hrs (Half-Day shift recorded).`;
+    }
 
     return {
       id: updated.id,
       date: now.toISOString().split("T")[0],
       checkInTime: checkInStr,
       checkOutTime: checkOutStr,
-      status: updated.status,
+      status: resolvedStatus,
       sessionWorkingHours,
       workingHours: totalWorkingHoursToday,
       sessionsCompletedToday: allTodaySessions.length,
@@ -417,7 +466,7 @@ export class AttendanceService {
         checkOutTime: checkOutStr,
         hoursWorked: totalWorkingHoursToday,
         sessionHoursWorked: sessionWorkingHours,
-        targetHours: 8.0,
+        targetHours: ATTENDANCE_THRESHOLDS.FULL_DAY_TARGET_HOURS,
       },
       record: {
         id: updated.id,
@@ -427,9 +476,9 @@ export class AttendanceService {
         checkOut: checkOutStr,
         hoursLogged: `${totalWorkingHoursToday} hrs`,
         rawHours: totalWorkingHoursToday,
-        status: updated.status.toLowerCase(),
+        status: resolvedStatus.toLowerCase(),
       },
-      message: `Shift clocked out successfully! (Session: ${sessionWorkingHours} hrs | Today Total: ${totalWorkingHoursToday} hrs)`,
+      message: statusMessage,
     };
   }
 
@@ -513,8 +562,10 @@ export class AttendanceService {
       ? formatTimeAMPM(new Date(lastSession.clockOutTime))
       : null;
 
-    const status = todaySessions.some((s) => s.status === AttendanceStatus.LATE)
-      ? AttendanceStatus.LATE
+    const status = activeSession
+      ? todaySessions.some((s) => s.status === AttendanceStatus.LATE)
+        ? AttendanceStatus.LATE
+        : AttendanceStatus.PRESENT
       : firstSession
       ? firstSession.status
       : "NOT_CLOCKED_IN";

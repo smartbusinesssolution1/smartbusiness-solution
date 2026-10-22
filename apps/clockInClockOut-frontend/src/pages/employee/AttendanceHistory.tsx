@@ -88,6 +88,8 @@ export const AttendanceHistory: React.FC = () => {
         return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
       case 'absent':
         return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+      case 'half_day':
+        return <Chip label="Half Day" color="info" size="small" />;
       case 'auto_closed':
         return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
       default:

@@ -55,20 +55,40 @@ export interface User {
   weeklySchedule?: WeeklySchedule;
 }
 
+export interface AttendanceSessionLog {
+  id: string;
+  sessionNumber: number;
+  checkIn: string | null;
+  checkOut: string | null;
+  status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
+  workingHours: number;
+  notes?: string | null;
+  selfieUrl?: string | null;
+  clockInFaceMatchConfidence?: number | null;
+  clockInLatitude?: number | null;
+  clockInLongitude?: number | null;
+  clockOutFaceMatchConfidence?: number | null;
+  clockOutLatitude?: number | null;
+  clockOutLongitude?: number | null;
+  isAutoClosed?: boolean;
+}
+
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
   employeeName: string;
   avatarUrl?: string | null;
   date: string; // YYYY-MM-DD
-  checkIn: string | null; // HH:mm:ss or null
-  checkOut: string | null; // HH:mm:ss or null
+  checkIn: string | null; // HH:mm:ss or null (First clock-in)
+  checkOut: string | null; // HH:mm:ss or null (Last clock-out)
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
-  workingHours: number; // in hours
+  workingHours: number; // in hours (Total sum)
   notes?: string;
   selfieUrl?: string;
   workspaceId?: string;
   workspaceName?: string;
+  totalSessions?: number;
+  sessions?: AttendanceSessionLog[];
 }
 
 export interface AttendanceReportSummary {

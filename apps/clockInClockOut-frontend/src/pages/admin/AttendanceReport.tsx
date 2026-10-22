@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
+import { AttendanceAuditDrawer } from '../../components/AttendanceAuditDrawer';
+import { AttendanceRecord } from '../../types';
 import {
   Box,
   Card,
@@ -27,6 +29,10 @@ import {
   useTheme,
   Avatar,
   Alert,
+  Tooltip,
+  TableSortLabel,
+  LinearProgress,
+  CircularProgress,
 } from '@mui/material';
 import {
   FilterList as FilterIcon,
@@ -38,6 +44,7 @@ import {
   FileDownload as DownloadIcon,
   EventNote as ReportIcon,
   Refresh as RefreshIcon,
+  InfoOutlined as InfoIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import { useAuth } from '../../context/AuthContext';
@@ -63,10 +70,14 @@ export const AttendanceReport: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const debouncedSearch = useDebounce(searchTerm, 350);
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState(() => dayjs().format('YYYY-MM-DD'));
+  const [dateFilter, setDateFilter] = useState('');
 
   // Export Modal State (only opens when clicking Export button)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  // Side Drawer State for detailed punch logs
+  const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   // Pagination State (0-indexed for MUI TablePagination)
   const [page, setPage] = useState(0);
@@ -76,6 +87,7 @@ export const AttendanceReport: React.FC = () => {
   const {
     data: reportData,
     isLoading,
+    isFetching,
     isError,
     refetch,
   } = useQuery({
@@ -95,7 +107,138 @@ export const AttendanceReport: React.FC = () => {
     gcTime: 300_000,
   });
 
+  const queryClient = useQueryClient();
+
+  // Background-prefetch adjacent pages so page navigation is instantaneous (<1ms)
+  React.useEffect(() => {
+    if (!user || !activeWorkspaceId || !reportData?.pagination) return;
+    const totalPages = reportData.pagination.totalPages;
+
+    // Prefetch Next Page
+    if (page + 1 < totalPages) {
+      queryClient.prefetchQuery({
+        queryKey: [
+          'adminAttendanceReports',
+          activeWorkspaceId,
+          page + 1,
+          rowsPerPage,
+          debouncedSearch.trim(),
+          statusFilter,
+          dateFilter,
+        ],
+        queryFn: () =>
+          attendanceService.getAdminAttendanceReport({
+            page: page + 2,
+            limit: rowsPerPage,
+            search: debouncedSearch.trim() || undefined,
+            status: statusFilter,
+            date: dateFilter || undefined,
+            workspaceId: activeWorkspaceId || undefined,
+          }),
+        staleTime: 30_000,
+      });
+    }
+
+    // Prefetch Previous Page
+    if (page > 0) {
+      queryClient.prefetchQuery({
+        queryKey: [
+          'adminAttendanceReports',
+          activeWorkspaceId,
+          page - 1,
+          rowsPerPage,
+          debouncedSearch.trim(),
+          statusFilter,
+          dateFilter,
+        ],
+        queryFn: () =>
+          attendanceService.getAdminAttendanceReport({
+            page: page,
+            limit: rowsPerPage,
+            search: debouncedSearch.trim() || undefined,
+            status: statusFilter,
+            date: dateFilter || undefined,
+            workspaceId: activeWorkspaceId || undefined,
+          }),
+        staleTime: 30_000,
+      });
+    }
+  }, [
+    page,
+    rowsPerPage,
+    debouncedSearch,
+    statusFilter,
+    dateFilter,
+    activeWorkspaceId,
+    reportData?.pagination,
+    user,
+    queryClient,
+  ]);
+
   const records = reportData?.items || [];
+
+  // Time-wise and column sorting state (default: Check-In time descending)
+  const [sortField, setSortField] = useState<'checkIn' | 'checkOut' | 'employeeName' | 'workingHours' | 'date'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const handleRequestSort = (property: 'checkIn' | 'checkOut' | 'employeeName' | 'workingHours' | 'date') => {
+    const isAsc = sortField === property && sortOrder === 'asc';
+    setSortOrder(isAsc ? 'desc' : 'asc');
+    setSortField(property);
+  };
+
+  const sortedRecords = React.useMemo(() => {
+    const items = [...records];
+    items.sort((a, b) => {
+      if (sortField === 'date') {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateB !== dateA) {
+          return sortOrder === 'asc' ? dateA.localeCompare(dateB) : dateB.localeCompare(dateA);
+        }
+        if (!a.checkIn && b.checkIn) return 1;
+        if (a.checkIn && !b.checkIn) return -1;
+        if (!a.checkIn && !b.checkIn) return 0;
+        return (b.checkIn || '').localeCompare(a.checkIn || '');
+      }
+      if (sortField === 'checkIn') {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+
+        if (!a.checkIn && b.checkIn) return 1;
+        if (a.checkIn && !b.checkIn) return -1;
+        if (!a.checkIn && !b.checkIn) return 0;
+        return sortOrder === 'asc'
+          ? (a.checkIn || '').localeCompare(b.checkIn || '')
+          : (b.checkIn || '').localeCompare(a.checkIn || '');
+      }
+      if (sortField === 'checkOut') {
+        const dateA = a.date || '';
+        const dateB = b.date || '';
+        if (dateB !== dateA) return dateB.localeCompare(dateA);
+
+        if (!a.checkOut && b.checkOut) return 1;
+        if (a.checkOut && !b.checkOut) return -1;
+        if (!a.checkOut && !b.checkOut) return 0;
+        return sortOrder === 'asc'
+          ? (a.checkOut || '').localeCompare(b.checkOut || '')
+          : (b.checkOut || '').localeCompare(a.checkOut || '');
+      }
+      if (sortField === 'employeeName') {
+        return sortOrder === 'asc'
+          ? (a.employeeName || '').localeCompare(b.employeeName || '')
+          : (b.employeeName || '').localeCompare(a.employeeName || '');
+      }
+      if (sortField === 'workingHours') {
+        const hA = a.workingHours || 0;
+        const hB = b.workingHours || 0;
+        return sortOrder === 'asc' ? hA - hB : hB - hA;
+      }
+      return 0;
+    });
+    return items;
+  }, [records, sortField, sortOrder]);
   const totalCount = reportData?.pagination?.total || 0;
   const summary = reportData?.summary || {
     totalShifts: 0,
@@ -414,7 +557,21 @@ export const AttendanceReport: React.FC = () => {
       </Card>
 
       {/* Reports Table Card */}
-      <Card sx={{ borderRadius: 3 }}>
+      <Card sx={{ borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
+        {/* Top Progress Bar when fetching in background (pagination, filtering, refetch) */}
+        {isFetching && (
+          <LinearProgress
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 3,
+              zIndex: 10,
+            }}
+          />
+        )}
+
         {isLoading ? (
           <Box sx={{ p: 3 }}>
             <Skeleton variant="rectangular" height={50} sx={{ mb: 1, borderRadius: 1 }} />
@@ -423,25 +580,111 @@ export const AttendanceReport: React.FC = () => {
             <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
           </Box>
         ) : (
-          <Box>
-            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
+          <Box sx={{ position: 'relative' }}>
+            {/* Overlay Loader when paginating or fetching next page */}
+            {isFetching && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  bgcolor: (theme) =>
+                    theme.palette.mode === 'dark'
+                      ? 'rgba(18, 18, 18, 0.65)'
+                      : 'rgba(255, 255, 255, 0.72)',
+                  backdropFilter: 'blur(1px)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 1.5,
+                  zIndex: 4,
+                  pointerEvents: 'auto',
+                }}
+              >
+                <CircularProgress size={36} thickness={4} />
+                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                  Loading attendance records...
+                </Typography>
+              </Box>
+            )}
+
+            <TableContainer
+              component={Paper}
+              elevation={0}
+              sx={{
+                borderRadius: 0,
+                opacity: isFetching ? 0.45 : 1,
+                transition: 'opacity 0.2s ease-in-out',
+                pointerEvents: isFetching ? 'none' : 'auto',
+              }}
+            >
               <Table sx={{ minWidth: 650 }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell>Date</TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'date'}
+                        direction={sortField === 'date' ? sortOrder : 'asc'}
+                        onClick={() => handleRequestSort('date')}
+                      >
+                        Date
+                      </TableSortLabel>
+                    </TableCell>
                     <TableCell>Employee ID</TableCell>
-                    <TableCell>Employee Name</TableCell>
-                    <TableCell>Check-In</TableCell>
-                    <TableCell>Check-Out</TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'employeeName'}
+                        direction={sortField === 'employeeName' ? sortOrder : 'asc'}
+                        onClick={() => handleRequestSort('employeeName')}
+                      >
+                        Employee Name
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'checkIn'}
+                        direction={sortField === 'checkIn' ? sortOrder : 'desc'}
+                        onClick={() => handleRequestSort('checkIn')}
+                        sx={{ fontWeight: 800 }}
+                      >
+                        Check-In
+                      </TableSortLabel>
+                    </TableCell>
+                    <TableCell>
+                      <TableSortLabel
+                        active={sortField === 'checkOut'}
+                        direction={sortField === 'checkOut' ? sortOrder : 'desc'}
+                        onClick={() => handleRequestSort('checkOut')}
+                      >
+                        Check-Out
+                      </TableSortLabel>
+                    </TableCell>
                     <TableCell>Status</TableCell>
-                    <TableCell align="right">Working Hours</TableCell>
+                    <TableCell align="right">
+                      <TableSortLabel
+                        active={sortField === 'workingHours'}
+                        direction={sortField === 'workingHours' ? sortOrder : 'desc'}
+                        onClick={() => handleRequestSort('workingHours')}
+                      >
+                        Working Hours
+                      </TableSortLabel>
+                    </TableCell>
                     <TableCell>Audit Note</TableCell>
+                    <TableCell align="center">Logs & Info</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {records.length > 0 ? (
-                    records.map((record) => {
+                  {sortedRecords.length > 0 ? (
+                    sortedRecords.map((record) => {
                       const isAbsent = record.status === 'absent';
+                      const hasLogs = Boolean(
+                        (record.sessions && record.sessions.length > 0) ||
+                        (record.totalSessions && record.totalSessions > 0) ||
+                        record.checkIn
+                      );
                       return (
                         <TableRow
                           key={record.id}
@@ -487,30 +730,23 @@ export const AttendanceReport: React.FC = () => {
                             </Box>
                           </TableCell>
                           <TableCell sx={{ fontWeight: 600 }}>
-                            {isAbsent ? (
+                            {record.checkIn ? (
+                              dayjs(`${record.date}T${record.checkIn}`).isValid()
+                                ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
+                                : record.checkIn
+                            ) : isAbsent ? (
                               <Typography
                                 variant="body2"
                                 sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
                               >
                                 No Check-In
                               </Typography>
-                            ) : record.checkIn ? (
-                              dayjs(`${record.date}T${record.checkIn}`).isValid()
-                                ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
-                                : record.checkIn
                             ) : (
                               '--'
                             )}
                           </TableCell>
                           <TableCell sx={{ fontWeight: 600 }}>
-                            {isAbsent ? (
-                              <Typography
-                                variant="body2"
-                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
-                              >
-                                No Check-Out
-                              </Typography>
-                            ) : record.checkOut ? (
+                            {record.checkOut ? (
                               dayjs(`${record.date}T${record.checkOut}`).isValid()
                                 ? dayjs(`${record.date}T${record.checkOut}`).format('hh:mm A')
                                 : record.checkOut
@@ -518,18 +754,25 @@ export const AttendanceReport: React.FC = () => {
                               <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>
                                 Active Shift
                               </span>
+                            ) : isAbsent ? (
+                              <Typography
+                                variant="body2"
+                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
+                              >
+                                No Check-Out
+                              </Typography>
                             ) : (
                               '--'
                             )}
                           </TableCell>
                           <TableCell>{getStatusChip(record.status)}</TableCell>
                           <TableCell align="right" sx={{ fontWeight: 700 }}>
-                            {isAbsent ? (
+                            {record.workingHours && Number(record.workingHours) > 0 ? (
+                              `${record.workingHours} hrs`
+                            ) : isAbsent ? (
                               <Typography variant="body2" sx={{ color: 'text.disabled', fontWeight: 600 }}>
                                 0 hrs
                               </Typography>
-                            ) : record.workingHours ? (
-                              `${record.workingHours} hrs`
                             ) : (
                               '--'
                             )}
@@ -544,12 +787,42 @@ export const AttendanceReport: React.FC = () => {
                           >
                             {record.notes || '--'}
                           </TableCell>
+                          <TableCell align="center">
+                            <Tooltip title={hasLogs ? 'View Detailed Punch Logs' : 'No logs for absent employee'}>
+                              <span>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  color="primary"
+                                  disabled={!hasLogs}
+                                  startIcon={<InfoIcon sx={{ fontSize: 16 }} />}
+                                  onClick={() => {
+                                    setSelectedRecord(record);
+                                    setIsDrawerOpen(true);
+                                  }}
+                                  sx={{
+                                    textTransform: 'none',
+                                    fontWeight: 700,
+                                    fontSize: '0.75rem',
+                                    borderRadius: 2,
+                                    py: 0.35,
+                                    px: 1.2,
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {record.totalSessions && record.totalSessions > 1
+                                    ? `${record.totalSessions} Logs`
+                                    : 'Logs'}
+                                </Button>
+                              </span>
+                            </Tooltip>
+                          </TableCell>
                         </TableRow>
                       );
                     })
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
+                      <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
                         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                           <ReportIcon sx={{ fontSize: 40, color: 'text.secondary' }} />
                           <Typography variant="subtitle2" sx={{ fontWeight: 700, mt: 1 }}>
@@ -575,11 +848,19 @@ export const AttendanceReport: React.FC = () => {
               page={page}
               onPageChange={handlePageChange}
               onRowsPerPageChange={handleRowsPerPageChange}
+              disabled={isFetching}
               sx={{ borderTop: `1px solid ${theme.palette.divider}` }}
             />
           </Box>
         )}
       </Card>
+
+      {/* Side Drawer: Detailed Punch Logs & Face Biometrics for Employee */}
+      <AttendanceAuditDrawer
+        open={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        record={selectedRecord}
+      />
 
       {/* Export Audit Report Modal - Only triggers file generation when user explicitly clicks Download */}
       <ExportAuditReportModal

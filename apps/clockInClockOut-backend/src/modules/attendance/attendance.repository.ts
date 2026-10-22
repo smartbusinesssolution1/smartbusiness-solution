@@ -239,6 +239,7 @@ export class AttendanceRepository {
       clockOutFaceMatchConfidence?: number;
       workingHours: number;
       notes?: string;
+      status?: AttendanceStatus;
     }
   ) {
     const {
@@ -249,6 +250,7 @@ export class AttendanceRepository {
       clockOutFaceMatchConfidence,
       workingHours,
       notes,
+      status,
     } = params;
 
     return prisma.attendanceRecord.update({
@@ -262,6 +264,7 @@ export class AttendanceRepository {
           clockOutFaceMatchConfidence !== undefined ? clockOutFaceMatchConfidence : null,
         workingHours,
         notes: notes || undefined,
+        status: status !== undefined ? status : undefined,
         updatedAt: new Date(),
       },
       include: {
@@ -275,6 +278,27 @@ export class AttendanceRepository {
             },
           },
         },
+      },
+    });
+  }
+
+  /**
+   * Updates the attendance status across all records for a given employee and date
+   * (used when multi-session cumulative hours change the day's resolved status)
+   */
+  async updateTodayRecordsStatus(
+    employeeId: string,
+    clockInDate: Date,
+    status: AttendanceStatus
+  ) {
+    return prisma.attendanceRecord.updateMany({
+      where: {
+        employeeId,
+        clockInDate,
+      },
+      data: {
+        status,
+        updatedAt: new Date(),
       },
     });
   }
@@ -394,7 +418,10 @@ export class AttendanceRepository {
 
     for (const [, dayRecords] of dateMap.entries()) {
       const isAnyPresent = dayRecords.some(
-        (r) => r.status === AttendanceStatus.PRESENT || r.status === AttendanceStatus.LATE
+        (r) =>
+          r.status === AttendanceStatus.PRESENT ||
+          r.status === AttendanceStatus.LATE ||
+          r.status === AttendanceStatus.HALF_DAY
       );
       if (isAnyPresent) presentDays++;
 
