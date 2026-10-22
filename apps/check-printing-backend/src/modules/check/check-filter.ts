@@ -29,14 +29,14 @@ export type SortOrder = "asc" | "desc";
 export type RegisterView = (typeof VIEWS)[number];
 
 // Each item is validated from a string, so the pipe input is string[].
-const list = <T extends z.ZodType<unknown, string>>(item: T, max = 20) =>
+export const list = <T extends z.ZodType<unknown, string>>(item: T, max = 20) =>
   z
     .string()
     .transform((s) => s.split(",").map((part) => part.trim()).filter(Boolean))
     .pipe(z.array(item).min(1).max(max));
 
 // Calendar day "YYYY-MM-DD" as UTC midnight (check and cleared dates are stored that way).
-const day = z
+export const day = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-31")
   .transform((s) => new Date(`${s}T00:00:00.000Z`))

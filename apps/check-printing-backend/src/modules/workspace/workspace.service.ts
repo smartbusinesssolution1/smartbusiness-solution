@@ -10,6 +10,7 @@ import type { UserTokenService } from "@smartbusiness/auth";
 import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { logger } from "../../shared/services/logger.js";
+import { auditChanges } from "../../shared/utils/audit-changes.js";
 import type {
   CreateWorkspaceInput,
   UpdateWorkspaceInput,
@@ -38,6 +39,8 @@ const INVITATION_RESEND_COOLDOWN_MS = 60 * 1000;
 export type MemberStatus = "ACTIVE" | "INVITED" | "INVITATION_EXPIRED";
 
 type LatestInvitation = { expiresAt: Date; createdAt: Date };
+
+const WORKSPACE_AUDITED_FIELDS = ["businessName", "addressLine1", "addressLine2", "city", "state", "zipCode", "phone"] as const;
 
 export class WorkspaceService {
   constructor(
@@ -119,11 +122,14 @@ export class WorkspaceService {
     input: UpdateWorkspaceInput,
     ctx: AuditContext,
   ) {
+    // The business name and address are printed on every check: the log keeps what they were.
+    const before = await this.workspaceRepository.findById(workspaceId, tenantId);
     const workspace = await this.workspaceRepository.update(
       workspaceId,
       tenantId,
       input,
     );
+    const saved = Object.fromEntries(Object.keys(input).map((k) => [k, workspace[k as keyof Workspace]]));
 
     await this.auditService.log({
       tenantId,
@@ -132,7 +138,7 @@ export class WorkspaceService {
       action: "WORKSPACE_UPDATED",
       entityType: "Workspace",
       entityId: workspaceId,
-      details: { fields: Object.keys(input) },
+      details: { changes: auditChanges(before ?? {}, saved, { fields: WORKSPACE_AUDITED_FIELDS }) },
       ipAddress: ctx.ipAddress,
     });
 

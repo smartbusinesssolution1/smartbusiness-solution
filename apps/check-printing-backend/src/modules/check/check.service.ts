@@ -37,6 +37,7 @@ import { formatAttachment } from "./attachment.service.js";
 import type { CheckNotificationService } from "./check-notification.service.js";
 import { Prisma } from "@smartbusiness/database";
 import type { CheckStatus, VoidType } from "@smartbusiness/database";
+import { auditChanges } from "../../shared/utils/audit-changes.js";
 
 // Shown when a printed check is voided: our records change, the bank's do not.
 function stopPaymentNotice(checkNumber: number): string {
@@ -366,7 +367,20 @@ export class CheckService {
       action: "CHECK_UPDATED",
       entityType: "Check",
       entityId: checkId,
-      details: { fields: Object.keys(updateData) },
+      // amountInWords follows the amount; clearing the line items is stored as null.
+      details: {
+        changes: auditChanges(
+          check,
+          {
+            payeeName: updateData.payeeName,
+            amount: updateData.amount,
+            checkDate: updateData.checkDate,
+            memo: updateData.memo,
+            invoiceTableJson: updateData.invoiceTableJson === Prisma.JsonNull ? null : updateData.invoiceTableJson,
+          },
+          { money: ["amount"] },
+        ),
+      },
       ipAddress: ctx.ipAddress,
     });
 

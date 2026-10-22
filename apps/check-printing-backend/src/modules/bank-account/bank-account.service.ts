@@ -18,6 +18,7 @@ import { bankAccountFingerprint, prisma } from "@smartbusiness/database";
 import { randomUUID } from "crypto";
 import { StorageNotFoundError, type ObjectStorage } from "../../shared/storage/index.js";
 import { cleanSignatureImage, SignatureImageError } from "./signature-image.js";
+import { auditChanges } from "../../shared/utils/audit-changes.js";
 // create bank account ---> createBankAccount()
 // update bank account ( only accountType ) ---> updateBankAccount()
 // soft delete bank account --> deleteBankAccount()
@@ -260,7 +261,8 @@ export class BankAccountService {
       action: "BANK_ACCOUNT_UPDATED",
       entityType: "BankAccount",
       entityId: bankAccountId,
-      details: { fields: Object.keys(data) },
+      // An allow-list: account and routing numbers never go into the log.
+      details: { changes: auditChanges(existing, data, { fields: ["accountType", "checkNumberPadding", "isActive"] }) },
       ipAddress: ctx.ipAddress,
     });
 

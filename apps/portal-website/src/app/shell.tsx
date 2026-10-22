@@ -15,6 +15,7 @@ import {
   Printer,
   Search,
   ShieldCheck,
+  ScrollText,
   SlidersHorizontal,
   Stamp,
   Users,
@@ -60,6 +61,7 @@ const SETTINGS: NavEntry[] = [
   { to: "settings/approvals", label: "Approval rules", icon: ShieldCheck, show: (can) => can("workspace:manage") },
   { to: "settings/limits", label: "Check limits", icon: SlidersHorizontal, show: (can) => can("workspace:manage") },
   { to: "settings/team", label: "Team", icon: Users, show: (can) => can("member:view") },
+  { to: "settings/activity", label: "Activity log", icon: ScrollText, show: (can) => can("workspace:manage") },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

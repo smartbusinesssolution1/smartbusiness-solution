@@ -21,6 +21,7 @@ import { bankAccountRouter } from "../bank-account/bank-account-route.js";
 import { payeeRouter } from "../payee/payee.route.js";
 import { checkRouter } from "../check/check.routes.js";
 import { approvalRuleRouter } from "../approval-rule/approval-rule.routes.js";
+import { activityRouter } from "../activity/activity.routes.js";
 import { calibrationRouter } from "../calibration/calibration.routes.js";
 import { checkPrintingSettingsRouter } from "../check-printing-settings/check-printing-settings.routes.js";
 
@@ -125,5 +126,8 @@ router.use("/:wid/approval-rules", workspaceMiddleware, approvalRuleRouter);
 router.use("/:wid/calibration", workspaceMiddleware, calibrationRouter);
 
 router.use("/:wid/check-printing-settings", workspaceMiddleware, checkPrintingSettingsRouter);
+
+// Admins read the workspace's activity; the company owner also reads sign-ins (checked inside).
+router.use("/:wid/activity", workspaceMiddleware, activityRouter);
 
 export default router;

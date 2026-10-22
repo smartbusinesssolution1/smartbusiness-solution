@@ -409,6 +409,7 @@ const EVENT_TEXT: Record<CheckStatus, string> = {
 };
 
 function Timeline({ check }: { check: Check }) {
+  const { wid, can } = useWorkspaceContext();
   type Event = { id: string; at: string; title: string; who: string; detail?: string | null; icon: typeof Clock; tone?: "ok" | "bad" | "warn" };
   const events: Event[] = check.statusHistory.map((h) => ({
     id: h.id,
@@ -432,7 +433,17 @@ function Timeline({ check }: { check: Check }) {
 
   return (
     <Panel>
-      <PanelHeader title={<span className="inline-flex items-center gap-2"><History className="size-4 text-muted" /> History</span>} description="Every change to this check, oldest first. Recorded permanently." />
+      <PanelHeader
+        title={<span className="inline-flex items-center gap-2"><History className="size-4 text-muted" /> History</span>}
+        description="Every change to this check, oldest first. Recorded permanently."
+        action={
+          can("workspace:manage") && (
+            <Button variant="ghost" size="sm" asChild>
+              <Link to={`/w/${wid}/settings/activity?entityId=${check.id}`}>Full activity</Link>
+            </Button>
+          )
+        }
+      />
       <ol className="relative flex flex-col gap-0 px-5 py-4">
         {events.map((e, i) => {
           const Icon = e.icon;

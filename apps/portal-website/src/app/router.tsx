@@ -30,6 +30,7 @@ const BatchSetupPage = page(() => import("@/pages/print-batch"), "BatchSetupPage
 const BatchJobPage = page(() => import("@/pages/print-batch"), "BatchJobPage");
 const PayeesPage = page(() => import("@/pages/payees"), "PayeesPage");
 const ReportsPage = page(() => import("@/pages/reports"), "ReportsPage");
+const ActivityPage = page(() => import("@/pages/activity"), "ActivityPage");
 const BankAccountsPage = page(() => import("@/pages/settings/bank-accounts"), "BankAccountsPage");
 const NewBankAccountPage = page(() => import("@/pages/settings/bank-accounts"), "NewBankAccountPage");
 const BankAccountDetailPage = page(() => import("@/pages/settings/bank-accounts"), "BankAccountDetailPage");
@@ -129,6 +130,7 @@ export const router = createBrowserRouter([
               { path: "settings/approvals", element: g(["workspace:manage"], <ApprovalSettingsPage />) },
               { path: "settings/limits", element: g(["workspace:manage"], <LimitsSettingsPage />) },
               { path: "settings/team", element: g(["member:view"], <TeamSettingsPage />) },
+              { path: "settings/activity", element: g(["workspace:manage"], <ActivityPage />) },
               { path: "*", element: <NotFound /> },
             ],
           },
