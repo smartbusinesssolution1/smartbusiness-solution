@@ -225,6 +225,15 @@ export const DashboardLayout: React.FC = () => {
                     navigate(item.path);
                     setMobileOpen(false);
                   }}
+                  onMouseEnter={() => {
+                    // Preload route chunk on hover for instant 0ms transition
+                    if (item.path === '/admin/employees') import('../pages/admin/EmployeeList');
+                    else if (item.path === '/admin/dashboard') import('../pages/admin/AdminDashboard');
+                    else if (item.path === '/admin/reports') import('../pages/admin/AttendanceReport');
+                    else if (item.path === '/admin/settings') import('../pages/admin/OrganizationSettings');
+                    else if (item.path === '/employee/dashboard') import('../pages/employee/EmployeeDashboard');
+                    else if (item.path === '/employee/history') import('../pages/employee/AttendanceHistory');
+                  }}
                   sx={{
                     borderRadius: 2,
                     py: 1.25,

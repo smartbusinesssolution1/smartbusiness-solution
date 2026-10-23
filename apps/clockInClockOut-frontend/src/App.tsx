@@ -11,10 +11,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      refetchOnMount: true,
-      staleTime: 1000 * 10, // 10 seconds
-      gcTime: 1000 * 60 * 5, // 5 minutes
-      retry: false,
+      refetchOnMount: false, // Serve cached data immediately without blocking UI
+      staleTime: 1000 * 60, // 60 seconds fresh window
+      gcTime: 1000 * 60 * 10, // 10 minutes memory retention
+      retry: 1,
     },
   },
 });

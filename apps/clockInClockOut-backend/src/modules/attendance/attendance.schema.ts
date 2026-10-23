@@ -11,14 +11,16 @@ export type VerifyLocationInput = z.infer<typeof VerifyLocationSchema>;
 
 export const CheckInSchema = z.object({
   workspaceId: z.string().optional(),
-  latitude: z.coerce.number().min(-90).max(90),
-  longitude: z.coerce.number().min(-180).max(180),
-  accuracy: z.coerce.number().optional(),
+  latitude: z.union([z.coerce.number().min(-90).max(90), z.null()]).optional().transform((val) => val ?? 0),
+  longitude: z.union([z.coerce.number().min(-180).max(180), z.null()]).optional().transform((val) => val ?? 0),
+  accuracy: z.union([z.coerce.number(), z.null()]).optional().transform((val) => val ?? undefined),
   angle: z.string().optional(),
   campusName: z.string().optional(),
   faceVerificationId: z.string().optional(),
   selfieUri: z.string().optional(),
   notes: z.string().optional(),
+  employeeId: z.string().optional(),
+  employeeName: z.string().optional(),
 });
 
 export type CheckInInput = z.infer<typeof CheckInSchema>;

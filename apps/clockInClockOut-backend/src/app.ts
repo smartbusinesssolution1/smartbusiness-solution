@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import corsMiddleware from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import { env } from "./config";
 import { globalRateLimiter } from "./middlewares/rateLimiter";
 import { requestLogger } from "./middlewares/requestLogger";
@@ -27,6 +28,15 @@ export function createApp(): Express {
     app.use(helmet({
         crossOriginResourcePolicy: {
             policy: "cross-origin"
+        },
+    }));
+    app.use(compression({
+        threshold: 1024,
+        filter: (req, res) => {
+            if (req.headers.accept && req.headers.accept.includes("text/event-stream")) {
+                return false;
+            }
+            return compression.filter(req, res);
         },
     }));
     app.use(globalRateLimiter);

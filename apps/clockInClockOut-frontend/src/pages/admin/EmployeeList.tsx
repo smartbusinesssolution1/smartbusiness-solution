@@ -121,7 +121,8 @@ export const EmployeeList: React.FC = () => {
         workspaceId: activeWorkspaceId || undefined,
       }),
     enabled: Boolean(user && activeWorkspaceId),
-    refetchOnMount: 'always',
+    staleTime: 30_000,
+    placeholderData: (previousData) => previousData,
   });
 
   // Filter out self user as an extra guarantee (also excluded on the backend)
@@ -358,7 +359,12 @@ export const EmployeeList: React.FC = () => {
                       >
                         <TableCell>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar src={getAvatarUrl(emp.avatarUrl)} alt={emp.name} sx={{ width: 32, height: 32 }} />
+                            <Avatar 
+                              src={getAvatarUrl(emp.avatarUrl)} 
+                              alt={emp.name} 
+                              sx={{ width: 32, height: 32 }}
+                              slotProps={{ img: { loading: 'lazy', decoding: 'async' } }}
+                            />
                             <Box>
                               <Typography variant="body2" sx={{ fontWeight: 700 }}>
                                 {emp.name}

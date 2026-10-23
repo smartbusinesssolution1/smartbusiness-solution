@@ -45,6 +45,18 @@ export function markSignedOut(): void {
   }
 }
 
+// In-memory getters injected by Zustand store to avoid repeated synchronous disk I/O (localStorage) on every request
+let getTenantId: (() => string | null | undefined) | null = null;
+let getWorkspaceId: (() => string | null | undefined) | null = null;
+
+export function setAuthGetters(
+  tenantGetter: () => string | null | undefined,
+  workspaceGetter: () => string | null | undefined
+): void {
+  getTenantId = tenantGetter;
+  getWorkspaceId = workspaceGetter;
+}
+
 export function isSignedIn(): boolean {
   try {
     return localStorage.getItem(SESSION_FLAG_KEY) === '1';
@@ -89,11 +101,11 @@ clockInApi.interceptors.request.use((config) => {
     delete config.headers['Content-Type'];
   }
 
-  const tenantId = localStorage.getItem('active_tenant_id');
+  const tenantId = getTenantId?.() || localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }
-  const workspaceId = localStorage.getItem('active_workspace_id');
+  const workspaceId = getWorkspaceId?.() || localStorage.getItem('active_workspace_id');
   if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
     config.headers.set('X-Workspace-Id', workspaceId);
   }
@@ -113,7 +125,7 @@ platformAuthApi.interceptors.request.use((config) => {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
-  const tenantId = localStorage.getItem('active_tenant_id');
+  const tenantId = getTenantId?.() || localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }

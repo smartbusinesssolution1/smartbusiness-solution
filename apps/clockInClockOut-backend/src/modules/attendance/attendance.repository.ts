@@ -1,11 +1,18 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
+import { memoryCache } from "../../shared/services/cache.service.js";
 
 export class AttendanceRepository {
   /**
    * Find employee profile with workspace and attendance settings by User ID and Tenant ID
    */
   async findEmployeeByUserId(userId: string, tenantId: string) {
-    return prisma.attendanceEmployeeDetails.findFirst({
+    const cacheKey = `emp:by-user:${tenantId}:${userId}`;
+    const cached = memoryCache.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const employee = await prisma.attendanceEmployeeDetails.findFirst({
       where: {
         deletedAt: null,
         workspaceMember: {
@@ -36,6 +43,11 @@ export class AttendanceRepository {
         },
       },
     });
+
+    if (employee) {
+      memoryCache.set(cacheKey, employee, 60);
+    }
+    return employee;
   }
 
   /**

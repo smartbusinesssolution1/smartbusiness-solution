@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { settingsService } from '../../services/settingsService';
 import { useGeolocation } from '../../hooks/useGeolocation';
-import { AttendanceCameraDialog } from '../../components/AttendanceCameraDialog';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import {
   Box,
@@ -38,11 +37,11 @@ import {
 import dayjs from 'dayjs';
 
 export const EmployeeDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, currentWorkspace } = useAuth();
   const theme = useTheme();
   const queryClient = useQueryClient();
 
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' | 'info' }>({
     open: false,
     message: '',
     severity: 'success',
@@ -52,7 +51,6 @@ export const EmployeeDashboard: React.FC = () => {
   const [usingGeo, setUsingGeo] = useState<boolean>(false);
 
   const { getPosition, loading: isLocating } = useGeolocation();
-  const [cameraDialogOpen, setCameraDialogOpen] = useState<boolean>(false);
   const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
 
   // Fetch metrics
@@ -62,22 +60,30 @@ export const EmployeeDashboard: React.FC = () => {
     enabled: !!user?.employeeId,
   });
 
-  // Check In Mutation
+  // Pre-load geofence settings so instant check-in never performs an extra HTTP request on click
+  const { data: officeSettings } = useQuery({
+    queryKey: ['workspaceSettings', currentWorkspace?.id],
+    queryFn: () => settingsService.getSettings(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Check In Mutation (1-Click Instant Punch)
   const checkInMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      return attendanceService.checkIn(formData);
+    mutationFn: async (payload: { latitude: number; longitude: number; accuracy?: number; employeeId: string; employeeName: string }) => {
+      return attendanceService.checkIn(payload);
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['employeeDashboardMetrics', user?.employeeId] });
       queryClient.invalidateQueries({ queryKey: ['employeeAttendanceHistory', user?.employeeId] });
+      const checkInFormatted = data?.checkInTime || dayjs().format('hh:mm A');
       setSnackbar({
         open: true,
-        message: 'Attendance marked successfully.',
+        message: `Clock-in successful at ${checkInFormatted}! Have a productive shift.`,
         severity: 'success',
       });
     },
     onError: (error: any) => {
-      const serverError = error?.response?.data?.error || error?.message || 'Check-in failed.';
+      const serverError = error?.response?.data?.error?.message || error?.response?.data?.error || error?.message || 'Check-in failed.';
       setSnackbar({
         open: true,
         message: serverError,
@@ -108,62 +114,40 @@ export const EmployeeDashboard: React.FC = () => {
   });
 
   const triggerCheckIn = async () => {
+    let coords = {
+      latitude: officeSettings?.latitude ? Number(officeSettings.latitude) : 0,
+      longitude: officeSettings?.longitude ? Number(officeSettings.longitude) : 0,
+      accuracy: 15,
+    };
+
     if (usingGeo) {
       try {
-        // Request browser location permission via HTML5 Geolocation API
         const position = await getPosition();
-        const coords = {
+        coords = {
           latitude: position.latitude,
           longitude: position.longitude,
           accuracy: position.accuracy,
         };
-        setSimulatedCoords(coords);
-        setCurrentCoords(coords);
-        // Open selfie capture dialog
-        setCameraDialogOpen(true);
       } catch (err: any) {
         setSnackbar({
           open: true,
-          message: err?.message || 'Location permission is required to check in.',
-          severity: 'error',
-        });
-      }
-    } else {
-      try {
-        // Use mock coordinates when real geofencing verification is disabled
-        const settings = await settingsService.getSettings();
-        const coords = {
-          latitude: settings.latitude,
-          longitude: settings.longitude,
-          accuracy: 15,
-        };
-        setSimulatedCoords(coords);
-        setCurrentCoords(coords);
-        // Open selfie capture dialog
-        setCameraDialogOpen(true);
-      } catch (err: any) {
-        setSnackbar({
-          open: true,
-          message: 'Failed to fetch office configuration settings from server.',
-          severity: 'error',
+          message: err?.message || 'Location permission unavailable. Using office default location.',
+          severity: 'warning',
         });
       }
     }
-  };
 
-  const handleCaptureSelfie = (selfieFile: File) => {
-    if (!currentCoords) return;
+    setSimulatedCoords(coords);
+    setCurrentCoords(coords);
 
-    const formData = new FormData();
-    formData.append('selfie', selfieFile);
-    formData.append('latitude', String(currentCoords.latitude));
-    formData.append('longitude', String(currentCoords.longitude));
-    formData.append('accuracy', String(currentCoords.accuracy));
-    formData.append('capturedAt', new Date().toISOString());
-    formData.append('employeeId', user?.employeeId || '');
-    formData.append('employeeName', user?.name || '');
-
-    checkInMutation.mutate(formData);
+    // 1-Click Instant Check-In: punch directly without preliminary HTTP requests
+    checkInMutation.mutate({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      accuracy: coords.accuracy,
+      employeeId: user?.employeeId || '',
+      employeeName: user?.name || '',
+    });
   };
 
   const triggerCheckOut = () => {
@@ -687,25 +671,6 @@ export const EmployeeDashboard: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      <AttendanceCameraDialog
-        open={cameraDialogOpen}
-        onClose={() => setCameraDialogOpen(false)}
-        employeeId={user?.employeeId || ''}
-        employeeName={user?.name || ''}
-        latitude={currentCoords?.latitude || null}
-        longitude={currentCoords?.longitude || null}
-        accuracy={currentCoords?.accuracy || null}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['employeeDashboardMetrics', user?.employeeId] });
-          queryClient.invalidateQueries({ queryKey: ['employeeAttendanceHistory', user?.employeeId] });
-          setSnackbar({
-            open: true,
-            message: 'Attendance marked successfully after matching face!',
-            severity: 'success',
-          });
-        }}
-      />
     </Box>
   );
 };

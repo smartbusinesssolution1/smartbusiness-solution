@@ -26,6 +26,41 @@ export default defineConfig(() => {
         '@hookform/resolvers/zod',
       ],
     },
+    build: {
+      target: 'es2020',
+      minify: 'esbuild',
+      cssCodeSplit: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (
+                id.includes('react') ||
+                id.includes('react-dom') ||
+                id.includes('react-router') ||
+                id.includes('@mui') ||
+                id.includes('@emotion')
+              ) {
+                return 'vendor-ui';
+              }
+              if (id.includes('@tanstack/react-query')) {
+                return 'vendor-query';
+              }
+              if (id.includes('recharts')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('xlsx')) {
+                return 'vendor-xlsx';
+              }
+              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('purify')) {
+                return 'vendor-export';
+              }
+            }
+          },
+        },
+      },
+      chunkSizeWarningLimit: 1200,
+    },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
