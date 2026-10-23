@@ -44,6 +44,7 @@ const BusinessSettingsPage = page(() => import("@/pages/settings/workspace-setti
 const ApprovalSettingsPage = page(() => import("@/pages/settings/workspace-settings"), "ApprovalSettingsPage");
 const LimitsSettingsPage = page(() => import("@/pages/settings/workspace-settings"), "LimitsSettingsPage");
 const TeamSettingsPage = page(() => import("@/pages/settings/workspace-settings"), "TeamSettingsPage");
+const PrinterSetupGuidePage = page(() => import("@/pages/guides"), "PrinterSetupGuidePage");
 // The page appears only to people with the permission; the API enforces it regardless.
 function Gate({ any, children }: { any: Permission[]; children: React.ReactNode }) {
   const { canAny, wid } = useWorkspaceContext();
@@ -100,6 +101,8 @@ export const router = createBrowserRouter([
       { path: "/forgot-password", element: <ForgotPasswordPage /> },
       { path: "/reset-password", element: <ResetPasswordPage /> },
       { path: "/accept-invitation", element: <AcceptInvitationPage /> },
+      // Public: a guide link support can send, or open on a phone at the printer.
+      { path: "/guides/printer-setup", element: <PrinterSetupGuidePage /> },
       {
         element: <RequireAuth />,
         children: [

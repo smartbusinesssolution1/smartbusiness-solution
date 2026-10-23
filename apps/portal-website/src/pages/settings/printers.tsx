@@ -45,6 +45,10 @@ import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/compo
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { PdfDialog, PdfFrame, PrintTips, usePdf } from "@/components/app/pdf-dialog";
 import { CalibrationDiagram, LAYOUTS, PaperDiagram, VerificationDiagram, layoutLabel, paperLabel, type Landmark } from "@/components/app/paper";
+import { SheetScene, ShiftScene } from "@/components/app/calibration-art";
+import { WatchHow } from "@/components/app/calibration-demo";
+import { convertReading, lineOf } from "@/lib/calibration";
+import { parseReading } from "@/lib/ruler";
 import { ApiError, errorMessage } from "@/lib/api";
 import { when } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -97,7 +101,7 @@ export function PrintersPage() {
       ) : error ? (
         <ErrorState error={error} onRetry={() => refetch()} />
       ) : data.length === 0 ? (
-        <EmptyState icon={<Printer />} title="No printer set up" description="You'll print a calibration sheet three times and measure it with a ruler. It takes about five minutes and is done once per printer and paper." action={<Button asChild size="sm"><Link to={`/w/${wid}/settings/printers/new`}><Plus /> Set up a printer</Link></Button>} />
+        <EmptyState icon={<Printer />} title="No printer set up" description="You'll print a calibration sheet three times and measure it with a ruler. It takes about five minutes and is done once per printer and paper." action={<div className="flex flex-wrap justify-center gap-2"><Button asChild size="sm"><Link to={`/w/${wid}/settings/printers/new`}><Plus /> Set up a printer</Link></Button><WatchHow paper="LETTER" /></div>} />
       ) : (
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {data.map((p, i) => (
@@ -194,25 +198,32 @@ export function NewPrinterPage() {
   const [layout, setLayout] = React.useState<CheckLayout>("CHECK_MIDDLE");
   const [unit, setUnit] = React.useState<Unit>("mm");
   const [sheets, setSheets] = React.useState<SheetDraft[]>([emptySheet(), emptySheet(), emptySheet()]);
-  const [focus, setFocus] = React.useState<keyof CalibrationSheet | null>(null);
+  const [shown, setShown] = React.useState<keyof CalibrationSheet>("x1");
   const [sheetOpen, setSheetOpen] = React.useState(false);
   const [printed, setPrinted] = React.useState(false);
   const [nameError, setNameError] = React.useState<string>();
   const [saveError, setSaveError] = React.useState<string | null>(null);
 
+  const [paperWidth, setPaperWidth] = React.useState("");
   const ref = REF[paper];
   const refIn = (k: keyof CalibrationSheet) => (unit === "mm" ? ref[k] * MM_PER_IN : ref[k]);
   const fetchSheet = React.useCallback(() => fetchCalibrationSheet(wid, paper), [wid, paper]);
 
-  const parsed = sheets.map((s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, Number(v)])) as unknown as CalibrationSheet);
-  const sheetComplete = (s: SheetDraft) => (Object.values(s) as string[]).every((v) => v !== "" && Number(v) > 0);
+  const parsed = sheets.map((s) => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, parseReading(v, unit)])) as unknown as CalibrationSheet);
+  const sheetComplete = (s: SheetDraft) => (Object.values(s) as string[]).every((v) => parseReading(v, unit) !== null);
+  // Switching units rewrites what is already typed, so nothing measured changes meaning.
+  const changeUnit = (next: Unit) => {
+    setSheets((all) => all.map((sh) => Object.fromEntries(Object.entries(sh).map(([k, v]) => [k, convertReading(v, unit, next)])) as SheetDraft));
+    setPaperWidth((w) => convertReading(w, unit, next));
+    setUnit(next);
+  };
   const allMeasured = sheets.every(sheetComplete);
 
   // The paper's own width catches the most common setup mistake (A4 in a Letter profile, or
   // the reverse) before any sheet is measured: on the wrong size nothing can ever verify.
-  const [paperWidth, setPaperWidth] = React.useState("");
   const otherPaper: PaperSize = paper === "LETTER" ? "A4" : "LETTER";
-  const widthMm = paperWidth ? Number(paperWidth) * (unit === "in" ? MM_PER_IN : 1) : NaN;
+  const widthReading = parseReading(paperWidth, unit);
+  const widthMm = widthReading === null ? NaN : widthReading * (unit === "in" ? MM_PER_IN : 1);
   const widthCheck: "empty" | "ok" | "other" | "unknown" = !Number.isFinite(widthMm)
     ? "empty"
     : Math.abs(widthMm - PAPER_WIDTH_MM[paper]) <= 2
@@ -313,7 +324,7 @@ export function NewPrinterPage() {
                 <div className="flex flex-col gap-4">
                   <PrintTips />
                   <ol className="flex flex-col gap-2 text-sm">
-                    {["Open the sheet and print it with the settings above.", "Print it two more times (three sheets in total).", "Don't move the paper guides between prints."].map((t, i) => (
+                    {["Open the sheet and print it with the settings above.", "Print it two more times: three printed copies in total.", "Write 1, 2 and 3 in the “This is sheet” box at the top of the copies.", "Don't move the paper guides between prints."].map((t, i) => (
                       <li key={t} className="flex items-start gap-3"><span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-subtle font-mono text-xs">{i + 1}</span><span className="pt-0.5">{t}</span></li>
                     ))}
                   </ol>
@@ -321,7 +332,10 @@ export function NewPrinterPage() {
                     <Button onClick={() => { setSheetOpen(true); setPrinted(true); }}><Printer /> Open calibration sheet</Button>
                   </div>
                 </div>
-                <div className="rounded-2xl border border-line bg-subtle/50 p-4"><CalibrationDiagram /></div>
+                <div className="flex flex-col items-center gap-3 rounded-2xl border border-line bg-subtle/50 p-4">
+                  <CalibrationDiagram />
+                  <WatchHow paper={paper} />
+                </div>
               </div>
               <PdfDialog open={sheetOpen} onOpenChange={setSheetOpen} pdfKey={["calibration-sheet", wid, paper]} title="Calibration sheet" description="Print this three times." fetcher={fetchSheet} />
             </Panel>
@@ -331,15 +345,21 @@ export function NewPrinterPage() {
             <Panel>
               <PanelHeader
                 title="Measure each sheet with a ruler"
-                description="From the paper's edge to the centre of each line. Use a physical ruler; nothing printed on the sheet is accurate enough."
-                action={<Segmented size="sm" layoutId="cal-unit" aria-label="Unit" value={unit} onChange={setUnit} options={[{ value: "mm", label: "mm" }, { value: "in", label: "inches" }]} />}
+                description="With a real ruler, from the edge of the paper to each line."
+                action={
+                  <div className="flex items-center gap-2">
+                    <WatchHow paper={paper} variant="ghost" />
+                    <Segmented size="sm" layoutId="cal-unit" aria-label="Unit" value={unit} onChange={changeUnit} options={[{ value: "mm", label: "mm" }, { value: "in", label: "inches" }]} />
+                  </div>
+                }
               />
-              <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_15rem]">
+              <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_17rem]">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2 rounded-xl border border-line bg-subtle/50 p-3">
                     <div className="flex flex-wrap items-end gap-3">
-                      <Field label="First, the width of the paper itself" htmlFor="paperWidth" hint={`${paper === "LETTER" ? "US Letter" : "A4"} is ${unit === "mm" ? PAPER_WIDTH_MM[paper].toFixed(1) + " mm" : (PAPER_WIDTH_MM[paper] / MM_PER_IN).toFixed(2) + " in"} wide.`} className="w-56">
-                        <Input inputMode="decimal" value={paperWidth} onChange={(e) => setPaperWidth(e.target.value.replace(",", "."))} placeholder={unit === "mm" ? PAPER_WIDTH_MM[paper].toFixed(1) : (PAPER_WIDTH_MM[paper] / MM_PER_IN).toFixed(2)} className="h-9 font-mono" trailing={<span className="pr-1 text-xs">{unit}</span>} />
+                      {/* No example value: it catches the wrong paper size only if it is really measured. */}
+                      <Field label="First, the width of the paper itself" htmlFor="paperWidth" hint="Edge to edge, across the short side. Type what your ruler shows." className="w-64">
+                        <Input inputMode="decimal" value={paperWidth} onChange={(e) => setPaperWidth(e.target.value.replace(",", "."))} className="h-9 font-mono" trailing={<span className="pr-1 text-xs">{unit}</span>} />
                       </Field>
                       {widthCheck === "ok" && <span className="pb-6 text-xs font-medium text-success-700">Matches {paper === "LETTER" ? "US Letter" : "A4"}.</span>}
                     </div>
@@ -354,6 +374,18 @@ export function NewPrinterPage() {
                     )}
                     {widthCheck === "unknown" && <InlineAlert tone="warning">That doesn't match US Letter (215.9 mm) or A4 (210 mm). Measure the paper again, edge to edge.</InlineAlert>}
                   </div>
+                  <InlineAlert tone="info" title="How to fill this in">
+                    <ul className="mt-1 flex list-disc flex-col gap-1 pl-4">
+                      <li>Take the copy you marked <span className="font-semibold">1</span>. Type its 4 numbers in the <span className="font-semibold">Sheet 1</span> row. Then do the same for copies 2 and 3.</li>
+                      <li>
+                        Ideal measurements that should come:{" "}
+                        {(["x1", "x2", "y1", "y2"] as const).map((k, i) => (
+                          <span key={k} className="font-semibold whitespace-nowrap">{i > 0 && " · "}{k.toUpperCase()} ≈ {refIn(k).toFixed(unit === "mm" ? 1 : 2)} {unit}</span>
+                        ))}
+                        . Yours should be close to these, but usually not exactly the same. Type what your ruler shows.
+                      </li>
+                    </ul>
+                  </InlineAlert>
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[30rem] text-sm">
                       <thead>
@@ -361,19 +393,20 @@ export function NewPrinterPage() {
                           <th className="pb-2 font-medium">Sheet</th>
                           {(["x1", "x2", "y1", "y2"] as const).map((k) => (
                             <th key={k} className="pb-2 font-medium">
-                              <span className="font-mono font-semibold text-ink">{k.toUpperCase()}</span> <span className="font-normal">≈ {refIn(k).toFixed(unit === "mm" ? 1 : 2)}</span>
-                            </th>
+                              <span className="font-mono font-semibold text-ink">{k.toUpperCase()}</span>
+                              <span className="block text-[0.6875rem] font-normal">from the {lineOf(k).from === "left" ? "LEFT" : "TOP"} edge</span>                            </th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
                         {sheets.map((s, i) => (
                           <tr key={i}>
-                            <td className="py-1.5 pr-3 font-mono text-xs text-muted">#{i + 1}{sheetComplete(s) && <Check className="ml-1 inline size-3 text-success-600" />}</td>
+                            <td className="py-1.5 pr-3 text-xs whitespace-nowrap text-muted">Sheet {i + 1}{sheetComplete(s) && <Check className="ml-1 inline size-3 text-success-600" />}</td>
                             {(["x1", "x2", "y1", "y2"] as const).map((k) => {
                               const value = s[k];
-                              const off = value ? Math.abs(Number(value) - refIn(k)) * (unit === "in" ? MM_PER_IN : 1) : 0;
-                              const suspicious = value !== "" && (Number.isNaN(Number(value)) || off > 10);
+                              const reading = parseReading(value, unit);
+                              const off = reading === null ? 0 : Math.abs(reading - refIn(k)) * (unit === "in" ? MM_PER_IN : 1);
+                              const suspicious = value !== "" && (reading === null || off > 10);
                               return (
                                 <td key={k} className="py-1.5 pr-2">
                                   <Input
@@ -381,10 +414,8 @@ export function NewPrinterPage() {
                                     aria-invalid={suspicious || undefined}
                                     inputMode="decimal"
                                     value={value}
-                                    onFocus={() => setFocus(k)}
-                                    onBlur={() => setFocus(null)}
+                                    onFocus={() => setShown(k)}
                                     onChange={(e) => setSheets((all) => all.map((sh, j) => (j === i ? { ...sh, [k]: e.target.value.replace(",", ".") } : sh)))}
-                                    placeholder={refIn(k).toFixed(unit === "mm" ? 1 : 2)}
                                     className="h-9 font-mono"
                                   />
                                 </td>
@@ -398,13 +429,16 @@ export function NewPrinterPage() {
                   <div className="flex flex-wrap items-center gap-2">
                     {sheets.length < 5 && <Button variant="secondary" size="sm" onClick={() => setSheets((s) => [...s, emptySheet()])}><Plus /> Add a sheet</Button>}
                     {sheets.length > 3 && <Button variant="ghost" size="sm" onClick={() => setSheets((s) => s.slice(0, -1))}>Remove last</Button>}
-                    <span className="text-xs text-muted">3 to 5 sheets. Readings far from the ≈ value are highlighted. Check them for a typo.</span>
+                    <span className="text-xs text-muted">3 to 5 sheets. A number far from its ideal measurement is outlined in red: measure that one again.</span>
                   </div>
                 </div>
-                <div className="flex flex-col gap-3 rounded-2xl border border-line bg-subtle/50 p-4">
-                  <CalibrationDiagram highlight={focus} />
+                {/* The ruler sliding onto the line of the box being typed in (X1 until one is chosen). */}
+                <div className="flex flex-col gap-3 rounded-2xl border border-line bg-subtle/50 p-3">
+                  <SheetScene key={`${shown}-${paper}`} paper={paper} target={shown} className="mx-auto max-h-[22rem]" />
                   <p className="text-xs leading-relaxed text-muted">
-                    <span className="font-semibold text-ink">X</span> from the <span className="font-semibold text-ink">left</span> edge. <span className="font-semibold text-ink">Y</span> from the <span className="font-semibold text-ink">top</span> edge, the one that went into the printer first.
+                    <span className="font-semibold text-ink">{lineOf(shown).label}:</span> put the ruler's <span className="font-semibold text-ink">0</span> on the{" "}
+                    <span className="font-semibold text-ink">{lineOf(shown).from === "left" ? "LEFT" : "TOP"} edge</span>
+                    {lineOf(shown).from === "top" && " (the edge that went into the printer first)"}. Look at the number on the ruler where the line is.
                   </p>
                 </div>
               </div>
@@ -458,8 +492,8 @@ function landmarkLabels(profile: PrinterProfile): Record<VerificationItem, { tit
   return {
     upperTearLine: { title: `Upper ${edge}`, from: "from the top edge of the paper" },
     lowerTearLine: { title: `Lower ${edge}`, from: "from the top edge of the paper" },
-    micrBottom: { title: "Bottom of the MICR digits", from: profile.layout === "CHECK_BOTTOM" ? "from the bottom edge of the paper" : `from the check's bottom ${edge}` },
-    micrRightEdge: { title: "Right end of the MICR line", from: "from the right edge of the paper" },
+    micrBottom: { title: "Bottom of the bank numbers (MICR line)", from: profile.layout === "CHECK_BOTTOM" ? "from the bottom edge of the paper" : `from the check's bottom ${edge}` },
+    micrRightEdge: { title: "Right end of the bank numbers (MICR line)", from: "from the right edge of the paper" },
     amountBoxLeft: { title: "Left border of the amount box", from: "from the left edge of the paper" },
   };
 }
@@ -517,21 +551,7 @@ export function PrinterDetailPage() {
         <VerificationPanel profile={profile} startOpen={Boolean(params.get("verify")) || !profile.verification.verified} />
 
         <div className="flex flex-col gap-4">
-          <Panel>
-            <PanelHeader title="Calibration" />
-            <dl className="grid grid-cols-2 gap-4 p-5 text-sm">
-              <div className="col-span-2 flex justify-center"><div className="w-24"><PaperDiagram layout={profile.layout} paper={profile.paperSize} /></div></div>
-              <Stat label="Horizontal shift" value={`${(Number(profile.horizontalOffsetPts) / 72 * MM_PER_IN).toFixed(2)} mm`} />
-              <Stat label="Vertical shift" value={`${(Number(profile.verticalOffsetPts) / 72 * MM_PER_IN).toFixed(2)} mm`} />
-              {profile.repeatability && (
-                <>
-                  <Stat label="Repeatability X" value={`±${(profile.repeatability.spreadXMm / 2).toFixed(2)} mm`} />
-                  <Stat label="Repeatability Y" value={`±${(profile.repeatability.spreadYMm / 2).toFixed(2)} mm`} />
-                </>
-              )}
-              <div className="col-span-2 text-xs text-muted">Calibrated {when(profile.calibratedAt)}{profile.verification.verifiedAt && ` · verified ${when(profile.verification.verifiedAt)}`}</div>
-            </dl>
-          </Panel>
+          <ShiftSummary profile={profile} />
           {!profile.needsRecalibration && (
             <Button variant="secondary" onClick={() => setCopyDialog(true)}><Copy /> Copy for other check paper</Button>
           )}
@@ -664,6 +684,46 @@ function CopyPrinterDialog({ profile, open, onOpenChange }: { profile: PrinterPr
   );
 }
 
+// Which way this printer shifts the page, in words anyone can follow.
+function describeShift(rightMm: number, downMm: number): string {
+  const parts: string[] = [];
+  if (Math.abs(rightMm) >= 0.1) parts.push(`${Math.abs(rightMm).toFixed(1)} mm too far ${rightMm > 0 ? "right" : "left"}`);
+  if (Math.abs(downMm) >= 0.1) parts.push(`${Math.abs(downMm).toFixed(1)} mm too ${downMm > 0 ? "low" : "high"}`);
+  return parts.length
+    ? `Your printer prints ${parts.join(" and ")}. Every check is moved back to match.`
+    : "Your printer prints right where it should. No correction needed.";
+}
+
+// What calibration found: a picture of the check moving back into place, the same in words,
+// and the exact numbers underneath for support.
+function ShiftSummary({ profile }: { profile: PrinterProfile }) {
+  const toMm = (pts: string | number) => (Number(pts) / 72) * MM_PER_IN;
+  // The stored offsets are the correction (expected − measured); the printer's own shift is the opposite.
+  const rightMm = -toMm(profile.horizontalOffsetPts);
+  const downMm = -toMm(profile.verticalOffsetPts);
+  return (
+    <Panel>
+      <PanelHeader title="Calibration" />
+      <div className="flex flex-col gap-3 p-5">
+        <div className="rounded-xl border border-line bg-subtle/50 p-2"><ShiftScene rightMm={rightMm} downMm={downMm} /></div>
+        <p className="text-sm font-medium">{describeShift(rightMm, downMm)}</p>
+        <p className="text-xs text-muted">The picture exaggerates the shift so it can be seen.</p>
+        <dl className="grid grid-cols-2 gap-3 border-t border-line pt-3 text-sm">
+          <Stat label="Moved across" value={`${toMm(profile.horizontalOffsetPts).toFixed(2)} mm`} />
+          <Stat label="Moved down" value={`${toMm(profile.verticalOffsetPts).toFixed(2)} mm`} />
+          {profile.repeatability && (
+            <>
+              <Stat label="Steadiness across" value={`±${(profile.repeatability.spreadXMm / 2).toFixed(2)} mm`} />
+              <Stat label="Steadiness down" value={`±${(profile.repeatability.spreadYMm / 2).toFixed(2)} mm`} />
+            </>
+          )}
+          <div className="col-span-2 text-xs text-muted">Calibrated {when(profile.calibratedAt)}{profile.verification.verifiedAt && ` · verified ${when(profile.verification.verifiedAt)}`}</div>
+        </dl>
+      </div>
+    </Panel>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5"><dt className="text-xs text-muted">{label}</dt><dd className="font-mono font-medium">{value}</dd></div>
@@ -683,11 +743,11 @@ function VerificationPanel({ profile, startOpen }: { profile: PrinterProfile; st
   // Offsets are in the key: after an adjustment, the reprinted sample is a fresh PDF.
   const pdf = usePdf(stage === "print" ? ["verification-sample", profile.id, profile.horizontalOffsetPts, profile.verticalOffsetPts, profile.layout] : null, fetchSample);
   const labels = landmarkLabels(profile);
-  const complete = LANDMARKS.every((k) => values[k] !== "" && Number(values[k]) > 0);
+  const complete = LANDMARKS.every((k) => parseReading(values[k], unit) !== null);
 
   const submit = () =>
     verify.mutate(
-      { unit, ...(Object.fromEntries(LANDMARKS.map((k) => [k, Number(values[k])])) as Record<VerificationItem, number>) },
+      { unit, ...(Object.fromEntries(LANDMARKS.map((k) => [k, parseReading(values[k], unit)])) as Record<VerificationItem, number>) },
       { onSuccess: (r) => { setOutcome(r); setStage("result"); } },
     );
 
