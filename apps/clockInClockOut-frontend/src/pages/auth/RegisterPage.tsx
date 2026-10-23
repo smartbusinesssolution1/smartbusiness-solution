@@ -122,7 +122,7 @@ export const RegisterPage: React.FC = () => {
 
       {/* Main Split Screen Container */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] transition-all duration-300">
-        
+
         {/* =================================================================== */}
         {/* COLUMN 1: CREATE WORKSPACE FORM (Left Side)                         */}
         {/* =================================================================== */}
@@ -158,7 +158,7 @@ export const RegisterPage: React.FC = () => {
 
           {/* Center Create Workspace Card */}
           <div className="flex flex-1 items-center justify-center py-8">
-            <div className="w-full max-w-[28.5rem]">
+            <div className="w-full max-w-[30.9rem]">
               <div
                 className="rounded-2xl border border-slate-200 bg-white transition-all duration-300 overflow-hidden"
                 style={{
@@ -195,7 +195,7 @@ export const RegisterPage: React.FC = () => {
 
                   {/* One-Step Form */}
                   <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-                    
+
                     {/* Organization / Company Name */}
                     <div className="flex flex-col gap-1.5">
                       <label htmlFor="companyName" className="text-xs font-semibold text-slate-700">
@@ -298,7 +298,7 @@ export const RegisterPage: React.FC = () => {
                           id="email"
                           type="email"
                           fullWidth
-                          placeholder="alex@apexlogistics.com"
+                          placeholder="name@company.com"
                           variant="outlined"
                           error={!!errors.email}
                           helperText={errors.email?.message}

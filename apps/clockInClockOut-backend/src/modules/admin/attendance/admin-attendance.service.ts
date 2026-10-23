@@ -13,7 +13,7 @@ import type {
 } from "./admin-attendance.schema.js";
 
 export class AdminAttendanceService {
-  constructor(private readonly repo: AdminAttendanceRepository) {}
+  constructor(private readonly repo: AdminAttendanceRepository) { }
 
   /**
    * Format a Date into YYYY-MM-DD

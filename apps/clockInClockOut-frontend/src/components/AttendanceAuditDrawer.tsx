@@ -420,55 +420,6 @@ export const AttendanceAuditDrawer: React.FC<AttendanceAuditDrawerProps> = ({
                       )}
                     </Box>
 
-                    {/* Selfie Photo Preview (if taken) */}
-                    {session.selfieUrl && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
-                        <Box
-                          sx={{
-                            position: 'relative',
-                            width: 64,
-                            height: 64,
-                            borderRadius: 2,
-                            overflow: 'hidden',
-                            border: '1px solid',
-                            borderColor: 'divider',
-                            cursor: 'pointer',
-                            '&:hover .zoom-overlay': { opacity: 1 },
-                          }}
-                          onClick={() => setPreviewImage(getAvatarUrl(session.selfieUrl))}
-                        >
-                          <img
-                            src={getAvatarUrl(session.selfieUrl)}
-                            alt="Punch Selfie"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                          />
-                          <Box
-                            className="zoom-overlay"
-                            sx={{
-                              position: 'absolute',
-                              inset: 0,
-                              bgcolor: 'rgba(0,0,0,0.4)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              opacity: 0,
-                              transition: 'opacity 0.2s',
-                            }}
-                          >
-                            <ZoomInIcon sx={{ color: 'white', fontSize: 20 }} />
-                          </Box>
-                        </Box>
-                        <Box>
-                          <Typography variant="caption" sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            <CameraIcon sx={{ fontSize: 14, color: 'text.secondary' }} /> Verification Selfie
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                            Captured live during check-in scan
-                          </Typography>
-                        </Box>
-                      </Box>
-                    )}
-
                     {/* Notes */}
                     {session.notes && (
                       <Typography

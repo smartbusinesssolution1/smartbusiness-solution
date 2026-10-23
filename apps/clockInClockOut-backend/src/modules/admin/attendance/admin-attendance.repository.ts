@@ -125,11 +125,11 @@ export class AdminAttendanceRepository {
               ...(workspaceId
                 ? { workspaceId }
                 : {
-                    workspace: {
-                      tenantId,
-                      deletedAt: null,
-                    },
-                  }),
+                  workspace: {
+                    tenantId,
+                    deletedAt: null,
+                  },
+                }),
             },
           },
           include: {
@@ -304,12 +304,12 @@ export class AdminAttendanceRepository {
         notes: isSyntheticAbsent
           ? firstSession.notes || "No clock-in recorded · Absent"
           : totalWorkingHours < 1.0
-          ? "Shift under 1 hr threshold · Absent"
-          : totalWorkingHours < 4.0
-          ? "Half-day shift completed"
-          : sessionList.length > 1
-          ? `${sessionList.length} shift sessions recorded today`
-          : firstSession.notes || null,
+            ? "Shift under 1 hr threshold · Absent"
+            : totalWorkingHours < 4.0
+              ? "Half-day shift completed"
+              : sessionList.length > 1
+                ? `${sessionList.length} shift sessions recorded today`
+                : firstSession.notes || null,
         totalSessions: isSyntheticAbsent ? 0 : sessionList.length,
         sessions: isSyntheticAbsent ? [] : sessionList,
       });
@@ -422,7 +422,7 @@ export class AdminAttendanceRepository {
         id: true,
         employeeId: true,
         status: true,
-        selfieUrl: true,
+        selfieUrl: false,
         clockInDate: true,
         clockInTime: true,
         clockInLatitude: true,
@@ -557,20 +557,20 @@ export class AdminAttendanceRepository {
     const weeklyRecords =
       activeEmpIds.length > 0
         ? await prisma.attendanceRecord.findMany({
-            where: {
-              employeeId: { in: activeEmpIds },
-              clockInDate: {
-                gte: minDate,
-                lte: maxDate,
-              },
+          where: {
+            employeeId: { in: activeEmpIds },
+            clockInDate: {
+              gte: minDate,
+              lte: maxDate,
             },
-            select: {
-              id: true,
-              clockInDate: true,
-              status: true,
-              employeeId: true,
-            },
-          })
+          },
+          select: {
+            id: true,
+            clockInDate: true,
+            status: true,
+            employeeId: true,
+          },
+        })
         : [];
 
 

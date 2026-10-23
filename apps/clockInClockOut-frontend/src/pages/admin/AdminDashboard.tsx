@@ -59,6 +59,8 @@ import {
   Check as CheckIcon,
   Close as CloseIcon,
   EventNote as EventNoteIcon,
+  Cancel as AbsentIcon,
+  CheckCircle as OnTimeIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 
@@ -69,7 +71,7 @@ interface StreamRecord {
   workspace: string;
   time: string;
   type: string;
-  status: 'present' | 'late' | 'gps' | 'biometric';
+  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
   avatarUrl?: string | null;
 }
 
@@ -412,7 +414,7 @@ export const AdminDashboard: React.FC = () => {
           workspace: workspaceName,
           time: checkInTime,
           type: isLate ? 'Late Arrival' : isGps ? 'GPS Verified' : 'On Time',
-          status: isLate ? 'late' : isGps ? 'gps' : 'present',
+          status: item?.status,
           avatarUrl: (item as any).avatarUrl || item.selfieUrl || null,
         };
       });
@@ -471,6 +473,9 @@ export const AdminDashboard: React.FC = () => {
     () => (totalStaffCount > 0 ? Math.round((presentStaffCount / totalStaffCount) * 100) : 0),
     [totalStaffCount, presentStaffCount]
   );
+
+
+
 
   return (
     <Box sx={{ pb: 4 }}>
@@ -882,167 +887,185 @@ export const AdminDashboard: React.FC = () => {
               />
 
               <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 3,
-                
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Live Operational Pulse
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
-                    Real-Time Check-In Stream
-                  </Typography>
-                </Box>
-                <Chip
-                  icon={
-                    <Box
-                      sx={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        bgcolor: colors.present.main,
-                        boxShadow: `0 0 6px ${colors.present.main}`,
-                        mr: 0.5,
-                      }}
-                    />
-                  }
-                  label="LIVE FEED"
-                  size="small"
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.68rem',
-                    bgcolor: colors.present.bg,
-                    color: colors.present.main,
-                    borderRadius: 1.5,
-                    height: 22,
-                    border: `1px solid ${colors.present.main}30`,
-                  }}
-                />
-              </Box>
-
-              <Box
                 sx={{
+                  borderRadius: 3,
+                  border: `1px solid ${theme.palette.divider}`,
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                  p: 3,
+
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 1.5,
-                  maxHeight: 310,
-                  overflowY: 'auto',
-                  pr: 0.5,
-                  '&::-webkit-scrollbar': { width: 5 },
-                  '&::-webkit-scrollbar-thumb': {
-                    bgcolor: 'divider',
-                    borderRadius: 4,
-                  },
                 }}
               >
-                {liveStreamRecords.length === 0 ? (
-                  <Box sx={{ py: 6, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      No live activity yet
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                      Live Operational Pulse
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      Employee punches will stream here in real time.
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
+                      Real-Time Check-In Stream
                     </Typography>
                   </Box>
-                ) : (
-                  liveStreamRecords.map((stream) => {
-                    const initials = stream.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')
-                      .substring(0, 2);
-
-                    const isLate = stream.status === 'late';
-                    const isGps = stream.status === 'gps';
-
-                    return (
+                  <Chip
+                    icon={
                       <Box
-                        key={stream.id}
                         sx={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          p: 1.25,
-                          borderRadius: 2,
-                          bgcolor: isDark ? 'background.default' : '#f8fafc',
-                          border: `1px solid ${theme.palette.divider}`,
-                          transition: 'background-color 0.15s ease',
-                          '&:hover': {
-                            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
-                          },
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          bgcolor: colors.present.main,
+                          boxShadow: `0 0 6px ${colors.present.main}`,
+                          mr: 0.5,
                         }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Box sx={{ position: 'relative' }}>
-                            <Avatar
-                              src={getAvatarUrl(stream.avatarUrl)}
-                              alt={stream.name}
-                              sx={{
-                                width: 36,
-                                height: 36,
-                                fontSize: '0.8rem',
-                                fontWeight: 700,
-                                bgcolor: isLate ? colors.late.bg : colors.primary.bg,
-                                color: isLate ? colors.late.main : colors.primary.main,
-                              }}
-                            >
-                              {initials}
-                            </Avatar>
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                bottom: 0,
-                                right: 0,
-                                width: 9,
-                                height: 9,
-                                borderRadius: '50%',
-                                bgcolor: isLate ? colors.late.main : colors.present.main,
-                                border: `2px solid ${theme.palette.background.paper}`,
-                              }}
-                            />
-                          </Box>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                              {stream.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                              {stream.empId} · {stream.workspace}
-                            </Typography>
-                          </Box>
-                        </Box>
+                      />
+                    }
+                    label="LIVE FEED"
+                    size="small"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: '0.68rem',
+                      bgcolor: colors.present.bg,
+                      color: colors.present.main,
+                      borderRadius: 1.5,
+                      height: 22,
+                      border: `1px solid ${colors.present.main}30`,
+                    }}
+                  />
+                </Box>
 
-                        <Box sx={{ textAlign: 'right' }}>
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                            {stream.time}
-                          </Typography>
-                          <Chip
-                            label={stream.type}
-                            size="small"
-                            sx={{
-                              height: 18,
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              borderRadius: 1,
-                              bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
-                              color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
-                              mt: 0.25,
-                            }}
-                          />
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1.5,
+                    maxHeight: 310,
+                    overflowY: 'auto',
+                    pr: 0.5,
+                    '&::-webkit-scrollbar': { width: 5 },
+                    '&::-webkit-scrollbar-thumb': {
+                      bgcolor: 'divider',
+                      borderRadius: 4,
+                    },
+                  }}
+                >
+                  {liveStreamRecords.length === 0 ? (
+                    <Box sx={{ py: 6, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                        No live activity yet
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Employee punches will stream here in real time.
+                      </Typography>
+                    </Box>
+                  ) : (
+                    liveStreamRecords.map((stream) => {
+                      const initials = stream.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .substring(0, 2);
+
+                      const getStatusChip = (status: string) => {
+                        switch (status) {
+                          case 'present':
+                            return <Chip label="On Time" color="success" size="small" icon={<OnTimeIcon />} />;
+                          case 'late':
+                            return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
+                          case 'absent':
+                            return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+                          case 'half_day':
+                            return <Chip label="Half Day" color="info" size="small" />;
+                          case 'auto_closed':
+                            return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
+                          default:
+                            return <Chip label={status} size="small" />;
+                        }
+                      };
+                      const isLate = stream.status === 'late';
+                      const gps = getStatusChip(stream.status)
+                      return (
+                        <Box
+                          key={stream.id}
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            p: 1.25,
+                            borderRadius: 2,
+                            bgcolor: isDark ? 'background.default' : '#f8fafc',
+                            border: `1px solid ${theme.palette.divider}`,
+                            transition: 'background-color 0.15s ease',
+                            '&:hover': {
+                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
+                            },
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{ position: 'relative' }}>
+                              <Avatar
+                                src={getAvatarUrl(stream.avatarUrl)}
+                                alt={stream.name}
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  bgcolor: isLate ? colors.late.bg : colors.primary.bg,
+                                  color: isLate ? colors.late.main : colors.primary.main,
+                                }}
+                              >
+                                {initials}
+                              </Avatar>
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  bottom: 0,
+                                  right: 0,
+                                  width: 9,
+                                  height: 9,
+                                  borderRadius: '50%',
+                                  bgcolor: isLate ? colors.late.main : colors.present.main,
+                                  border: `2px solid ${theme.palette.background.paper}`,
+                                }}
+                              />
+                            </Box>
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                                {stream.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                {stream.empId} · {stream.workspace}
+                              </Typography>
+                            </Box>
+                          </Box>
+
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                              {stream.time}
+                            </Typography>
+                            {/* <Chip
+                              label={stream.type}
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                borderRadius: 1,
+                                bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
+                                color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
+                                mt: 0.25,
+                              }}
+                            /> */}
+                            <div>
+                              {gps}
+                            </div>
+                          </Box>
                         </Box>
-                      </Box>
-                    );
-                  })
-                )}
-              </Box>
-            </Card>
+                      );
+                    })
+                  )}
+                </Box>
+              </Card>
             </Box>
           </Grid>
 
