@@ -15,10 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectItem } from "@/components/ui/controls";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/menu";
 import { CheckFace, type CheckField } from "@/components/app/check-face";
+import { AmountInput, CheckDateInput } from "@/components/app/check-inputs";
 import { FileDrop, fileSize } from "@/components/app/file-drop";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { amountToWords, MAX_CHECK_AMOUNT } from "@/lib/amount-words";
 import { api, errorMessage } from "@/lib/api";
+import { formatAmount, formatAmountTyping, isIsoDate } from "@/lib/check-inputs";
 import { applyServerErrors, newIdempotencyKey } from "@/lib/forms";
 import { checkFaceDate, checkNo, money, todayIso } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -76,10 +78,10 @@ function CheckForm({ check }: { check?: Check }) {
     defaultValues: {
       bankAccountId: check?.bankAccount.id ?? "",
       payeeName: check?.payeeName ?? "",
-      amount: check ? check.amount : "",
+      amount: check ? formatAmount(check.amount) : "",
       checkDate: check ? check.checkDate.slice(0, 10) : todayIso(),
       memo: check?.memo ?? "",
-      invoiceItems: check?.invoiceItems?.map((i) => ({ description: i.description, amount: String(i.amount) })) ?? [],
+      invoiceItems: check?.invoiceItems?.map((i) => ({ description: i.description, amount: formatAmount(i.amount) })) ?? [],
     },
   });
   const lines = useFieldArray({ control, name: "invoiceItems" });
@@ -97,6 +99,16 @@ function CheckForm({ check }: { check?: Check }) {
   const maxAmount = settings.data ? Number(settings.data.maxCheckAmount) : MAX_CHECK_AMOUNT;
   const minDate = settings.data ? addDays(todayIso(), -settings.data.maxPastDays) : undefined;
   const maxDate = settings.data ? addDays(todayIso(), settings.data.maxFutureDays) : undefined;
+
+  // A keystroke that would go over the limit is refused; the hint says why for a moment.
+  const [overLimit, setOverLimit] = React.useState(false);
+  const overLimitTimer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
+  const refuseAmount = () => {
+    setOverLimit(true);
+    clearTimeout(overLimitTimer.current);
+    overLimitTimer.current = setTimeout(() => setOverLimit(false), 3000);
+  };
+  React.useEffect(() => () => clearTimeout(overLimitTimer.current), []);
 
   const addFiles = (incoming: File[]) => {
     setFileError(null);
@@ -120,7 +132,10 @@ function CheckForm({ check }: { check?: Check }) {
     const rows = text.trim().split(/\r?\n/).map((r) => r.split("\t")).filter((cells) => cells.length >= 2 && cells[0]!.trim());
     if (rows.length === 0) return;
     e.preventDefault();
-    const parsed = rows.slice(0, 50).map((cells) => ({ description: cells[0]!.trim().slice(0, 200), amount: cells[cells.length - 1]!.replace(/[$,\s]/g, "") }));
+    const parsed = rows.slice(0, 50).map((cells) => {
+      const amount = cells[cells.length - 1]!.replace(/[$,\s]/g, "");
+      return { description: cells[0]!.trim().slice(0, 200), amount: formatAmountTyping(amount, MAX_CHECK_AMOUNT) ?? amount };
+    });
     lines.remove(index);
     lines.insert(index, parsed);
     toast.success(`Pasted ${parsed.length} line${parsed.length === 1 ? "" : "s"}`);
@@ -266,32 +281,81 @@ function CheckForm({ check }: { check?: Check }) {
           />
 
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,11rem)] gap-3">
-            <Field label="Amount" htmlFor="amount" error={errors.amount?.message} hint={settings.data ? `Up to ${money(maxAmount)}` : undefined}>
-              <Input
-                inputMode="decimal"
-                placeholder="0.00"
-                leading={<span className="font-mono text-sm">$</span>}
-                className="font-mono text-base"
-                onFocus={() => setFocus("amount")}
-                {...register("amount", {
+            <Field
+              label="Amount"
+              htmlFor="amount"
+              error={errors.amount?.message}
+              hint={overLimit
+                ? <span className="font-medium text-warning-700">One check can be at most {money(maxAmount)}. An admin sets this in Check limits.</span>
+                : settings.data ? `Up to ${money(maxAmount)}` : undefined}
+            >
+              <Controller
+                control={control}
+                name="amount"
+                rules={{
                   required: "Enter the amount",
-                  onBlur: (e) => {
-                    setFocus(null);
-                    const n = parseAmount(e.target.value);
-                    if (Number.isFinite(n) && n > 0) setValue("amount", n.toFixed(2));
-                  },
                   validate: (s) => {
                     const n = parseAmount(s);
                     if (!Number.isFinite(n) || n <= 0) return "Enter an amount above $0.00";
-                    if (!/^\d+(\.\d{1,2})?$/.test(s.replace(/[$,\s]/g, ""))) return "Use dollars and cents, like 1250.50";
+                    if (!/^\d+(\.\d{1,2})?$/.test(s.replace(/[$,\s]/g, ""))) return "Use dollars and cents, like 1,250.50";
                     if (n > maxAmount) return `The limit for one check is ${money(maxAmount)}`;
                     return true;
                   },
-                })}
+                }}
+                render={({ field }) => (
+                  <AmountInput
+                    // Field can't reach through the Controller, so the label and messages are tied on here.
+                    id="amount"
+                    aria-invalid={errors.amount ? true : undefined}
+                    aria-describedby={errors.amount ? "amount-error" : settings.data ? "amount-hint" : undefined}
+                    ref={field.ref}
+                    name={field.name}
+                    value={field.value}
+                    onChange={field.onChange}
+                    max={maxAmount}
+                    onRefuse={refuseAmount}
+                    placeholder="0.00"
+                    leading={<span className="font-mono text-sm">$</span>}
+                    className="font-mono text-base"
+                    onFocus={() => setFocus("amount")}
+                    onBlur={() => {
+                      setFocus(null);
+                      const formatted = formatAmount(field.value);
+                      if (formatted) field.onChange(formatted);
+                      field.onBlur();
+                    }}
+                  />
+                )}
               />
             </Field>
             <Field label="Date" htmlFor="checkDate" error={errors.checkDate?.message}>
-              <Input type="date" min={minDate} max={maxDate} onFocus={() => setFocus("date")} {...register("checkDate", { required: "Choose a date", onBlur: () => setFocus(null), validate: (d) => (!minDate || d >= minDate) && (!maxDate || d <= maxDate) || `Between ${checkFaceDate(minDate)} and ${checkFaceDate(maxDate)}` })} />
+              <Controller
+                control={control}
+                name="checkDate"
+                rules={{
+                  required: "Choose a date",
+                  validate: (d) => {
+                    if (!isIsoDate(d)) return "Enter a real date as MM/DD/YYYY";
+                    return (!minDate || d >= minDate) && (!maxDate || d <= maxDate) || `Between ${checkFaceDate(minDate)} and ${checkFaceDate(maxDate)}`;
+                  },
+                }}
+                render={({ field }) => (
+                  <CheckDateInput
+                    id="checkDate"
+                    aria-invalid={errors.checkDate ? true : undefined}
+                    aria-describedby={errors.checkDate ? "checkDate-error" : undefined}
+                    ref={field.ref}
+                    name={field.name}
+                    value={field.value}
+                    onChange={field.onChange}
+                    min={minDate}
+                    max={maxDate}
+                    className="font-mono"
+                    onFocus={() => setFocus("date")}
+                    onBlur={() => { setFocus(null); field.onBlur(); }}
+                  />
+                )}
+              />
             </Field>
           </div>
 
@@ -327,7 +391,27 @@ function CheckForm({ check }: { check?: Check }) {
                   {lines.fields.map((f, i) => (
                     <div key={f.id} className="grid grid-cols-[minmax(0,1fr)_7rem_2rem] items-center gap-2">
                       <Input aria-label={`Line ${i + 1} description`} placeholder="Description" maxLength={200} className="h-9" onPaste={(e) => pasteLines(e, i)} {...register(`invoiceItems.${i}.description` as const)} />
-                      <Input aria-label={`Line ${i + 1} amount`} inputMode="decimal" placeholder="0.00" className="h-9 text-right font-mono" {...register(`invoiceItems.${i}.amount` as const)} />
+                      <Controller
+                        control={control}
+                        name={`invoiceItems.${i}.amount` as const}
+                        render={({ field }) => (
+                          <AmountInput
+                            ref={field.ref}
+                            name={field.name}
+                            value={field.value}
+                            onChange={field.onChange}
+                            max={MAX_CHECK_AMOUNT}
+                            aria-label={`Line ${i + 1} amount`}
+                            placeholder="0.00"
+                            className="h-9 text-right font-mono"
+                            onBlur={() => {
+                              const formatted = formatAmount(field.value);
+                              if (formatted) field.onChange(formatted);
+                              field.onBlur();
+                            }}
+                          />
+                        )}
+                      />
                       <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove line ${i + 1}`} onClick={() => lines.remove(i)}><Trash2 /></Button>
                     </div>
                   ))}
@@ -389,7 +473,7 @@ function CheckForm({ check }: { check?: Check }) {
             cityLine={`${workspace.city}, ${workspace.state} ${workspace.zipCode}`}
             bankName={bank?.bankName}
             checkNumber={check ? checkNo(check.checkNumber, bank?.checkNumberPadding) : bank ? checkNo(bank.nextCheckNumber, bank.checkNumberPadding) : undefined}
-            date={checkFaceDate(v.checkDate)}
+            date={isIsoDate(v.checkDate) ? checkFaceDate(v.checkDate) : ""}
             payeeName={v.payeeName}
             amount={validAmount ? amountNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ""}
             amountInWords={words}
