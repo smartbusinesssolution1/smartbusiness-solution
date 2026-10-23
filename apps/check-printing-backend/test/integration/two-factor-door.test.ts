@@ -4,10 +4,10 @@ import { prisma, resetDatabase } from "../helpers/db.js";
 import { authHeaders, createWorld, type TestUser, type TestWorld } from "../helpers/fixtures.js";
 import { getApp } from "../helpers/api.js";
 
-// Check Printing's two-factor rule: anyone who is an Admin in ANY Check Printing workspace
-// of the company (or who turned it on by choice) must have entered a code this session
-// (amr "otp" in the access token). Sign-in itself is unchanged, so other products aren't
-// affected. The company owner can reset someone's two-factor.
+// Check Printing's two-factor rule: two-factor is optional, and anyone who turned it on must
+// have entered a code this session (amr "otp" in the access token). Sign-in itself is
+// unchanged, so other products aren't affected. The company owner can reset someone's
+// two-factor.
 
 const PASSWORD_ONLY = { amr: ["pwd"] };
 
@@ -33,7 +33,15 @@ describe("two-factor in Check Printing", () => {
   });
 
   describe("who is asked", () => {
-    it("an admin with a password-only session is asked for the code, everywhere in Check Printing", async () => {
+    it("two-factor is optional: an admin who hasn't turned it on works with a password alone", async () => {
+      for (const path of ["/workspaces", `/workspaces/${world.workspaceId}`, `/workspaces/${world.workspaceId}/checks`]) {
+        expect((await get(path, world.admin, PASSWORD_ONLY)).status).toBe(200);
+      }
+    });
+
+    it("someone who turned it on is asked for the code everywhere in Check Printing", async () => {
+      await enroll(world.admin);
+
       for (const path of ["/workspaces", `/workspaces/${world.workspaceId}`, `/workspaces/${world.workspaceId}/checks`]) {
         const res = await get(path, world.admin, PASSWORD_ONLY);
         expect(res.status).toBe(403);
@@ -41,47 +49,7 @@ describe("two-factor in Check Printing", () => {
       }
     });
 
-    it("an admin whose session entered the code gets in", async () => {
-      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.admin)).status).toBe(200);
-    });
-
-    it("an admin who never set it up is sent to set it up (even with a token that says otp)", async () => {
-      await prisma.user.update({ where: { id: world.admin.id }, data: { mfaEnabledAt: null } });
-
-      const res = await get(`/workspaces/${world.workspaceId}/checks`, world.admin);
-
-      expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe("MFA_SETUP_REQUIRED");
-    });
-
-    it("someone who isn't an Admin anywhere works with a password alone", async () => {
-      for (const user of [world.editor, world.viewer, world.printer, world.approver1]) {
-        expect((await get(`/workspaces/${world.workspaceId}/checks`, user, PASSWORD_ONLY)).status).toBe(200);
-      }
-    });
-
-    it("an Admin in another workspace of the same company is asked here too", async () => {
-      const other = await prisma.workspace.create({
-        data: { tenantId: world.tenantId, businessName: "Second LLC", addressLine1: "2 Main St", city: "Austin", state: "TX", zipCode: "78701" },
-      });
-      await makeAdmin(world, world.editor, other.id);
-      await enroll(world.editor);
-
-      const res = await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY);
-
-      expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe("MFA_REQUIRED");
-    });
-
-    it("being an Admin in a different company doesn't count here", async () => {
-      const elsewhere = await createWorld();
-      await prisma.tenantMember.create({ data: { tenantId: elsewhere.tenantId, userId: world.editor.id, role: "MEMBER" } });
-      await makeAdmin(elsewhere, world.editor, elsewhere.workspaceId);
-
-      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY)).status).toBe(200);
-    });
-
-    it("someone who turned it on by choice is asked too", async () => {
+    it("whatever their role: a viewer who turned it on is asked too", async () => {
       await enroll(world.viewer);
 
       const res = await get(`/workspaces/${world.workspaceId}/checks`, world.viewer, PASSWORD_ONLY);
@@ -90,12 +58,25 @@ describe("two-factor in Check Printing", () => {
       expect(res.body.error.code).toBe("MFA_REQUIRED");
     });
 
-    it("being made an Admin takes effect at once", async () => {
+    it("once the session has entered the code, they get in", async () => {
+      await enroll(world.admin);
+
+      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.admin)).status).toBe(200);
+    });
+
+    it("turning it on takes effect at once", async () => {
       expect((await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY)).status).toBe(200);
 
-      await makeAdmin(world, world.editor);
+      await enroll(world.editor);
 
-      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY)).body.error.code).toBe("MFA_SETUP_REQUIRED");
+      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY)).body.error.code).toBe("MFA_REQUIRED");
+    });
+
+    it("after the owner resets it, the person is no longer asked", async () => {
+      await enroll(world.editor);
+      await prisma.user.update({ where: { id: world.editor.id }, data: { mfaEnabledAt: null } });
+
+      expect((await get(`/workspaces/${world.workspaceId}/checks`, world.editor, PASSWORD_ONLY)).status).toBe(200);
     });
   });
 
@@ -147,6 +128,8 @@ describe("two-factor in Check Printing", () => {
     });
 
     it("the team list says who has it on", async () => {
+      await enroll(world.admin);
+
       const res = await request(getApp()).get(`/api/v1/workspaces/${world.workspaceId}/members`).set(authHeaders(world.admin));
 
       const flags = Object.fromEntries((res.body.data as Array<{ userId: string; twoFactorEnabled: boolean }>).map((m) => [m.userId, m.twoFactorEnabled]));

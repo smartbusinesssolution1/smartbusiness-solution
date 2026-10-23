@@ -47,7 +47,7 @@ const router: Router = Router();
 router.use(authMiddleware);
 router.use(tenantMiddleware);
 router.use(requireProduct("check-printing"));
-// Admins (and anyone who turned it on) must have entered a two-factor code this session.
+// Anyone who turned two-factor sign-in on must have entered a code this session.
 router.use(requireTwoFactor);
 
 // Workspace CRUD
@@ -109,7 +109,7 @@ router.post(
 );
 
 // Someone lost their phone and their backup codes: only the company owner can reset their
-// two-factor sign-in (audited); they set it up again on their next visit.
+// two-factor sign-in (audited); it stays off until they turn it on again.
 router.post(
   "/:wid/members/:mid/two-factor/reset",
   workspaceMiddleware,

@@ -14,10 +14,12 @@ export interface TwoFactorStatus {
 
 const statusKey = ["two-factor"] as const;
 
-export function useTwoFactorStatus() {
+export function useTwoFactorStatus(enabled = true) {
   return useQuery({
     queryKey: statusKey,
     queryFn: async () => (await api<TwoFactorStatus>("/auth/mfa")).data,
+    enabled,
+    staleTime: 60_000,
   });
 }
 

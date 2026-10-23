@@ -30,6 +30,7 @@ import { useViews } from "@/api/checks";
 import { useWorkspaces } from "@/api/workspace";
 import type { Permission, RegisterView } from "@/api/types";
 import { Brand } from "@/components/app/brand";
+import { TwoFactorNudge } from "@/components/app/two-factor-nudge";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { cn } from "@/lib/utils";
 import { initials } from "@/lib/format";
@@ -124,7 +125,7 @@ function SidebarContent() {
   const settings = SETTINGS.filter((e) => e.show(can));
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto px-3 py-4">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto px-3 py-4 [&>*]:shrink-0">
       <div className="px-1.5">
         <Brand />
       </div>
@@ -155,7 +156,8 @@ function SidebarContent() {
         </nav>
       )}
 
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col gap-3">
+        <TwoFactorNudge />
         <UserMenu />
       </div>
     </div>

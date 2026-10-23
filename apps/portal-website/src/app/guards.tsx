@@ -40,18 +40,18 @@ function useSessionEndedHandler() {
   );
 }
 
-// Check Printing wants a two-factor code (or setup) from this admin: go there, then come
-// back to the page they were on.
+// Check Printing wants this session's two-factor code: ask for it, then come back to the
+// page they were on (never to "create a workspace", which only its own button opens).
 function useTwoFactorHandler() {
   const navigate = useNavigate();
   React.useEffect(
     () =>
-      onTwoFactorNeeded((need) => {
+      onTwoFactorNeeded(() => {
         // Where the person is right now (read when it happens, not when this was set up).
         const { pathname, search } = window.location;
         if (pathname.startsWith("/two-factor")) return;
-        const next = encodeURIComponent(pathname + search);
-        navigate(need === "setup" ? `/two-factor/setup?next=${next}` : `/two-factor?next=${next}`, { replace: true });
+        const back = pathname.startsWith("/workspaces/new") ? "/workspaces" : pathname + search;
+        navigate(`/two-factor?next=${encodeURIComponent(back)}`, { replace: true });
       }),
     [navigate],
   );

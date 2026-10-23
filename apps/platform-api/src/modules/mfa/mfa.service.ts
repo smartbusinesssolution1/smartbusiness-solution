@@ -11,12 +11,13 @@ import { generateSecret, matchingStep, otpauthUrl } from "./totp.js";
 // ═══════════════════════════════════════════════════════════════
 // TWO-FACTOR SIGN-IN
 //
-// Sign-in itself is unchanged (password only), so products that don't require two-factor
-// (Clock-In) are unaffected. A product that does (Check Printing, for its admins) refuses
-// a session whose access token lacks "otp"; the person then enters a code here, which
-// marks THIS session verified and re-issues the access token with amr ["pwd", "otp"].
+// Optional: each person turns it on from their account. Sign-in itself is unchanged
+// (password only), so products that don't check it (Clock-In) are unaffected. Check
+// Printing refuses a session of someone who turned it on until that session enters a code
+// here, which marks THIS session verified and re-issues the access token with amr
+// ["pwd", "otp"].
 //
-//   setup:   start → secret shown once (QR) → confirm with a code → on, + 10 backup codes
+//   setup:   start → secret shown (QR) → confirm with a code → on, + 10 backup codes
 //   verify:  6-digit code (or a backup code) → this session verified
 //   off:     password + code → secret, backup codes and verified sessions cleared
 // ═══════════════════════════════════════════════════════════════
@@ -60,12 +61,19 @@ export class MfaService {
 
   // ─── Setup ────────────────────────────────────────────────
 
-  // A new secret, kept pending until a code proves the phone has it. Shown exactly once:
-  // as a QR code (otpauth link) and as text, for typing in by hand.
+  // A secret kept pending until a code proves the phone has it, shown as a QR code
+  // (otpauth link) and as text for typing in by hand.
+  //
+  // An unfinished setup keeps ITS secret: coming back to the setup screen shows the same QR
+  // code. A new secret each time would add a new entry to the authenticator app on every
+  // scan, each with different codes, and only the last one would work. Each visit keeps the
+  // pending secret alive for another 15 minutes.
   async startSetup(ctx: MfaContext) {
     const user = await this.user(ctx.userId);
     if (user.mfaEnabledAt) throw new ConflictError("Two-factor sign-in is already on. Turn it off first to set it up again.");
-    const secret = generateSecret();
+    const pendingStillValid =
+      user.mfaPendingSecretEncrypted && user.mfaPendingCreatedAt && this.now().getTime() - user.mfaPendingCreatedAt.getTime() <= SETUP_TTL_MS;
+    const secret = pendingStillValid ? this.box.open(user.mfaPendingSecretEncrypted!) : generateSecret();
     await this.repo.savePendingSecret(user.id, this.box.seal(secret));
     return { secret, otpauthUrl: otpauthUrl(secret, user.email) };
   }
@@ -136,7 +144,7 @@ export class MfaService {
   }
 
   // Off: needs the password AND a code (or backup code), so a borrowed unlocked laptop
-  // isn't enough. Check Printing still requires it for admins: they'll set it up again.
+  // isn't enough.
   async disable(ctx: MfaContext, password: string, code: string) {
     const user = await this.user(ctx.userId);
     if (!user.mfaEnabledAt || !user.mfaSecretEncrypted) throw new AppError("Two-factor sign-in isn't on.", 409, "MFA_NOT_SET_UP");

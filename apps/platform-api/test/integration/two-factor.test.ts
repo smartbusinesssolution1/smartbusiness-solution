@@ -103,6 +103,30 @@ describe("setup", () => {
     expect(await audits("MFA_ENABLED")).toBe(1);
   });
 
+  it("coming back to an unfinished setup shows the same QR code (one entry in the app, not one per scan)", async () => {
+    const client = await signedIn();
+    const first = (await client.post(`${MFA}/setup`)).body.data;
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+
+    const again = (await client.post(`${MFA}/setup`)).body.data;
+
+    expect(again.secret).toBe(first.secret);
+    expect(again.otpauthUrl).toBe(first.otpauthUrl);
+    // The code from the entry scanned the first time works.
+    expect((await client.post(`${MFA}/setup/confirm`, { code: nextCode(first.secret) })).status).toBe(200);
+  });
+
+  it("an unfinished setup older than 15 minutes gets a fresh secret", async () => {
+    const client = await signedIn();
+    const first = (await client.post(`${MFA}/setup`)).body.data;
+    vi.setSystemTime(Date.now() + 16 * 60_000);
+    await client.refresh();
+
+    const again = (await client.post(`${MFA}/setup`)).body.data;
+
+    expect(again.secret).not.toBe(first.secret);
+  });
+
   it("a setup left unconfirmed for over 15 minutes must start again", async () => {
     const client = await signedIn();
     const { secret } = (await client.post(`${MFA}/setup`)).body.data;

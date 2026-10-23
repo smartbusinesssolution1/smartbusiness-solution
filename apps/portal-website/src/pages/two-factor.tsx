@@ -26,9 +26,9 @@ import { PasswordInput } from "./auth/password-input";
 // ═══════════════════════════════════════════════════════════════
 // TWO-FACTOR SIGN-IN
 //
-// Check Printing asks its admins for a code from an authenticator app once per session.
-// These screens: entering the code, setting it up (QR code, then backup codes), and
-// managing it from the account menu.
+// Optional, turned on from the account menu (the app nudges admins towards it). Once on,
+// Check Printing asks for a code from the authenticator app once per sign-in. These
+// screens: entering the code, setting it up (QR code, then backup codes), managing it.
 // ═══════════════════════════════════════════════════════════════
 
 // ─── The code step ──────────────────────────────────────────
@@ -221,7 +221,7 @@ export function TwoFactorSetupPage() {
   // its own could create two secrets and show the wrong QR code).
   if (!start.data) {
     return (
-      <AuthLayout title="Set up two-factor sign-in" subtitle="Admins in Check Printing sign in with a password and a code from their phone, so a stolen password alone can't get in.">
+      <AuthLayout title="Set up two-factor sign-in" subtitle="Sign in with your password and a code from your phone, so a stolen password alone can't get into your account.">
         <div className="flex flex-col gap-5">
           <ol className="flex flex-col gap-3 text-sm">
             <li className="flex gap-3"><Smartphone className="mt-0.5 size-4 shrink-0 text-muted" /> Install an authenticator app on your phone: Google Authenticator, Microsoft Authenticator, Authy or 1Password.</li>
@@ -244,6 +244,7 @@ export function TwoFactorSetupPage() {
       <form onSubmit={submit} className="flex flex-col gap-5" noValidate>
         <div className="flex flex-col items-center gap-3 rounded-xl border border-line bg-panel p-4">
           <QrCode value={start.data.otpauthUrl} />
+          <p className="text-center text-xs text-muted">Scanned a SmartBusiness code for this account before? Delete that old entry in your app: only this one will work.</p>
           <details className="w-full text-center text-xs text-muted">
             <summary className="cursor-pointer hover:text-ink">Can't scan? Type this key instead</summary>
             {/* Wraps only between the groups of four, so each group stays readable. */}
@@ -286,7 +287,7 @@ export function AccountSecurityPage() {
       <div className="flex flex-col gap-1.5">
         <span className="eyebrow">Account</span>
         <h1 className="text-[1.625rem] font-semibold tracking-[-0.02em]">Two-factor sign-in</h1>
-        <p className="text-sm text-muted">A code from your phone, on top of your password. Required for admins in Check Printing.</p>
+        <p className="text-sm text-muted">A code from your phone, on top of your password. Optional, and recommended for admins.</p>
       </div>
       {status.error ? (
         <ErrorState error={status.error} onRetry={() => status.refetch()} />
@@ -381,7 +382,7 @@ function TurnOffDialog({ open, onClose }: { open: boolean; onClose: () => void }
           }}
           className="flex flex-col gap-4"
         >
-          <DialogHeader icon={<ShieldOff />} title="Turn off two-factor sign-in?" description="Your account will be protected by your password only. If you're an admin in Check Printing, you'll be asked to set it up again next time." />
+          <DialogHeader icon={<ShieldOff />} title="Turn off two-factor sign-in?" description="Your account will be protected by your password only. Your phone app's entry for SmartBusiness stops working; delete it from the app." />
           <FormError message={error} />
           <Field label="Password" htmlFor="off-password"><PasswordInput id="off-password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
           <Field label="Code from your app (or a backup code)" htmlFor="off-code"><Input id="off-code" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} /></Field>

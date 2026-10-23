@@ -317,7 +317,7 @@ export class WorkspaceService {
       details: { memberEmail: member.user.email },
       ipAddress: ctx.ipAddress,
     });
-    return { message: `${member.user.fullName} will set up two-factor sign-in again next time they open Check Printing.` };
+    return { message: `Two-factor sign-in is off for ${member.user.fullName}. They can turn it on again from their account menu.` };
   }
 
   async updateMember(

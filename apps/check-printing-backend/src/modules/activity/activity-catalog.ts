@@ -269,7 +269,7 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
     describe: (_e, d) => `email delivered to ${str(d.email) || "a member"}: they now have access to this workspace`,
   },
   INVITATION_ACCEPTED: { category: "team", describe: () => "accepted the invitation and joined" },
-  MFA_RESET_BY_OWNER: { category: "team", describe: (_e, d) => `reset two-factor sign-in for ${member(d)} (they set it up again next time)` },
+  MFA_RESET_BY_OWNER: { category: "team", describe: (_e, d) => `reset two-factor sign-in for ${member(d)} (off until they turn it on again)` },
 
   // ── Business details ──
   WORKSPACE_CREATED: { category: "business", describe: (_e, d) => `created the workspace${d.businessName ? ` "${str(d.businessName)}"` : ""}` },
