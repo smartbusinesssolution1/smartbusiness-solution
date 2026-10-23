@@ -1,481 +1,205 @@
-# Face Recognition API
+# Attendance Face Recognition API
 
-A FastAPI-based identity verification service for attendance and identity validation.
-Compares reference photos against multiple selfie angles to confirm it's the same person using **Facenet** + **RetinaFace**.
+A trimmed-down, single-purpose FastAPI service for face-based attendance:
+take **one** live camera capture, compare it against **one** stored profile
+photo, and mark attendance if it's a match **and** the capture passes a
+basic liveness (anti-spoof) check.
 
----
+This is a stripped version of a more complex multi-selfie dating-app
+verification system — all the multi-angle pose-checking, smile-detection,
+cross-selfie consistency, and duplicate-detection logic has been removed
+since attendance only needs one photo vs. one profile picture.
 
-## 🧭 Navigation
-- ⬅️ [Monorepo Master Index (README.md)](../../README.md)
-- ⚙️ [Attendance Backend Integration (`clockInClockOut-backend`)](../clockInClockOut-backend/README.md)
-- 📋 [Attendance REST API Specification](../clockInClockOut-backend/ATTENDANCE_API_ENDPOINTS.md)
-
----
-
-## Table of Contents
-
-- [Project Structure](#project-structure)
-- [Tech Stack](#tech-stack)
-- [Local Setup](#local-setup)
-- [API Endpoints](#api-endpoints)
-- [Request & Response Format](#request--response-format)
-- [Configuration](#configuration)
-- [Error Handling](#error-handling)
-- [App Flow](#app-flow)
-- [Mentor Integration Guide](#mentor-integration-guide)
-- [Tips for Better Accuracy](#tips-for-better-accuracy)
-
----
-
-## Project Structure
+## Project structure
 
 ```
-face_recognition_api/
-├── main.py             # FastAPI app entry point, CORS, lifespan
-├── routes.py           # API endpoints
-├── service.py          # Core logic: RetinaFace + Facenet512 + cosine distance
-├── schemas.py          # Pydantic models for request/response
-├── config.py           # All thresholds and settings
-├── requirements.txt    # Python dependencies
-└── README.md           # This file
+attendance-face-recognition/
+├── main.py                  # FastAPI app entry point
+├── routes.py                 # /attendance/challenge + /attendance/mark-burst
+├── service.py                 # face detection, embedding, matching (InsightFace)
+├── liveness.py                 # passive heuristic anti-spoof checks
+├── motion_liveness.py          # head-turn challenge verification + burst analysis
+├── challenge.py                # signed single-use random challenge
+├── screen_detect.py            # screen/phone/photo boundary detection
+├── schemas.py                   # request/response models
+├── config.py                     # thresholds & settings
+├── requirements.txt
+└── test_attendance.html            # standalone browser test page (upload or webcam)
 ```
 
----
+## How it works
 
-## Tech Stack
+1. `POST /api/v1/attendance/mark` takes two files: `profile_image` (the
+   stored reference photo) and `capture_image` (what the camera just took).
+2. InsightFace (`buffalo_sc`, ArcFace embeddings) detects the face in each
+   and extracts a 512-d embedding.
+3. `liveness.py` runs a handful of heuristic checks on `capture_image` only
+   (the profile photo is an already-trusted stored reference, so it isn't
+   liveness-checked):
+   - moire / screen-replay pattern detection (FFT)
+   - specular glare/reflection detection (screen or glossy print glare)
+   - texture micro-detail check (too smooth = print/screen recapture)
+   - dynamic-range check (washed-out reproduction)
+   - rectangular frame/edge detection near the face (photo-of-a-photo)
+4. Cosine distance between the two embeddings decides match/no-match.
+5. Response status is one of:
+   - `marked` — face matched and passed liveness
+   - `rejected` — face didn't match the profile photo
+   - `spoof_suspected` — capture failed the liveness check (regardless of
+     whether the embeddings matched)
 
-| Component | Library |
-|-----------|---------|
-| API Framework | FastAPI |
-| Face Detection | RetinaFace |
-| Face Recognition | DeepFace (Facenet) |
-| Image Processing | OpenCV |
-| Distance Metric | Cosine similarity |
+## ⚠️ About the liveness check — please read
 
----
+The anti-spoof check in `liveness.py` is a **heuristic, single-frame**
+method, not a trained deep anti-spoofing model. It raises the bar against
+casual spoofing (printing someone's profile picture, holding up a phone
+with their photo) by looking for texture/frequency/reflection artifacts
+that photo-of-a-photo and screen-replay attacks commonly produce.
 
-## Local Setup
+It is **not** a certified/production-grade liveness product and can be
+fooled by a high-quality print or a determined attacker with better
+equipment. For real deployments (offices, exams, secure access), combine it
+with one or more of:
+- an active challenge (ask the user to blink / turn head / say a random
+  number, checked across a short burst of frames)
+- a trained anti-spoof model (e.g. Silent-Face-Anti-Spoofing, MiniFASNet)
+- depth or IR camera hardware
 
-### Step 1 — Check Python version
+## Endpoints (live capture is mandatory)
 
-This project requires **Python 3.10 or higher**. Check your version:
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/attendance/challenge` | Fresh **single-use, signed, 90s** random challenge: an ordered list of head turns, e.g. `["left","right"]`. Call before every capture. |
+| `POST /api/v1/attendance/mark-burst` | `profile_image` + `capture_images` (frames in capture order: camera-facing frames, optional `[turn, frontal]` per step, then closed-eye + open-eye blink frames; exact count = `expected_frames` from the challenge) + `challenge_token` (form field). |
+| `POST /api/v1/face/detect` | Preview-only face box. |
+
+The old single-photo `/attendance/mark` endpoint and the "plain photo upload"
+fallback were **removed**: a still photo cannot carry a liveness challenge.
+
+### Default flow: blink once (4 frames)
+
+Employee centers face in the oval, blinks once, done. Frames: 2 camera-facing
+(open eyes) + closed-eye + open-eye. Optional random head turns exist
+(`CHALLENGE_STEPS=2` → frames = 2 + 4 + 2 = 8) but are OFF by default.
+
+### Anti-spoofing (all must pass, fail-closed)
+
+1. **Fresh single-use signed challenge token** (`challenge.py`): expires in
+   90s, burned on first submit → old captured bursts can't be re-sent.
+2. **Blink step** (`motion_liveness.py`): closed-eye then open-eye frame
+   AFTER the camera-facing frames, judged relative to the user's own open-eye
+   EAR (median of their camera-facing frames). Replay of blink-less photo or
+   video with no blink fails.
+3. **Screen / phone / paper boundary detection** (`screen_detect.py`): finds a
+   rectangular outline (any tilt) that fully encloses the face, backed by real
+   edges on all four sides. `SCREEN_BORDER_HARD_REJECT` in `config.py`.
+4. Passive heuristics (moire, glare, texture, dynamic range, bezel, colour
+   cast) on a sample of camera-facing frames.
+5. Static-photo motion check.
+6. Identity: majority of camera-facing frames must match the profile photo.
+7. MediaPipe missing/broken → every attempt **fails** (no silent downgrade).
+8. Optional random head-turn challenge (`CHALLENGE_STEPS` > 0): the strongest
+   defence against a pre-recorded video, because a replay can't know the
+   random sequence.
+
+**Honest limit of blink-only:** a blink is predictable, so a good recorded
+blink video shown full-frame (no visible screen edge) can only be caught by
+the passive checks (moire/glare/texture), which are heuristic. For real
+assurance add a trained passive anti-spoof model (MiniFASNet) and/or turn the
+head-turn challenge on for high-risk cases.
+
+Tuning (`config.py`): `CHALLENGE_STEPS` (0 = blink only; 2 → 4 sequences, 3 → 8), `BLINK_CLOSED_RATIO`/`BLINK_OPEN_RATIO`,
+`TURN_MIN`, `FRONTAL_MAX`, `LEFT_YAW_SIGN` (flip to `-1` if left/right feel
+swapped on your device — the page reads it from the server).
+
+Known limits: a screen that fills the whole frame (no visible border) is only
+caught by the passive checks; a door/window frame tightly around the face can
+false-trigger the border check (set `SCREEN_BORDER_HARD_REJECT=False` to log
+only); the server can't prove frames came from a camera — direct API callers
+can still craft frames, so use app/device attestation for high assurance.
+
+`test_attendance.html` implements the client flow (camera only, auto-capture).
+Tests: `python -m pytest tests` (ML stubbed; real models need
+`insightface` + `mediapipe==0.10.14` on Python 3.9–3.12).
+
+## ⚠️ Production-readiness notes — please read before deploying
+
+The burst endpoint closes the two biggest gaps in a single-frame system
+(**static photo** and **plain video replay with no matching live
+challenge**), but it is still not a certified/production anti-spoof
+solution on its own. To actually get to production grade:
+
+1. **Add a trained passive anti-spoof model.** Heuristics (texture, moire,
+   color cast, bezel/edge detection) and the blink/motion check in
+   `motion_liveness.py` are still hand-tuned signals, not a learned
+   classifier. Plug in a trained model such as
+   [Silent-Face-Anti-Spoofing](https://github.com/minivision-ai/Silent-Face-Anti-Spoofing)
+   (MiniFASNet, ONNX-exportable) as an additional score in
+   `check_liveness()` / `analyze_burst()`. This is the single highest-value
+   upgrade.
+2. **Server-issued random challenges.** Right now the "blink" prompt is a
+   fixed client-side instruction. For real assurance, have the *server*
+   pick a random challenge per attempt (blink twice / turn head left / say
+   a number shown on screen) and verify it was actually performed — this
+   defeats a pre-recorded video of the *right* person blinking on cue.
+3. **A video replay of the correct blink can still beat blink-only
+   checks.** Combine with the motion/flicker checks already in
+   `motion_liveness.py`, and ideally a screen/device detection model
+   (bezel + moire + flicker are heuristics for this; a trained detector is
+   more robust).
+4. **Depth or IR camera hardware** if the deployment (e.g. secure office
+   entry) justifies the cost — this is the most robust anti-spoof
+   guarantee and is what commercial FaceID-grade systems rely on.
+5. **Operational hardening**, independent of the liveness model:
+   - Store face **embeddings**, not raw photos, in your DB where possible;
+     encrypt anything you do keep at rest.
+   - Rate-limit and log every attempt (who, when, match score, liveness
+     score, IP/device) for audit and abuse detection.
+   - Serve over HTTPS only; never accept plaintext camera uploads.
+   - Add a manual-review fallback path for borderline/rejected cases
+     rather than a hard binary allow/deny.
+   - Re-tune `MATCH_THRESHOLD`, `LIVENESS_THRESHOLD`, and the blink/motion
+     thresholds in `config.py` / `motion_liveness.py` against your actual
+     camera hardware and a labeled dataset of real vs. spoof attempts
+     before go-live — these heuristic thresholds are camera- and
+     lighting-dependent and will need calibration.
+   - Version your models/thresholds and monitor false-accept/false-reject
+     rates over time; spoof techniques evolve.
+
+## Setup
 
 ```bash
-python --version
-```
-
-If you don't have Python 3.10+ installed, download and install Python 3.13 from the official site:
-
-```
-https://www.python.org/downloads/
-```
-
-After installing, verify it:
-
-```bash
-python --version
-# Should show: Python 3.13.x
-```
-
-> On some systems you may need to use `python3` instead of `python`.
-
----
-
-### Step 2 — Clone the repository
-
-```bash
-git clone <your-repo-url>
-cd face_recognition_api
-```
-
----
-
-### Step 3 — Create virtual environment
-
-```bash
-# Windows
-python -m venv venv
-
-# Mac / Linux
 python3 -m venv venv
-```
-
----
-
-### Step 4 — Activate virtual environment
-
-```bash
-# Windows
-venv\Scripts\activate
-
-# Mac / Linux
-source venv/bin/activate
-```
-
-You should see `(venv)` at the start of your terminal line after activation.
-
----
-
-### Step 5 — Install dependencies
-
-```bash
+source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-> This will take a few minutes on first run. TensorFlow alone is ~500MB.
-> Make sure you have a stable internet connection.
-
----
-
-### Step 6 — Run the server
-
-```bash
 python main.py
 ```
 
-You should see this output:
-
-```
-INFO:     Started server process
-INFO:     Waiting for application startup.
-🚀 Face Recognition API starting up...
-   Model: Facenet512
-   Detector: retinaface
-   Threshold: 0.3
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
----
-
-### Step 7 — Verify it's running
-
-Open your browser and visit:
-
-```
-http://localhost:8000/health
-```
-
-You should see:
-
-```json
-{ "status": "healthy" }
-```
-
-Interactive API docs are available at:
-
-```
-http://localhost:8000/docs
-```
-
----
-
-### Stopping the server
-
-Press `Ctrl + C` in the terminal to stop the server.
-
-### Restarting the server
-
-```bash
-python main.py
-```
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/v1/verify` | Full verification — 1–2 reference images + 2–5 selfies |
-| POST | `/api/v1/verify/quick` | Quick 1-vs-1 face comparison |
-| GET | `/` | Service info |
-| GET | `/health` | Health check |
-
----
-
-## Request & Response Format
-
-### POST `/api/v1/verify`
-
-**Request type:** `multipart/form-data`
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `reference_images` | File(s) | Yes | 1–2 reference photos (JPG/PNG, max 10MB each) |
-| `selfie_images` | File(s) | Yes | 2–5 selfie photos (JPG/PNG, max 10MB each) |
-
-**Success Response — `200 OK`**
-
-```json
-{
-  "status": "verified",
-  "confidence_score": 0.875,
-  "matched_pairs": 10,
-  "total_pairs": 12,
-  "match_ratio": 0.83,
-  "pair_results": [
-    {
-      "reference_index": 0,
-      "selfie_index": 0,
-      "is_match": true,
-      "confidence_score": 0.87,
-      "distance": 0.195
-    }
-  ],
-  "message": "Identity verified. 10/12 image pairs matched with 87.5% confidence."
-}
-```
-
-**Response fields explained**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `status` | string | `verified` or `rejected` |
-| `confidence_score` | float | Overall confidence 0.0–1.0 |
-| `matched_pairs` | int | Number of pairs that matched |
-| `total_pairs` | int | Total pairs compared |
-| `match_ratio` | float | matched / total |
-| `pair_results` | array | Per-pair breakdown with distance and score |
-| `message` | string | Human-readable result summary |
-
----
-
-### POST `/api/v1/verify/quick`
-
-Quick 1-vs-1 comparison. Same response format as above.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `reference_image` | File | Yes | Single reference photo (JPG/PNG) |
-| `selfie_image` | File | Yes | Single selfie photo (JPG/PNG) |
-
----
-
-## Configuration
-
-All settings are in `config.py` and can be overridden via a `.env` file.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RECOGNITION_MODEL` | `Facenet512` | Face embedding model |
-| `DETECTOR_BACKEND` | `retinaface` | Face detection backend |
-| `MATCH_THRESHOLD` | `0.30` | Cosine distance cutoff per pair (lower = stricter) |
-| `MIN_MATCH_RATIO` | `0.60` | Minimum % of pairs that must match for verified result |
-| `MAX_FILE_SIZE_MB` | `10` | Max image size per uploaded file |
-| `MAX_SELFIE_IMAGES` | `5` | Max number of selfie images allowed |
-
----
-
-## Error Handling
-
-| HTTP Code | Meaning | Cause |
-|-----------|---------|-------|
-| `400` | Bad Request | Wrong file type, file too large, or wrong image count |
-| `422` | Unprocessable | No face detected in one or more images |
-| `500` | Server Error | Internal model or embedding failure |
-
-All error responses follow this format:
-
-```json
-{
-  "error": "string",
-  "detail": "string"
-}
-```
-
----
-
-## App Flow
-
-This is the intended user flow for the dating app:
-
-```
-Step 1 — User picks 1–2 photos from their device gallery
-              ↓
-Step 2 — App opens camera, user captures 2–5 selfies
-         at different angles (front, left, right, up, down, smile)
-              ↓
-Step 3 — App sends all images to POST /api/v1/verify
-              ↓
-Step 4 — API returns verified or rejected with confidence score
-              ↓
-Step 5 — App shows result to the user
-```
-
-**Important notes for mobile integration:**
-- Send images as `multipart/form-data` — not base64, not JSON
-- Use field name `reference_images` for gallery photos
-- Use field name `selfie_images` for camera captures
-- Set request timeout to at least 60 seconds — the first request loads the model
-- Full body photos are supported — the API automatically detects and crops the face
-
----
-
-## Mentor Integration Guide
-
-Follow these steps to set up and run the API on a new system.
-
-### Step 1 — Prerequisites
-
-Make sure the following are installed on your system:
-
-| Tool | Minimum Version | Download |
-|------|----------------|----------|
-| Python | 3.10 or higher | https://www.python.org/downloads/ |
-| Git | Any | https://git-scm.com/downloads |
-| pip | Comes with Python | — |
-
-Verify Python is installed:
-
-```bash
-python --version
-```
-
-If Python is not installed or version is below 3.10, install Python 3.13:
-
-```bash
-# Windows — download installer from:
-https://www.python.org/downloads/release/python-3130/
-
-# Mac — using Homebrew
-brew install python@3.13
-
-# Ubuntu / Linux
-sudo apt update
-sudo apt install python3.13 python3.13-venv python3.13-pip
-```
-
----
-
-### Step 2 — Clone the repository
-
-```bash
-git clone <your-repo-url>
-cd face_recognition_api
-```
-
----
-
-### Step 3 — Create and activate virtual environment
-
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# Mac / Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
----
-
-### Step 4 — Install all dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-This installs everything automatically including FastAPI, DeepFace, RetinaFace, TensorFlow, and OpenCV.
-
-> First install takes 5–10 minutes depending on internet speed.
-> TensorFlow is ~500MB. Make sure you have at least 2GB of free disk space.
-
----
-
-### Step 5 — Start the API server
-
-```bash
-python main.py
-```
-
-Expected output:
-
-```
-INFO:     Started server process
-INFO:     Waiting for application startup.
-🚀 Face Recognition API starting up...
-   Model: Facenet
-   Detector: retinaface
-   Threshold: 0.3
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8000
-```
-
----
-
-### Step 6 — Test the API is working
-
-Open browser and visit:
-
-```
-http://localhost:8000/health
-```
-
-Expected response:
-
-```json
-{ "status": "healthy" }
-```
-
-Full interactive docs:
-
-```
-http://localhost:8000/docs
-```
-
----
-
-### Step 7 — Call the API from your app
-
-The API accepts `multipart/form-data` POST requests. Here is the base URL:
-
-```
-http://localhost:8000/api/v1/verify
-```
-
-Send two fields:
-- `reference_images` — gallery photos selected by user (1–2 images)
-- `selfie_images` — selfies captured from camera (2–5 images)
-
-The API will return `verified` or `rejected` with a confidence score.
-
----
-
-### Troubleshooting
-
-**Problem: `ModuleNotFoundError` for any package**
-```bash
-pip install -r requirements.txt
-```
-
-**Problem: Port 8000 already in use**
-```bash
-# Run on a different port
-uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-```
-
-**Problem: First request is very slow (30–60 seconds)**
-
-This is normal. DeepFace downloads the Facenet512 model weights (~90MB) on the very first request. After that all requests are fast.
-
-**Problem: `No face detected` error (422)**
-
-The uploaded image does not have a clearly visible face. Ask the user to upload a clearer, well-lit photo where the face is visible.
-
-**Problem: Camera not working in test page**
-
-Open the test HTML file in Chrome or Edge. Firefox may block camera access for local files.
-
----
-
-## Tips for Better Accuracy
-
-- Reference photos should clearly show the face — avoid group photos or far-away shots
-- Selfie angles to capture: **front, left, right, up, down, smile**
-- Keep angle tilts subtle — extreme angles (fully sideways) reduce match accuracy
-- Good lighting matters — faces lit from the front perform best
-- Avoid backlighting (e.g. sitting in front of a bright window)
-- Minimum face size in any image should be at least 80×80 pixels for reliable detection
-- Glasses are handled automatically — the model works with or without glasses
-- Full body photos work fine — the API automatically crops the face region
+Visit `http://localhost:8000/health` to confirm it's running, and
+`http://localhost:8000/docs` for interactive API docs.
+
+To try it end to end without wiring up your own frontend yet, just open
+`test_attendance.html` in a browser — it lets you upload a profile photo
+and either upload or capture (webcam) a test photo, and shows the raw JSON
+response.
+
+## Wiring in your database later
+
+Right now `profile_image` is sent as a file on every request so the
+endpoint is testable standalone. Once your table structure is available,
+swap `routes.py`'s `profile_image` upload for a lookup by user/employee ID:
+fetch the stored profile photo (or, better, a precomputed embedding column)
+from your DB instead of re-uploading and re-embedding it on every check.
+
+## Configuration (`config.py`)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MATCH_THRESHOLD` | `0.55` | Cosine distance cutoff for a face match (lower = stricter) |
+| `LIVENESS_THRESHOLD` | `0.60` | Minimum liveness score (0-1) to pass anti-spoof check |
+| `MIN_FACE_SIZE_PX` | `80` | Reject faces smaller than this (too far from camera) |
+| `MAX_FILE_SIZE_MB` | `8` | Max upload size per image |
+
+Tune `MATCH_THRESHOLD` and `LIVENESS_THRESHOLD` against your own camera
+hardware and sample photos before deploying — heuristic thresholds like
+these are camera- and lighting-dependent.
