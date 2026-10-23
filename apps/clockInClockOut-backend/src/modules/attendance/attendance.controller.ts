@@ -28,6 +28,18 @@ export class AttendanceController {
   };
 
   /**
+   * GET /api/v1/attendance/challenge
+   * Step 1.5: Acquire fresh signed liveness challenge from face-recognition service
+   */
+  getChallenge = async (_req: Request, res: Response): Promise<void> => {
+    const challenge = await this.attendanceService.getChallenge();
+    res.status(200).json({
+      success: true,
+      data: challenge,
+    });
+  };
+
+  /**
    * POST /api/v1/attendance/check-in
    * POST /api/v1/attendance/clock-in
    * Step 2: Biometric selfie punch + geofence confirmation
@@ -36,13 +48,15 @@ export class AttendanceController {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
     const headerWorkspaceId = req.headers["x-workspace-id"] as string | undefined;
+    const captureFiles = (req as any).captureFiles as Express.Multer.File[] | undefined;
 
     const result = await this.attendanceService.checkIn(
       userId,
       tenantId,
       req.body,
       req.file,
-      headerWorkspaceId
+      headerWorkspaceId,
+      captureFiles
     );
 
     res.status(201).json({

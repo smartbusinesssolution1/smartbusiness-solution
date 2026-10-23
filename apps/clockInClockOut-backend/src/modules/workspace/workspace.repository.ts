@@ -128,4 +128,45 @@ export class WorkspaceRepository {
       });
     });
   }
+
+  /**
+   * Update an existing workspace under a tenant
+   */
+  async updateWorkspace(
+    workspaceId: string,
+    tenantId: string,
+    data: {
+      businessName?: string;
+      addressLine1?: string;
+      addressLine2?: string | null;
+      city?: string;
+      state?: string;
+      zipCode?: string;
+      phone?: string | null;
+    }
+  ) {
+    return prisma.workspace.update({
+      where: { id: workspaceId, tenantId },
+      data,
+      include: {
+        attendanceSettings: {
+          select: {
+            latitude: true,
+            longitude: true,
+            radiusMeters: true,
+            graceMinutes: true,
+          },
+        },
+        _count: {
+          select: {
+            members: {
+              where: {
+                deletedAt: null,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
 }

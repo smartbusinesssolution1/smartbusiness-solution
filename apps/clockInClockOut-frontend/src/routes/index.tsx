@@ -1,7 +1,7 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { CircularProgress, Box, Typography } from '@mui/material';
+import BrandLoader from '../components/BrandLoader';
 
 // Layout
 import DashboardLayout from '../layouts/DashboardLayout';
@@ -26,13 +26,8 @@ const AdminProfile = lazy(() => import('../pages/admin/Profile'));
 const WorkspaceSelectPage = lazy(() => import('../pages/admin/WorkspaceSelectPage'));
 
 // Loader component for transitions
-const PageLoader = () => (
-  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '300px', gap: 2 }}>
-    <CircularProgress size={48} thickness={4} />
-    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-      Loading secure data...
-    </Typography>
-  </Box>
+const PageLoader = ({ message = 'Loading workspace...' }: { message?: string }) => (
+  <BrandLoader message={message} />
 );
 
 // Auth Route Guard
@@ -40,7 +35,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return <PageLoader />;
+    return <PageLoader message="Authenticating session..." />;
   }
 
   if (!user) {
@@ -55,7 +50,7 @@ const RoleRoute: React.FC<{ children: React.ReactNode; allowedRole: 'admin' | 'e
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return <PageLoader />;
+    return <PageLoader message="Verifying permissions..." />;
   }
 
   if (!user) {
@@ -63,10 +58,11 @@ const RoleRoute: React.FC<{ children: React.ReactNode; allowedRole: 'admin' | 'e
   }
 
   if (user.role !== allowedRole) {
-    // If an employee tries to access an admin page, redirect to employee dashboard
-    // If an admin tries to access an employee page, they can access it, or redirect to admin dashboard
-    const fallbackPath = user.role === 'admin' ? '/admin/dashboard' : '/employee/dashboard';
-    return <Navigate to={fallbackPath} replace />;
+    // Administrators are permitted to preview employee interfaces
+    if (user.role === 'admin' && allowedRole === 'employee') {
+      return <>{children}</>;
+    }
+    return <Navigate to="/admin/dashboard" replace />;
   }
 
   return <>{children}</>;
@@ -76,11 +72,7 @@ export const AppRoutes: React.FC = () => {
   const { user, isLoading } = useAuth();
 
   if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
-        <CircularProgress />
-      </Box>
-    );
+    return <PageLoader message="Initializing workspace..." />;
   }
 
   return (

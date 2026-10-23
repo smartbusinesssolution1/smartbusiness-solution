@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import BrandLoader from '../../components/BrandLoader';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { settingsService } from '../../services/settingsService';
@@ -234,18 +235,9 @@ export const EmployeeDashboard: React.FC = () => {
         </IconButton>
       </Box>
 
-      {/* Loading Skeletons */}
+      {/* Loading State */}
       {isLoading ? (
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            <Skeleton variant="rectangular" height={180} sx={{ borderRadius: 3, mb: 3 }} />
-            <Skeleton variant="rectangular" height={260} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 3, mb: 3 }} />
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-        </Grid>
+        <BrandLoader fullScreen message="Loading employee dashboard..." />
       ) : (
         <Grid container spacing={3}>
           

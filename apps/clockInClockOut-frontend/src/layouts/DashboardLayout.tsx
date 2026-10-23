@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { getAvatarUrl } from '../utils/imageUrl';
+import BrandLoader from '../components/BrandLoader';
 import {
   Box,
   Drawer,
@@ -476,7 +477,9 @@ export const DashboardLayout: React.FC = () => {
       >
         <Toolbar /> {/* Spacer for top AppBar */}
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Outlet />
+          <Suspense fallback={<BrandLoader fullScreen message="Loading workspace view..." />}>
+            <Outlet />
+          </Suspense>
         </Box>
       </Box>
     </Box>

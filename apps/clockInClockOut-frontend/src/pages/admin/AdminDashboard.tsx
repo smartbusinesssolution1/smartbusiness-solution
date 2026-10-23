@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../../services/attendanceService';
 import { employeeService } from '../../services/employeeService';
 import { useAuth } from '../../context/AuthContext';
+import BrandLoader from '../../components/BrandLoader';
+import { settingsService } from '../../services/settingsService';
+import { OnboardingChecklistWidget } from '../../components/OnboardingChecklistWidget';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import { User } from '../../types';
 import {
@@ -74,7 +77,7 @@ export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const { user, workspaces, currentWorkspace } = useAuth();
+  const { user, workspaces, currentWorkspace, currentTenant } = useAuth();
 
   // Active chart view tab
   const [chartTab, setChartTab] = useState<'weekly' | 'dept'>('weekly');
@@ -158,6 +161,18 @@ export const AdminDashboard: React.FC = () => {
     gcTime: 300_000,
   });
 
+  // Fetch workspace geofence and shift configuration for active workspace
+  const {
+    data: geofenceSettings,
+    refetch: refetchGeofence,
+  } = useQuery({
+    queryKey: ['adminGeofence', activeWorkspaceId],
+    queryFn: () => settingsService.getGeofence(activeWorkspaceId),
+    enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 30_000,
+    gcTime: 300_000,
+  });
+
   const employees: User[] = useMemo(() => {
     if (!employeesData) return [];
     if (Array.isArray(employeesData)) return employeesData;
@@ -170,6 +185,7 @@ export const AdminDashboard: React.FC = () => {
     refetchMetrics();
     refetchAttendance();
     refetchEmployees();
+    refetchGeofence();
   };
 
   // 1. Row 1: 5-Pillar High-Impact KPI Strip
@@ -486,34 +502,48 @@ export const AdminDashboard: React.FC = () => {
       </Box>
 
       {isLoading ? (
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12 }}>
-            <Grid container spacing={2.5}>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={i}>
-                  <Skeleton variant="rectangular" height={130} sx={{ borderRadius: 3 }} />
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-          <Grid size={{ xs: 12 }}>
-            <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, lg: 8 }}>
-            <Skeleton variant="rectangular" height={380} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <Skeleton variant="rectangular" height={380} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-        </Grid>
+        <BrandLoader fullScreen message="Loading dashboard metrics..." />
       ) : (
         <Grid container spacing={3}>
+          {/* Newly Registered Tenant Notice (0 Workspaces) */}
+          {workspaces && workspaces.length === 0 && (
+            <Grid size={{ xs: 12 }}>
+              <Alert
+                severity="info"
+                icon={<DomainIcon sx={{ fontSize: 22 }} />}
+                sx={{
+                  borderRadius: 3,
+                  alignItems: 'center',
+                  '& .MuiAlert-message': { width: '100%' },
+                }}
+                action={
+                  <Button
+                    color="primary"
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      const step1Btn = document.getElementById('checklist-step-1');
+                      if (step1Btn) {
+                        step1Btn.click();
+                      } else {
+                        navigate('/workspace/select');
+                      }
+                    }}
+                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, mr: 1 }}
+                  >
+                    Create Workspace
+                  </Button>
+                }
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Tenant Account Registered: {currentTenant?.name || (user as any)?.tenantName || 'Organization'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                  To begin tracking attendance, start by creating your primary workspace in the Onboarding Guide on the right.
+                </Typography>
+              </Alert>
+            </Grid>
+          )}
           {/* ======================================================================
               ROW 1: 5-Pillar High-Impact KPI Strip
               ====================================================================== */}
@@ -763,7 +793,7 @@ export const AdminDashboard: React.FC = () => {
                 </ButtonGroup>
               </Box>
 
-              <Box sx={{ width: '100%', height: 310, mt: 'auto' }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 340, mt: 2, display: 'flex', flexDirection: 'column' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {chartTab === 'weekly' ? (
                     <RechartsBarChart
@@ -783,9 +813,9 @@ export const AdminDashboard: React.FC = () => {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="present" name="On Time" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="late" name="Late Check-In" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="absent" name="Absent" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="present" name="On Time" stackId="attendance" fill="#10b981" barSize={38} />
+                      <Bar dataKey="late" name="Late Check-In" stackId="attendance" fill="#f59e0b" barSize={38} />
+                      <Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={38} />
                     </RechartsBarChart>
                   ) : departmentStats.length === 0 ? (
                     <Box
@@ -821,7 +851,7 @@ export const AdminDashboard: React.FC = () => {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="rate" name="Attendance Rate (%)" fill={theme.palette.primary.main} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="rate" name="Attendance Rate (%)" fill={theme.palette.primary.main} radius={[4, 4, 0, 0]} barSize={38} />
                     </RechartsBarChart>
                   )}
                 </ResponsiveContainer>
@@ -831,13 +861,33 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Right Panel: Live Operational Pulse (Real-Time Check-In Stream) */}
           <Grid size={{ xs: 12, lg: 4 }}>
-            <Card
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, height: '100%' }}>
+              <OnboardingChecklistWidget
+                totalEmployeesCount={totalEmployeesCount}
+                hasGeofenceConfigured={Boolean(
+                  (geofenceSettings?.isConfigured &&
+                    geofenceSettings?.geofence &&
+                    (Number(geofenceSettings.geofence.latitude) !== 0 || Number(geofenceSettings.geofence.longitude) !== 0)) ||
+                  (activeWorkspaceId && localStorage.getItem(`geofence_configured_${activeWorkspaceId}`) === 'true') ||
+                  (currentTenant?.id && localStorage.getItem(`geofence_configured_${currentTenant.id}`) === 'true')
+                )}
+                hasShiftConfigured={Boolean(
+                  (geofenceSettings?.isConfigured &&
+                    geofenceSettings?.geofence?.defaultShiftStartTime &&
+                    geofenceSettings?.geofence?.defaultShiftEndTime) ||
+                  (activeWorkspaceId && localStorage.getItem(`shifts_configured_${activeWorkspaceId}`) === 'true') ||
+                  (currentTenant?.id && localStorage.getItem(`shifts_configured_${currentTenant.id}`) === 'true')
+                )}
+                hasAvatarUploaded={Boolean(user?.avatarUrl && user.avatarUrl.trim() !== '' && !user.avatarUrl.includes('placeholder'))}
+              />
+
+              <Card
               sx={{
                 borderRadius: 3,
                 border: `1px solid ${theme.palette.divider}`,
                 boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
                 p: 3,
-                height: '100%',
+                
                 display: 'flex',
                 flexDirection: 'column',
               }}
@@ -993,6 +1043,7 @@ export const AdminDashboard: React.FC = () => {
                 )}
               </Box>
             </Card>
+            </Box>
           </Grid>
 
           {/* ======================================================================

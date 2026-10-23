@@ -18,10 +18,11 @@ export interface AuthState {
   switchWorkspace: (workspaceId: string) => Promise<Workspace>;
   addWorkspace: (name: string, details?: Partial<Workspace>) => Promise<Workspace>;
   refreshWorkspaces: () => Promise<void>;
-  login: (email: string, password?: string) => Promise<User>;
+  login: (email: string, password?: string, rememberDevice?: boolean) => Promise<User>;
   register: (companyName: string, fullName: string, email: string, defaultPolicy?: string) => Promise<User>;
   logout: (queryClient?: QueryClient) => Promise<void>;
   updateCurrentUserState: (updatedUser: User) => void;
+  updateOrganizationAndWorkspace: (tenantName?: string, workspaceName?: string) => void;
   restoreSession: () => Promise<void>;
 }
 
@@ -34,15 +35,16 @@ const computeIsSuperAdmin = (tenant: Tenant | null, user: User | null): boolean 
 };
 
 const getInitialState = () => {
-  const cachedUser = isSignedIn() ? getSessionUser() : null;
-  const currentTenant = authService.getCurrentTenant();
-  const workspaces = authService.getWorkspaces();
-  const currentWorkspace = authService.getActiveWorkspace();
+  const signedIn = isSignedIn();
+  const cachedUser = signedIn ? getSessionUser() : null;
+  const currentTenant = signedIn ? authService.getCurrentTenant() : null;
+  const workspaces = signedIn ? authService.getWorkspaces() : [];
+  const currentWorkspace = signedIn ? authService.getActiveWorkspace() : null;
 
   return {
     user: cachedUser,
     token: cachedUser ? 'session-cookie-active' : null,
-    isLoading: !cachedUser && isSignedIn(),
+    isLoading: !cachedUser && signedIn,
     currentTenant,
     workspaces,
     currentWorkspace,
@@ -93,10 +95,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     });
   },
 
-  login: async (email: string, password?: string): Promise<User> => {
+  updateOrganizationAndWorkspace: (tenantName?: string, workspaceName?: string): void => {
+    const state = get();
+    let updatedTenant = state.currentTenant;
+    if (tenantName && updatedTenant) {
+      updatedTenant = { ...updatedTenant, name: tenantName };
+      authService.setCurrentTenant(updatedTenant);
+    }
+
+    let updatedWorkspaces = state.workspaces;
+    let updatedCurrentWorkspace = state.currentWorkspace;
+    if (workspaceName && updatedCurrentWorkspace) {
+      updatedCurrentWorkspace = { ...updatedCurrentWorkspace, name: workspaceName };
+      updatedWorkspaces = updatedWorkspaces.map((w) =>
+        w.id === updatedCurrentWorkspace!.id ? updatedCurrentWorkspace! : w
+      );
+      authService.setWorkspaces(updatedWorkspaces);
+    }
+
+    set({
+      currentTenant: updatedTenant,
+      workspaces: updatedWorkspaces,
+      currentWorkspace: updatedCurrentWorkspace,
+      isSuperAdmin: computeIsSuperAdmin(updatedTenant, state.user),
+    });
+  },
+
+  login: async (email: string, password?: string, rememberDevice?: boolean): Promise<User> => {
     set({ isLoading: true });
     try {
-      const response = await authService.login(email, password);
+      const response = await authService.login(email, password, rememberDevice);
       const liveWorkspaces = await authService.fetchWorkspaces();
       const currentWorkspace = authService.getActiveWorkspace();
       const tenant = response.tenant;
@@ -160,6 +188,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user: null,
         token: null,
         currentTenant: null,
+        workspaces: [],
         currentWorkspace: null,
         isSuperAdmin: false,
         isLoading: false,
@@ -180,7 +209,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   restoreSession: async (): Promise<void> => {
     if (!isSignedIn()) {
-      set({ isLoading: false });
+      set({
+        user: null,
+        token: null,
+        currentTenant: null,
+        workspaces: [],
+        currentWorkspace: null,
+        isSuperAdmin: false,
+        isLoading: false,
+      });
       return;
     }
 
@@ -203,11 +240,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isLoading: false,
         });
       } else {
-        set({ user: null, token: null, isLoading: false });
+        set({
+          user: null,
+          token: null,
+          currentTenant: null,
+          workspaces: [],
+          currentWorkspace: null,
+          isSuperAdmin: false,
+          isLoading: false,
+        });
       }
     } catch (err) {
       console.error('Failed to restore authentication session:', err);
-      set({ isLoading: false });
+      set({
+        user: null,
+        token: null,
+        currentTenant: null,
+        workspaces: [],
+        currentWorkspace: null,
+        isSuperAdmin: false,
+        isLoading: false,
+      });
     }
   },
 }));

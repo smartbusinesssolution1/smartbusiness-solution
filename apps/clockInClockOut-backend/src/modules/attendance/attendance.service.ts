@@ -8,6 +8,7 @@ import { AppError, NotFoundError, ValidationError } from "../../shared/errors/in
 import { storageService } from "../../shared/services/storage.service.js";
 import { faceRecognitionService } from "../../shared/services/faceRecognition.service.js";
 import { memoryCache } from "../../shared/services/cache.service.js";
+import { logger } from "../../shared/services/logger.js";
 import type {
   VerifyLocationInput,
   CheckInInput,
@@ -191,6 +192,13 @@ export class AttendanceService {
   }
 
   /**
+   * Step 1.5: Acquire active-liveness signed challenge token
+   */
+  async getChallenge() {
+    return faceRecognitionService.getChallenge();
+  }
+
+  /**
    * Step 2: Instant 1-Click Check-In Punch (Option 1)
    */
   async checkIn(
@@ -198,7 +206,8 @@ export class AttendanceService {
     tenantId: string,
     input: CheckInInput,
     file?: Express.Multer.File,
-    headerWorkspaceId?: string
+    headerWorkspaceId?: string,
+    captureFiles?: Express.Multer.File[]
   ) {
     const employee = await this.getEmployee(userId, tenantId, input.employeeId);
 
@@ -267,37 +276,56 @@ export class AttendanceService {
       }
     }
 
-    // 5. Face Recognition (Optional / Fast-Path for 1-Click Instant Punch)
+    // 5. Face Recognition & Active Liveness Burst
     let faceMatchConfidence = 100.0;
-    const hasPhoto = Boolean(file || input.selfieUri);
+    const allFiles = captureFiles && captureFiles.length > 0 ? captureFiles : file ? [file] : [];
+    const hasPhoto = allFiles.length > 0 || Boolean(input.selfieUri);
 
     if (hasPhoto && employee.biometricPhotoUrl) {
       try {
-        let liveCaptureBuffer: Buffer | null = null;
-        if (file && file.buffer) {
-          liveCaptureBuffer = file.buffer;
-        } else if (input.selfieUri) {
+        const captureBuffers: Buffer[] = [];
+        for (const f of allFiles) {
+          if (f.buffer) captureBuffers.push(f.buffer);
+        }
+
+        if (captureBuffers.length === 0 && input.selfieUri) {
           if (input.selfieUri.startsWith("data:image")) {
             const base64Data = input.selfieUri.split(",")[1];
-            liveCaptureBuffer = Buffer.from(base64Data, "base64");
+            captureBuffers.push(Buffer.from(base64Data, "base64"));
           } else {
-            liveCaptureBuffer = await storageService.getFileBuffer(input.selfieUri);
+            captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
           }
         }
 
-        if (liveCaptureBuffer) {
+        if (captureBuffers.length > 0) {
           const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
-          const faceResult = await faceRecognitionService.verifyFace({
-            baselineBuffer,
-            baselineFilename: "baseline.jpg",
-            captureBuffer: liveCaptureBuffer,
-            captureFilename: file?.originalname || "capture.jpg",
-          });
+
+          let faceResult;
+          if (input.challengeToken) {
+            faceResult = await faceRecognitionService.verifyFaceBurst({
+              baselineBuffer,
+              baselineFilename: "baseline.jpg",
+              captureBuffers,
+              challengeToken: input.challengeToken,
+            });
+          } else {
+            faceResult = await faceRecognitionService.verifyFace({
+              baselineBuffer,
+              baselineFilename: "baseline.jpg",
+              captureBuffer: captureBuffers[0],
+              captureFilename: file?.originalname || "capture.jpg",
+            });
+          }
+
           if (faceResult?.matched) {
             faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
           }
+          if (faceResult?.status === "spoof_suspected") {
+            logger.warn({ employeeId: employee.id, reasons: faceResult.liveness?.reasons }, "Spoof suspected during biometric check-in");
+          }
         }
-      } catch (err) {
+      } catch (err: any) {
+        logger.warn({ err: err.message }, "Face recognition verification failed during check-in, continuing gracefully");
         // Fallback gracefully without blocking punch
       }
     }

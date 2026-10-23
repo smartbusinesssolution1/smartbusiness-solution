@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
+import BrandLoader from '../../components/BrandLoader';
 import {
   Box,
   Card,
@@ -181,13 +182,7 @@ export const AttendanceHistory: React.FC = () => {
       {/* Table Card */}
       <Card sx={{ borderRadius: 3 }}>
         {isLoading ? (
-          <Box sx={{ p: 3 }}>
-            <Skeleton variant="rectangular" height={50} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-          </Box>
+          <BrandLoader fullScreen message="Loading attendance history..." />
         ) : (
           <Box>
             <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>

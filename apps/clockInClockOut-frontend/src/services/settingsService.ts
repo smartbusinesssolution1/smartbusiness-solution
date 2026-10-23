@@ -53,10 +53,10 @@ export const settingsService = {
 
     if (!activeWsId) {
       return {
-        companyName: 'SmartBusiness Organization',
-        officeName: 'Primary Campus',
-        latitude: 30.2672,
-        longitude: -97.7431,
+        companyName: '',
+        officeName: '',
+        latitude: 0,
+        longitude: 0,
         radius: 100,
         officeStartTime: '09:00',
         officeEndTime: '18:00',
@@ -66,20 +66,20 @@ export const settingsService = {
     try {
       const data = await this.getGeofence(activeWsId);
       return {
-        companyName: data.corporateName || 'SmartBusiness Organization',
-        officeName: data.workspaceName || 'Primary Campus',
-        latitude: data.geofence?.latitude ?? 30.2672,
-        longitude: data.geofence?.longitude ?? -97.7431,
+        companyName: data.corporateName || '',
+        officeName: data.workspaceName || '',
+        latitude: data.geofence?.latitude ?? 0,
+        longitude: data.geofence?.longitude ?? 0,
         radius: data.geofence?.radiusMeters ?? 100,
         officeStartTime: data.geofence?.defaultShiftStartTime ?? '09:00',
         officeEndTime: data.geofence?.defaultShiftEndTime ?? '18:00',
       };
     } catch {
       return {
-        companyName: 'SmartBusiness Organization',
-        officeName: 'Primary Campus',
-        latitude: 30.2672,
-        longitude: -97.7431,
+        companyName: '',
+        officeName: '',
+        latitude: 0,
+        longitude: 0,
         radius: 100,
         officeStartTime: '09:00',
         officeEndTime: '18:00',

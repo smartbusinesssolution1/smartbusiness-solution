@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { notify } from '../../context/NotificationContext';
+import { platformAuthApi } from '../../services/apiClient';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
   Box,
-  Card,
-  CardContent,
   TextField,
   Button,
   Typography,
@@ -18,6 +16,10 @@ import {
   IconButton,
   InputAdornment,
   Snackbar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@mui/material';
 import {
   ShieldOutlined as ShieldIcon,
@@ -25,6 +27,7 @@ import {
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
 } from '@mui/icons-material';
+import { AttendanceShowcase } from './components/AttendanceShowcase';
 
 // Zod validation schema
 const loginSchema = z.object({
@@ -39,15 +42,21 @@ export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
 
   const [error, setError] = useState<string | null>(null);
+  const [, setIsMemberBlocked] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberDevice, setRememberDevice] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [infoNotice, setInfoNotice] = useState<string | null>(null);
 
+  // Self-service Forgot Password state
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [forgotPasswordLoading, setForgotPasswordLoading] = useState(false);
+  const [forgotPasswordSuccess, setForgotPasswordSuccess] = useState(false);
+
   const {
     register,
     handleSubmit,
-    setValue,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -59,610 +68,325 @@ export const LoginPage: React.FC = () => {
 
   const onSubmit = async (data: LoginFormValues) => {
     setError(null);
+    setIsMemberBlocked(false);
     setIsSubmitting(true);
     try {
-      const user = await login(data.email, data.password);
+      const user = await login(data.email, data.password, rememberDevice);
       if (user) {
         navigate('/admin/dashboard', { replace: true });
       }
     } catch (err: any) {
       const msg = err?.message || 'Login failed. Please verify your credentials.';
+      if (msg.includes('Mobile App') || msg.includes('Administrators and Managers')) {
+        setIsMemberBlocked(true);
+      }
       setError(msg);
-      notify(msg, 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleForgotPasswordSubmit = async () => {
+    if (!forgotPasswordEmail || !forgotPasswordEmail.includes('@')) {
+      return;
+    }
+    setForgotPasswordLoading(true);
+    try {
+      await platformAuthApi.post('/api/v1/auth/forgot-password', { email: forgotPasswordEmail });
+      setForgotPasswordSuccess(true);
+    } catch {
+      // For security, present successful dispatch message regardless of existence
+      setForgotPasswordSuccess(true);
+    } finally {
+      setForgotPasswordLoading(false);
+    }
+  };
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        bgcolor: '#F8FAFC',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-      }}
-    >
-      {/* Top Navbar Header matching remix-smartbusinesssolutions */}
-      <Box
-        component="header"
-        sx={{
-          px: { xs: 2, sm: 4, md: 6 },
-          py: { xs: 1.5, sm: 2 },
-          borderBottom: '1px solid #E2E8F0',
-          bgcolor: '#FFFFFF',
-          width: '100%',
-        }}
-      >
-        <Box
-          sx={{
-            maxWidth: 1280,
-            mx: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: { xs: 1, sm: 2 },
-            width: '100%',
-          }}
-        >
-          {/* Brand Logo & Product Badge */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1.25, sm: 1.5 } }}>
-            <Box
-              sx={{
-                width: { xs: 36, sm: 40 },
-                height: { xs: 36, sm: 40 },
-                borderRadius: '12px',
-                bgcolor: '#EFF6FF',
-                border: '1px solid #DBEAFE',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                overflow: 'hidden',
-                transition: 'transform 0.2s ease',
-                '&:hover': { transform: 'scale(1.05)' },
-              }}
-            >
-              <Box
-                component="img"
-                src="/auth-icon.png"
-                alt="SmartBusiness"
-                sx={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                }}
-              />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: { xs: 0.75, sm: 1 } }}>
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: { xs: '0.92rem', sm: '1rem' },
-                  fontWeight: 800,
-                  color: '#0F172A',
-                  letterSpacing: '-0.025em',
+    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased flex flex-col selection:bg-[#2563EB] selection:text-white">
+      {/* Main Responsive Grid Layout (Unified #F8FAFC background across both columns) */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] transition-all duration-300">
+        
+        {/* =================================================================== */}
+        {/* COLUMN 1: SIGN IN FORM COLUMN                                       */}
+        {/* =================================================================== */}
+        <section aria-labelledby="signin-heading" className="flex flex-col justify-between px-6 py-6 sm:px-12 md:px-16 lg:px-20 bg-[#F8FAFC]">
+          
+          {/* Top Clean Brand Header (Logo + SaaS Badge only, no header workspace link) */}
+          <header className="flex items-center py-2">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] border border-[#DBEAFE] flex items-center justify-center shadow-sm overflow-hidden">
+                <img src="/auth-icon.png" alt="SmartBusiness" className="w-full h-full object-contain" />
+              </div>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold tracking-tight text-slate-900">SmartBusiness</span>
+                  <span className="px-2 py-0.5 text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] border border-[#BFDBFE] rounded-full">
+                    Clock-In Clock-Out SaaS
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                  Enterprise Attendance
+                </span>
+              </div>
+            </div>
+          </header>
+
+          {/* Center Auth Card */}
+          <div className="flex flex-1 items-center justify-center py-8">
+            <div className="w-full max-w-[26.5rem]">
+              <div
+                className="rounded-2xl border border-slate-200 bg-white transition-all duration-300"
+                style={{
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04), 0 20px 45px -20px rgba(37, 99, 235, 0.28)',
                 }}
               >
-                SmartBusiness
-              </Typography>
-              <Typography
-                component="span"
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  color: '#2563EB',
-                  bgcolor: '#EFF6FF',
-                  px: 1.25,
-                  py: 0.35,
-                  borderRadius: '9999px',
-                  border: '1px solid #BFDBFE',
-                  display: { xs: 'none', sm: 'inline-block' },
-                }}
-              >
-                Clock-In Clock-Out SaaS
-              </Typography>
-            </Box>
-          </Box>
+                <div className="p-7 sm:p-9 flex flex-col gap-6">
+                  
+                  {/* Card Header (Clean: Title & User-Friendly Subtitle, NO Bank-Grade tag) */}
+                  <div className="flex flex-col gap-1.5">
+                    <h1 id="signin-heading" className="text-2xl font-bold tracking-tight text-slate-900">
+                      Welcome back
+                    </h1>
+                    <p className="text-sm text-slate-500 leading-relaxed">
+                      Sign in to manage shifts, review live clock-ins, and approve timesheets.
+                    </p>
+                  </div>
 
-          {/* Right Header Navigation */}
-          <Typography
-            sx={{
-              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              fontSize: { xs: '0.75rem', sm: '0.78rem' },
-              color: '#64748B',
-              fontWeight: 500,
-            }}
-          >
-            Need a workspace?{' '}
-            <Typography
-              component="span"
-              onClick={() => navigate('/create-workspace')}
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: { xs: '0.75rem', sm: '0.78rem' },
-                color: '#2563EB',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'color 0.15s ease',
-                '&:hover': {
-                  color: '#1D4ED8',
-                  textDecoration: 'underline',
-                },
-              }}
-            >
-              Create Workspace
-            </Typography>
-          </Typography>
-        </Box>
-      </Box>
+                  {/* Error Alert Display */}
+                  {error && (
+                    <Alert
+                      severity="error"
+                      sx={{
+                        borderRadius: '12px',
+                        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {error}
+                    </Alert>
+                  )}
 
-      {/* Main Login Card Container */}
-      <Box
-        component="main"
-        sx={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          p: { xs: 2, sm: 4, md: 6 },
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
-      >
-        <Card
-          className="auth-card-enter"
-          sx={{
-            width: '100%',
-            maxWidth: 460,
-            borderRadius: { xs: '20px', sm: '24px' },
-            bgcolor: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03)',
-            transition: 'box-shadow 0.3s ease',
-            '&:hover': {
-              boxShadow: '0 25px 35px -5px rgba(0, 0, 0, 0.07), 0 10px 15px -6px rgba(0, 0, 0, 0.04)',
-            },
-          }}
-        >
-          <CardContent sx={{ p: { xs: 2.5, sm: 4, md: 4.5 }, '&:last-child': { pb: { xs: 2.5, sm: 4, md: 4.5 } } }}>
-            {/* Header Row: App Icon & Security Pill */}
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 1.5,
-                mb: { xs: 2.5, sm: 3 },
-              }}
-            >
-              {/* App Icon in Rounded Box with hover scale */}
-              <Box
-                sx={{
-                  width: { xs: 46, sm: 54 },
-                  height: { xs: 46, sm: 54 },
-                  borderRadius: { xs: '14px', sm: '16px' },
-                  bgcolor: '#EFF6FF',
-                  border: '1px solid #DBEAFE',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 5px rgba(37, 99, 235, 0.08)',
-                  transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                  '&:hover': {
-                    transform: 'scale(1.06)',
-                  },
-                }}
-              >
-                <Box
-                  component="img"
-                  src="/auth-icon.png"
-                  alt="Clock In Clock Out"
-                  sx={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                  }}
-                />
-              </Box>
+                  {/* Form */}
+                  <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+                    
+                    {/* Work Email Field */}
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="email" className="text-xs font-semibold text-slate-700">
+                        Work email
+                      </label>
+                      <TextField
+                        id="email"
+                        fullWidth
+                        placeholder="name@company.com"
+                        variant="outlined"
+                        error={!!errors.email}
+                        helperText={errors.email?.message}
+                        disabled={isSubmitting}
+                        {...register('email')}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '10px',
+                            bgcolor: '#FFFFFF',
+                            fontSize: '0.9rem',
+                            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            '& fieldset': {
+                              borderColor: '#E2E8F0',
+                              transition: 'border-color 0.2s ease-in-out',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: '#CBD5E1',
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: '#2563EB',
+                            },
+                          },
+                        }}
+                      />
+                    </div>
 
-              {/* Security Pill Badge with subtle glow pulse */}
-              <Box
-                className="security-badge-pulse"
-                sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 0.75,
-                  px: { xs: 1.25, sm: 1.5 },
-                  py: { xs: 0.45, sm: 0.6 },
-                  borderRadius: '9999px',
-                  bgcolor: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: '#DCFCE7',
-                    transform: 'translateY(-1px)',
-                  },
-                }}
-              >
-                <ShieldIcon sx={{ fontSize: { xs: 15, sm: 16 }, color: '#16A34A' }} />
-                <Typography
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: { xs: '0.72rem', sm: '0.78rem' },
-                    fontWeight: 600,
-                    color: '#15803D',
-                    letterSpacing: '0.01em',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Bank-Grade 256-bit
-                </Typography>
-              </Box>
-            </Box>
-
-            {/* Title & Subtitle */}
-            <Typography
-              variant="h5"
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontWeight: 800,
-                fontSize: { xs: '1.35rem', sm: '1.5rem', md: '1.65rem' },
-                color: '#0F172A',
-                letterSpacing: '-0.025em',
-                lineHeight: 1.25,
-                mb: 1,
-              }}
-            >
-              Sign In to Clock-In Clock-Out
-            </Typography>
-
-            <Typography
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: { xs: '0.82rem', sm: '0.875rem' },
-                color: '#64748B',
-                lineHeight: 1.5,
-                mb: { xs: 2.5, sm: 3 },
-              }}
-            >
-              Access your shift rosters, attendance ledger, print reports & geofence settings.
-            </Typography>
-
-            {/* Error Alert */}
-            {error && (
-              <Alert
-                severity="error"
-                sx={{
-                  mb: 2.5,
-                  borderRadius: '12px',
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  animation: 'authCardEntrance 0.3s ease-out forwards',
-                }}
-              >
-                {error}
-              </Alert>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Work Email Field */}
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: '#1E293B',
-                  mb: 0.75,
-                }}
-              >
-                Work Email
-              </Typography>
-              <TextField
-                fullWidth
-                placeholder="name@company.com"
-                variant="outlined"
-                error={!!errors.email}
-                helperText={errors.email?.message}
-                disabled={isSubmitting}
-                {...register('email')}
-                sx={{
-                  mb: 2.5,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '10px',
-                    bgcolor: '#FFFFFF',
-                    fontSize: '0.9rem',
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    transition: 'all 0.2s ease-in-out',
-                    '& fieldset': {
-                      borderColor: '#E2E8F0',
-                      transition: 'border-color 0.2s ease-in-out',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: '#CBD5E1',
-                    },
-                    '&.Mui-focused': {
-                      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: '#2563EB',
-                    },
-                  },
-                }}
-              />
-
-              {/* Password Field Header Row */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  mb: 0.75,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '0.82rem',
-                    fontWeight: 600,
-                    color: '#1E293B',
-                  }}
-                >
-                  Password
-                </Typography>
-                <Typography
-                  component="span"
-                  onClick={() =>
-                    setInfoNotice('Please contact your administrator to reset your corporate password.')
-                  }
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '0.82rem',
-                    fontWeight: 500,
-                    color: '#2563EB',
-                    cursor: 'pointer',
-                    transition: 'color 0.15s ease',
-                    '&:hover': {
-                      color: '#1D4ED8',
-                      textDecoration: 'underline',
-                    },
-                  }}
-                >
-                  Forgot password?
-                </Typography>
-              </Box>
-
-              {/* Password Field */}
-              <TextField
-                fullWidth
-                placeholder="••••••••••••"
-                type={showPassword ? 'text' : 'password'}
-                variant="outlined"
-                error={!!errors.password}
-                helperText={errors.password?.message}
-                disabled={isSubmitting}
-                {...register('password')}
-                slotProps={{
-                  input: {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          aria-label="toggle password visibility"
-                          onClick={() => setShowPassword(!showPassword)}
-                          edge="end"
-                          disabled={isSubmitting}
-                          size="small"
-                          sx={{
-                            color: '#94A3B8',
-                            transition: 'color 0.2s ease',
-                            '&:hover': { color: '#475569' },
-                          }}
+                    {/* Password Field Header Row */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <label htmlFor="password" className="text-xs font-semibold text-slate-700">
+                          Password
+                        </label>
+                        <span
+                          onClick={() => setForgotPasswordOpen(true)}
+                          className="text-xs font-medium text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer transition hover:underline"
                         >
-                          {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-                sx={{
-                  mb: 2,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '10px',
-                    bgcolor: '#FFFFFF',
-                    fontSize: '0.9rem',
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    transition: 'all 0.2s ease-in-out',
-                    '& fieldset': {
-                      borderColor: '#E2E8F0',
-                      transition: 'border-color 0.2s ease-in-out',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: '#CBD5E1',
-                    },
-                    '&.Mui-focused': {
-                      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: '#2563EB',
-                    },
-                  },
-                }}
-              />
+                          Forgot password?
+                        </span>
+                      </div>
+                      <TextField
+                        id="password"
+                        fullWidth
+                        placeholder="••••••••••••"
+                        type={showPassword ? 'text' : 'password'}
+                        variant="outlined"
+                        error={!!errors.password}
+                        helperText={errors.password?.message}
+                        disabled={isSubmitting}
+                        {...register('password')}
+                        slotProps={{
+                          input: {
+                            endAdornment: (
+                              <InputAdornment position="end">
+                                <IconButton
+                                  aria-label="toggle password visibility"
+                                  onClick={() => setShowPassword(!showPassword)}
+                                  edge="end"
+                                  disabled={isSubmitting}
+                                  size="small"
+                                  sx={{
+                                    color: '#94A3B8',
+                                    transition: 'color 0.2s ease',
+                                    '&:hover': { color: '#475569' },
+                                  }}
+                                >
+                                  {showPassword ? (
+                                    <VisibilityOffIcon fontSize="small" />
+                                  ) : (
+                                    <VisibilityIcon fontSize="small" />
+                                  )}
+                                </IconButton>
+                              </InputAdornment>
+                            ),
+                          },
+                        }}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '10px',
+                            bgcolor: '#FFFFFF',
+                            fontSize: '0.9rem',
+                            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            '& fieldset': {
+                              borderColor: '#E2E8F0',
+                              transition: 'border-color 0.2s ease-in-out',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: '#CBD5E1',
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: '#2563EB',
+                            },
+                          },
+                        }}
+                      />
+                    </div>
 
-              {/* Remember Me Checkbox with micro-interaction */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  mb: 2.5,
-                }}
-              >
-                <Checkbox
-                  checked={rememberDevice}
-                  onChange={(e) => setRememberDevice(e.target.checked)}
-                  size="small"
-                  sx={{
-                    p: 0.5,
-                    mr: 1,
-                    color: '#CBD5E1',
-                    transition: 'transform 0.15s ease',
-                    '&:hover': {
-                      transform: 'scale(1.08)',
-                    },
-                    '&.Mui-checked': {
-                      color: '#2563EB',
-                    },
-                  }}
-                />
-                <Typography
-                  onClick={() => setRememberDevice(!rememberDevice)}
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    fontSize: '0.84rem',
-                    color: '#475569',
-                    fontWeight: 500,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    transition: 'color 0.15s ease',
-                    '&:hover': { color: '#1E293B' },
-                  }}
-                >
-                  Remember this device for 30 days
-                </Typography>
-              </Box>
+                    {/* Remember Device Checkbox (Exact theme blue) */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <Checkbox
+                        checked={rememberDevice}
+                        onChange={(e) => setRememberDevice(e.target.checked)}
+                        size="small"
+                        sx={{
+                          p: 0.5,
+                          color: '#CBD5E1',
+                          '&.Mui-checked': {
+                            color: '#2563EB',
+                          },
+                        }}
+                      />
+                      <span
+                        onClick={() => setRememberDevice(!rememberDevice)}
+                        className="text-xs text-slate-600 cursor-pointer select-none hover:text-slate-900 transition"
+                      >
+                        Remember this device for 30 days
+                      </span>
+                    </div>
 
-              {/* Submit Button with smooth lift and arrow glide */}
-              <Button
-                fullWidth
-                size="large"
-                type="submit"
-                variant="contained"
-                disabled={isSubmitting}
-                sx={{
-                  py: 1.5,
-                  borderRadius: '12px',
-                  bgcolor: '#2563EB',
-                  color: '#FFFFFF',
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.95rem',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  boxShadow: '0 4px 14px 0 rgba(37, 99, 235, 0.25)',
-                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  '&:hover': {
-                    bgcolor: '#1D4ED8',
-                    transform: 'translateY(-1.5px)',
-                    boxShadow: '0 8px 20px 0 rgba(37, 99, 235, 0.38)',
-                    '& .button-arrow-icon': {
-                      transform: 'translateX(4px)',
-                    },
-                  },
-                  '&:active': {
-                    transform: 'translateY(0.5px) scale(0.99)',
-                  },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1,
-                  '& .button-arrow-icon': {
-                    transition: 'transform 0.2s ease',
-                  },
-                }}
-              >
-                {isSubmitting ? (
-                  <CircularProgress size={22} color="inherit" />
-                ) : (
-                  <>
-                    Sign In to Dashboard
-                    <ArrowForwardIcon className="button-arrow-icon" sx={{ fontSize: 18 }} />
-                  </>
-                )}
-              </Button>
-            </form>
+                    {/* Submit Button (Strictly using current #2563EB theme) */}
+                    <Button
+                      fullWidth
+                      size="large"
+                      type="submit"
+                      variant="contained"
+                      disabled={isSubmitting}
+                      sx={{
+                        mt: 1,
+                        py: 1.6,
+                        borderRadius: '12px',
+                        bgcolor: '#2563EB',
+                        color: '#FFFFFF',
+                        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                        fontSize: '0.93rem',
+                        fontWeight: 600,
+                        textTransform: 'none',
+                        boxShadow: '0 4px 14px 0 rgba(37, 99, 235, 0.28)',
+                        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                        '&:hover': {
+                          bgcolor: '#1D4ED8',
+                          transform: 'translateY(-1.5px)',
+                          boxShadow: '0 8px 22px 0 rgba(37, 99, 235, 0.38)',
+                          '& .button-arrow-icon': {
+                            transform: 'translateX(4px)',
+                          },
+                        },
+                        '&:active': {
+                          transform: 'translateY(0.5px) scale(0.99)',
+                        },
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 1,
+                        '& .button-arrow-icon': {
+                          transition: 'transform 0.2s ease',
+                        },
+                      }}
+                    >
+                      {isSubmitting ? (
+                        <CircularProgress size={22} color="inherit" />
+                      ) : (
+                        <>
+                          Sign In
+                          <ArrowForwardIcon className="button-arrow-icon" sx={{ fontSize: 18 }} />
+                        </>
+                      )}
+                    </Button>
+                  </form>
 
-            {/* Footer Notice & Registration */}
-            <Box
-              sx={{
-                textAlign: 'center',
-                mt: { xs: 2.5, sm: 3.5 },
-                pt: { xs: 2, sm: 2.5 },
-                borderTop: '1px solid #F1F5F9',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  color: '#64748B',
-                  fontSize: { xs: '0.72rem', sm: '0.75rem' },
-                }}
-              >
-                Need a new workspace?{' '}
-                <Typography
-                  component="span"
-                  onClick={() => navigate('/create-workspace')}
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    color: '#2563EB',
-                    fontSize: { xs: '0.72rem', sm: '0.75rem' },
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    '&:hover': {
-                      color: '#1D4ED8',
-                      textDecoration: 'underline',
-                    },
-                  }}
-                >
-                  Create Workspace
-                </Typography>
-              </Typography>
+                </div>
 
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  color: '#94A3B8',
-                  fontSize: { xs: '0.7rem', sm: '0.75rem' },
-                  mt: 1.5,
-                  lineHeight: 1.4,
-                }}
-              >
-                📱 Staff Notice: Employees must use the SmartBusiness Mobile App to clock in/out.
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      </Box>
+                {/* Card Footer */}
+                <div className="rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-7 py-4 text-center text-xs text-slate-500 sm:px-9">
+                  Setting up a new organization?{' '}
+                  <span
+                    onClick={() => navigate('/create-workspace')}
+                    className="font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer hover:underline transition"
+                  >
+                    Create a workspace
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-      {/* Bottom Footer Bar matching remix-smartbusinesssolutions */}
-      <Box
-        component="footer"
-        sx={{
-          py: { xs: 1.5, sm: 2 },
-          px: { xs: 2, sm: 3 },
-          textAlign: 'center',
-          borderTop: '1px solid #E2E8F0',
-          bgcolor: '#FFFFFF',
-        }}
-      >
-        <Typography
-          sx={{
-            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            fontSize: { xs: '0.7rem', sm: '0.75rem' },
-            color: '#94A3B8',
-            fontWeight: 500,
-          }}
-        >
-          SmartBusiness Clock-In Clock-Out SaaS · Production Suite
-        </Typography>
-      </Box>
+          {/* Bottom Compliance Disclaimer */}
+          <footer className="py-2 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldIcon sx={{ fontSize: 14, color: '#94A3B8' }} />
+              256-bit encrypted. Geofence locations, timestamps, and biometric records are tamper-proof and audit-ready.
+            </span>
+          </footer>
 
-      {/* Info Snackbar for Forgot Password */}
+        </section>
+
+        {/* =================================================================== */}
+        {/* COLUMN 2: REAL-TIME ATTENDANCE SHOWCASE WIDGET                      */}
+        {/* =================================================================== */}
+        <AttendanceShowcase />
+
+      </main>
+
+      {/* Info Snackbar for notifications */}
       <Snackbar
         open={!!infoNotice}
         autoHideDuration={4000}
@@ -670,7 +394,83 @@ export const LoginPage: React.FC = () => {
         message={infoNotice}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
-    </Box>
+
+      {/* Self-Service Forgot Password Dialog (With MUI slotProps fix) */}
+      <Dialog
+        open={forgotPasswordOpen}
+        onClose={() => setForgotPasswordOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: '16px',
+              p: 1,
+              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            },
+          },
+        }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, fontSize: '1.2rem', pb: 1 }}>
+          Reset Account Password
+        </DialogTitle>
+        <DialogContent>
+          {forgotPasswordSuccess ? (
+            <Box sx={{ py: 2, textAlign: 'center' }}>
+              <Typography sx={{ fontSize: '2rem', mb: 1 }}>📨</Typography>
+              <Typography sx={{ fontWeight: 700, color: '#166534', mb: 1 }}>
+                Password Reset Email Sent
+              </Typography>
+              <Typography sx={{ fontSize: '0.85rem', color: '#64748B' }}>
+                If an account exists for <strong>{forgotPasswordEmail}</strong>, we have dispatched instructions with a 15-minute secure reset link.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ pt: 1 }}>
+              <Typography sx={{ fontSize: '0.85rem', color: '#64748B', mb: 2 }}>
+                Enter your registered corporate email address and we'll send a secure password reset link.
+              </Typography>
+              <TextField
+                fullWidth
+                label="Work Email"
+                type="email"
+                value={forgotPasswordEmail}
+                onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                placeholder="name@company.com"
+                disabled={forgotPasswordLoading}
+                size="small"
+              />
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setForgotPasswordOpen(false)}
+            color="inherit"
+            disabled={forgotPasswordLoading}
+            sx={{ textTransform: 'none', fontWeight: 600 }}
+          >
+            {forgotPasswordSuccess ? 'Close' : 'Cancel'}
+          </Button>
+          {!forgotPasswordSuccess && (
+            <Button
+              onClick={handleForgotPasswordSubmit}
+              variant="contained"
+              disabled={forgotPasswordLoading || !forgotPasswordEmail}
+              sx={{
+                bgcolor: '#2563EB',
+                textTransform: 'none',
+                fontWeight: 700,
+                borderRadius: '8px',
+                '&:hover': { bgcolor: '#1D4ED8' },
+              }}
+            >
+              {forgotPasswordLoading ? <CircularProgress size={20} color="inherit" /> : 'Send Reset Link'}
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+    </div>
   );
 };
 

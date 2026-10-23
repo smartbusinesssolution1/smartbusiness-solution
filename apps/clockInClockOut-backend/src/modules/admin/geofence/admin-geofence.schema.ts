@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 export const UpdateGeofenceSchema = z.object({
+  corporateName: z.string().trim().min(1, "Organization name cannot be empty").optional(),
+  organizationName: z.string().trim().min(1, "Organization name cannot be empty").optional(),
+  workspaceName: z.string().trim().min(1, "Workspace name cannot be empty").optional(),
   latitude: z
     .number({ message: "Latitude is required" })
     .min(-90, "Latitude must be between -90 and 90")

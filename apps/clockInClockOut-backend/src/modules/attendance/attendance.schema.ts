@@ -17,6 +17,7 @@ export const CheckInSchema = z.object({
   angle: z.string().optional(),
   campusName: z.string().optional(),
   faceVerificationId: z.string().optional(),
+  challengeToken: z.string().optional(),
   selfieUri: z.string().optional(),
   notes: z.string().optional(),
   employeeId: z.string().optional(),

@@ -165,13 +165,23 @@ clockInApi.interceptors.response.use(
     const originalRequest = error.config as any;
     const url = originalRequest?.url || '';
 
+    // BUG-04: Suppress error toast on optional employee profile lookup (/api/v1/employees/me)
+    if (url.includes('/api/v1/employees/me') && error.response?.status === 404) {
+      return Promise.reject(error);
+    }
+
     // Never intercept auth endpoints (login, register, refresh)
     const isAuthRoute =
       url.includes('/auth/login') ||
       url.includes('/auth/register') ||
       url.includes('/auth/refresh');
 
-    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthRoute) {
+    // BUG-08: Check if 401 was due to missing tenant header rather than expired JWT session
+    const errorData = error.response?.data as any;
+    const errorMsg = typeof errorData === 'string' ? errorData : (errorData?.message || errorData?.error?.message || '');
+    const isTenantHeaderError = errorMsg.includes('Tenant') || errorMsg.includes('X-Tenant-Id');
+
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthRoute && !isTenantHeaderError) {
       originalRequest._retry = true;
 
       // Only a signed-in session can be renewed; otherwise there is nothing to refresh
@@ -193,6 +203,11 @@ clockInApi.interceptors.response.use(
     }
 
     if (isAuthRoute) {
+      return Promise.reject(error);
+    }
+
+    if (isTenantHeaderError) {
+      notify('Organization / Tenant identifier is required for this operation.', 'warning');
       return Promise.reject(error);
     }
 

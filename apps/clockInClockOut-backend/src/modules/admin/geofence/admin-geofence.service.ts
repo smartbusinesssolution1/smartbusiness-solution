@@ -49,14 +49,28 @@ export class AdminGeofenceService {
       throw new AppError("Shift start time and end time cannot be identical.", 400, "INVALID_SHIFT_HOURS");
     }
 
+    let updatedCorporateName = workspace.tenant.name;
+    const orgName = (input.corporateName || input.organizationName)?.trim();
+    if (orgName && orgName !== workspace.tenant.name) {
+      const updatedTenant = await this.geofenceRepo.updateTenantName(tenantId, orgName);
+      updatedCorporateName = updatedTenant.name;
+    }
+
+    let updatedWorkspaceName = workspace.businessName;
+    const wsName = input.workspaceName?.trim();
+    if (wsName && wsName !== workspace.businessName) {
+      const updatedWs = await this.geofenceRepo.updateWorkspaceName(workspaceId, tenantId, wsName);
+      updatedWorkspaceName = updatedWs.businessName;
+    }
+
     const saved = await this.geofenceRepo.upsertGeofence(workspaceId, input);
 
     return {
-      message: "Geofence perimeter and shift hours updated successfully.",
-      corporateName: workspace.tenant.name,
+      message: "Organization geofence perimeter and campus settings updated successfully.",
+      corporateName: updatedCorporateName,
       tenantId: workspace.tenantId,
       workspaceId: workspace.id,
-      workspaceName: workspace.businessName,
+      workspaceName: updatedWorkspaceName,
       geofence: {
         latitude: Number(saved.latitude),
         longitude: Number(saved.longitude),

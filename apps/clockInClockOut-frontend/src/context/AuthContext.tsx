@@ -22,6 +22,7 @@ export interface AuthContextType {
   register: AuthState['register'];
   logout: () => Promise<void>;
   updateCurrentUserState: AuthState['updateCurrentUserState'];
+  updateOrganizationAndWorkspace: AuthState['updateOrganizationAndWorkspace'];
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -69,6 +70,7 @@ export const useAuth = (): AuthContextType => {
       register: store.register,
       logout: () => store.logout(queryClient),
       updateCurrentUserState: store.updateCurrentUserState,
+      updateOrganizationAndWorkspace: store.updateOrganizationAndWorkspace,
     }),
     [store, queryClient]
   );
