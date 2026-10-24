@@ -47,6 +47,14 @@ export class AuthController {
     );
   }
 
+  // Whether the request comes from a web browser. Browsers add Origin (on every POST) and
+  // Sec-Fetch-Site themselves, and page JavaScript can neither remove nor fake them; a
+  // mobile app's HTTP client sends neither. Unlike the "platform" header, which any script
+  // on our website could set, this can't be pretended.
+  private fromBrowser(req: Request): boolean {
+    return Boolean(req.headers.origin || req.headers["sec-fetch-site"]);
+  }
+
   register = async (req: Request, res: Response): Promise<void> => {
     const result = await this.authService.register(
       req.body as RegisterInputType,
@@ -98,8 +106,13 @@ export class AuthController {
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
-    const rawRefreshToken =
-      req.cookies?.refresh_token || req.body?.refreshToken;
+    // A mobile app keeps its refresh token itself and sends it in the body; a browser's is
+    // in the httpOnly cookie. When both arrive, the body's is the one used.
+    const bodyToken =
+      typeof req.body?.refreshToken === "string" && req.body.refreshToken
+        ? (req.body.refreshToken as string)
+        : undefined;
+    const rawRefreshToken = bodyToken ?? req.cookies?.refresh_token;
 
     if (!rawRefreshToken) {
       throw new AuthError("Refresh token is required.");
@@ -113,7 +126,11 @@ export class AuthController {
       result.tokens.refreshToken,
     );
 
-    if (this.isAppPlatform(req) || req.body?.refreshToken) {
+    // The new tokens go in the body only to a caller that already held its refresh token
+    // (it sent it in the body), or to an app that isn't a web browser. Never to a web page
+    // that only had the cookie: a script injected into our site could otherwise call this
+    // with "x-platform: app" and walk away with a refresh token that works for days.
+    if (bodyToken || (this.isAppPlatform(req) && !this.fromBrowser(req))) {
       sendSuccess(res, {
         user: result.user,
         tenants: result.tenants,

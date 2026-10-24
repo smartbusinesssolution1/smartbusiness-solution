@@ -251,12 +251,20 @@ describe("access token", () => {
     expect((await new AuthClient().me()).status).toBe(401);
   });
 
-  // Tokens are never handed to JavaScript, so the cookie is the only way to present one. A valid
-  // token sent any other way (copied out of a browser, say) does not sign anyone in.
-  it("is refused when sent as an Authorization: Bearer header instead of the cookie", async () => {
+  // The mobile app has no browser cookies: it sends its token as an Authorization header.
+  // Web pages can't do the same, because they are never given a token to send (see
+  // "tokens in the body: mobile apps only").
+  it("is accepted as an Authorization: Bearer header (the mobile app)", async () => {
     const client = new AuthClient();
     await client.register();
     const res = await request(getApp()).get("/api/v1/auth/me").set("Authorization", `Bearer ${client.accessToken!}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("is refused as a Bearer header when forged", async () => {
+    const forged = new TokenService("a-completely-different-secret-0123456789", "15m")
+      .generateAccessToken({ userId: "someone", email: "x@y.test" });
+    const res = await request(getApp()).get("/api/v1/auth/me").set("Authorization", `Bearer ${forged}`);
     expect(res.status).toBe(401);
   });
 
@@ -410,5 +418,89 @@ describe("logout from all devices", () => {
 
   it("requires a signed-in user", async () => {
     expect((await new AuthClient().logoutAll()).status).toBe(401);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TOKENS IN THE BODY: MOBILE APPS ONLY
+// The Clock-In mobile app asks for its tokens in the response body ("x-platform: app") and
+// sends them back as a Bearer header. A web page never gets them: if it could, a script
+// injected into the site could ask for them too and keep a refresh token for days.
+// ═══════════════════════════════════════════════════════════════
+describe("tokens in the body: mobile apps only", () => {
+  const REFRESH = "/api/v1/auth/refresh";
+  const WEB = "http://localhost:5173";
+
+  const signedIn = async () => {
+    const client = new AuthClient();
+    await client.register();
+    return client;
+  };
+  // A refresh carrying the signed-in browser's cookie.
+  const refreshWithCookie = (client: AuthClient) =>
+    request(getApp()).post(REFRESH).set("Cookie", client.cookieHeader(REFRESH));
+  const appLogin = () =>
+    request(getApp())
+      .post("/api/v1/auth/login")
+      .set("x-platform", "app")
+      .send({ email: "maria@greenacres.test", password: VALID_PASSWORD });
+
+  it("a mobile app signing in gets its tokens in the body, and the access token works as a Bearer header", async () => {
+    await signedIn();
+    const res = await appLogin();
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.accessToken).toEqual(expect.any(String));
+    expect(res.body.data.refreshToken).toEqual(expect.any(String));
+    const me = await request(getApp()).get("/api/v1/auth/me").set("Authorization", `Bearer ${res.body.data.accessToken}`);
+    expect(me.status).toBe(200);
+  });
+
+  it("a mobile app refreshing with the refresh token from its own storage gets new tokens, and the new one works", async () => {
+    await signedIn();
+    const first = (await appLogin()).body.data.refreshToken as string;
+
+    const res = await request(getApp()).post(REFRESH).set("x-platform", "app").send({ refreshToken: first });
+    expect(res.status).toBe(200);
+    const next = res.body.data.refreshToken as string;
+    expect(next).toEqual(expect.any(String));
+    expect(next).not.toBe(first);
+
+    const again = await request(getApp()).post(REFRESH).set("x-platform", "app").send({ refreshToken: next });
+    expect(again.status).toBe(200);
+    expect(again.body.data.accessToken).toEqual(expect.any(String));
+  });
+
+  it("a mobile app that keeps cookies (no browser headers) still gets its tokens on refresh", async () => {
+    const client = await signedIn();
+    const res = await refreshWithCookie(client).set("x-platform", "app");
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.refreshToken).toEqual(expect.any(String));
+  });
+
+  it.each([
+    ["Origin", WEB],
+    ["Sec-Fetch-Site", "same-origin"],
+  ])("a web page with only the cookie never gets tokens in the body, even claiming to be the app (%s)", async (header, value) => {
+    const client = await signedIn();
+    const res = await refreshWithCookie(client).set("x-platform", "app").set(header, value).send({ platform: "app" });
+
+    expect(res.status).toBe(200);
+    const cookies = parseSetCookies(res);
+    const body = JSON.stringify(res.body);
+    expect(res.body.data.tokens).toBeUndefined();
+    expect(res.body.data.accessToken).toBeUndefined();
+    expect(res.body.data.refreshToken).toBeUndefined();
+    expect(body).not.toContain(cookies.access_token!.value);
+    expect(body).not.toContain(cookies.refresh_token!.value);
+  });
+
+  it("a made-up refresh token in the body is refused, even next to a valid cookie", async () => {
+    const client = await signedIn();
+    const res = await refreshWithCookie(client).set("Origin", WEB).set("x-platform", "app").send({ refreshToken: "not-a-real-token" });
+
+    expect(res.status).toBe(401);
+    expect(JSON.stringify(res.body)).not.toContain(client.refreshToken!);
   });
 });
