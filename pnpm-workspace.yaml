@@ -1,6 +1,19 @@
 packages:
   - "apps/*"
   - "packages/*"
+# Supply-chain cooling period: pnpm installs no version published less than 7 days
+# (10080 minutes) ago. A hijacked maintainer account usually publishes a poisoned release
+# that is caught and pulled within days; waiting a week keeps us out of that window.
+minimumReleaseAge: 10080
+# Versions already in the lockfile (and installed on every machine) before the cooling
+# period existed. Exact versions only: anything newer still waits 7 days. Delete each
+# line once its date has passed (all are 7 days old by 2026-10-29).
+minimumReleaseAgeExclude:
+  - framer-motion@14.4.0
+  - motion@14.4.0
+  - motion-dom@14.4.0
+  - react-router@8.5.0
+  - zustand@5.0.16
 allowBuilds:
   '@google/genai': true
   '@prisma/engines': true

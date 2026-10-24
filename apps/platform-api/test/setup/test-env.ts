@@ -38,7 +38,8 @@ export function applyTestEnv(): void {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
   process.env.ACCESS_TOKEN_EXPIRES_IN = "15m";
   process.env.REFRESH_TOKEN_EXPIRES_DAYS = "7";
-  process.env.CORS_ORIGIN = "http://localhost:5173";
+  // Both frontends, like the default: Check Printing (5173) and Clock-In (5174).
+  process.env.CORS_ORIGIN = "http://localhost:5173,http://localhost:5174";
   // High limits so the suite is not throttled; rate-limiter.test.ts proves the limiter itself.
   process.env.RATE_LIMIT_MAX = "1000000";
   process.env.AUTH_RATE_LIMIT_MAX = "1000000";

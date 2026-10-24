@@ -24,9 +24,12 @@ function toOrigin(entry: string): string | null {
 }
 
 export const envSchema = z.object({
-    NODE_ENV: z
-        .enum(["development", "test", "staging", "production"])
-        .default('development'),
+    // Required, with no default. A server started without it used to fall back to
+    // "development" without a word: stack traces sent to users and development limits.
+    // Development has to be asked for, never assumed.
+    NODE_ENV: z.enum(["development", "test", "staging", "production"], {
+        error: "NODE_ENV is required: development, test, staging or production",
+    }),
 
     PORT: z
         .string()

@@ -11,9 +11,13 @@ const optionalLimit = z
 
 export const envSchema = z
   .object({
-  NODE_ENV: z
-    .enum(["development", "test", "staging", "production"])
-    .default("development"),
+  // Required, with no default. A server started without it used to fall back to
+  // "development" without a word: login cookies without Secure, stack traces sent to
+  // users, local-network origins allowed, development rate limits. Development has to be
+  // asked for, never assumed.
+  NODE_ENV: z.enum(["development", "test", "staging", "production"], {
+    error: "NODE_ENV is required: development, test, staging or production",
+  }),
 
   PORT: z
     .string()

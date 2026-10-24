@@ -6,6 +6,7 @@ import { envSchema } from "./env.schema.js";
 // value that is not an exact origin stops the server at startup.
 
 const REQUIRED = {
+  NODE_ENV: "development",
   DATABASE_URL: "postgresql://u:p@localhost:5432/db",
   JWT_SECRET: "x".repeat(32),
   ENCRYPTION_KEY: "0f".repeat(32),
@@ -13,6 +14,31 @@ const REQUIRED = {
 };
 
 const parseOrigins = (value: string | undefined) => envSchema.safeParse({ ...REQUIRED, CORS_ORIGIN: value });
+
+// S2: a server started without NODE_ENV used to run as "development" without a word.
+// Development has to be asked for: no value, no start.
+describe("NODE_ENV", () => {
+  const parseEnv = (value: string | undefined) => envSchema.safeParse({ ...REQUIRED, NODE_ENV: value });
+
+  it("is required: a missing value stops the server with a message saying so", () => {
+    const result = parseEnv(undefined);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toMatch(/NODE_ENV is required/);
+  });
+
+  it.each(["development", "test", "staging"])("accepts %s", (value) => {
+    expect(parseEnv(value).success).toBe(true);
+  });
+
+  it("accepts production (which also needs S3, APP_URL and REDIS_URL)", () => {
+    const production = { ...REQUIRED, NODE_ENV: "production", STORAGE_DRIVER: "s3", S3_BUCKET: "checks", APP_URL: "https://checks.example.com", REDIS_URL: "rediss://cache.example.com:6379" };
+    expect(envSchema.safeParse(production).success).toBe(true);
+  });
+
+  it.each(["", "prod", "Production", "dev"])("refuses %j", (value) => {
+    expect(parseEnv(value).success).toBe(false);
+  });
+});
 
 // R-10: ENCRYPTION_KEY decrypts every stored bank account number. Only exactly 64 hex characters
 // make a valid AES-256 key; anything else used to pass startup and fail on the first bank operation.

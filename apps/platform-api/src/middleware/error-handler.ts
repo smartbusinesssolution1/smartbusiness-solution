@@ -33,6 +33,9 @@ const DATABASE_UNAVAILABLE: MappedError = {
 const BODY_PARSER_ERRORS: Record<string, MappedError> = {
   "entity.parse.failed": { status: 400, code: "INVALID_JSON", message: "The request body is not valid JSON." },
   "entity.too.large": { status: 413, code: "PAYLOAD_TOO_LARGE", message: "The request body is too large." },
+  // A compressed body (we accept none) or an unknown charset.
+  "encoding.unsupported": { status: 415, code: "UNSUPPORTED_ENCODING", message: "The request body encoding is not supported." },
+  "charset.unsupported": { status: 415, code: "UNSUPPORTED_ENCODING", message: "The request body charset is not supported." },
 };
 
 function mapKnownError(err: unknown): MappedError | null {
