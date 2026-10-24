@@ -22,7 +22,7 @@ export function createApp(): Express {
         origin: env.server.origin,
         credentials: true,
         methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allowedHeaders: ["Content-Type", "X-Tenant-Id", "X-Workspace-Id"],
+        allowedHeaders: ["Content-Type", "Authorization", "X-Tenant-Id", "X-Workspace-Id", "Platform", "platform", "X-Platform", "x-platform"],
     }));
     app.use(helmet({
         crossOriginResourcePolicy: {

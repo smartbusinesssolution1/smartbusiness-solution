@@ -260,6 +260,8 @@ export class AdminEmployeeService {
     }
 
     // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
 
@@ -333,6 +335,8 @@ export class AdminEmployeeService {
     }
 
     // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
 
@@ -361,6 +365,8 @@ export class AdminEmployeeService {
     }
 
     // Invalidate cached attendance analytics for tenant
+    memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
 

@@ -383,6 +383,11 @@ export const AttendanceCameraDialog: React.FC<AttendanceCameraDialogProps> = ({
   const handleSubmit = async () => {
     if (capturedFiles.length === 0 && !capturedImage) return;
 
+    if (latitude === null || longitude === null) {
+      setVerificationError('GPS location coordinates are required for attendance check-in. Please ensure location services are enabled.');
+      return;
+    }
+
     setIsVerifying(true);
     setVerificationError(null);
 
@@ -391,17 +396,24 @@ export const AttendanceCameraDialog: React.FC<AttendanceCameraDialogProps> = ({
       formData.append('employeeId', employeeId);
       formData.append('employeeName', employeeName);
       formData.append('angle', selectedAngle);
-      if (latitude !== null) formData.append('latitude', String(latitude));
-      if (longitude !== null) formData.append('longitude', String(longitude));
+      formData.append('latitude', String(latitude));
+      formData.append('longitude', String(longitude));
       if (accuracy !== null) formData.append('accuracy', String(accuracy));
 
-      if (capturedFiles.length >= 3) {
+      // Choose primary punch photo
+      const punchFile = capturedFiles.length > 0
+        ? capturedFiles[capturedFiles.length - 1]
+        : (capturedImage ? dataURItoFile(capturedImage, 'selfie.jpg') : null);
+
+      if (punchFile) {
+        formData.append('selfie', punchFile);
+      }
+
+      // Also append burst frames under 'selfies' if present
+      if (capturedFiles.length > 0) {
         capturedFiles.forEach(file => {
           formData.append('selfies', file);
         });
-      } else if (capturedImage) {
-        const selfieFile = dataURItoFile(capturedImage, 'selfie.jpg');
-        formData.append('selfies', selfieFile);
       }
 
       // Call background face recognition API
@@ -416,7 +428,11 @@ export const AttendanceCameraDialog: React.FC<AttendanceCameraDialogProps> = ({
       }, 2000);
     } catch (err: any) {
       console.error('Biometric verification error:', err);
-      const errMessage = err?.response?.data?.error || err?.message || 'Biometric Face Match Mismatch. Please align properly.';
+      const errMessage =
+        err?.response?.data?.error?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        'Biometric Face Match Mismatch. Please align properly.';
       setVerificationError(errMessage);
     } finally {
       setIsVerifying(false);

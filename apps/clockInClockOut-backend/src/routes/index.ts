@@ -1,18 +1,19 @@
 import express from 'express';
 import { authMiddleware } from "../middlewares/auth.middleware";
 import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
-import { UPLOADS_DIR      } from '../shared/utils/uploadDir';
+import { UPLOADS_DIR } from '../shared/utils/uploadDir';
 // import { attendanceRouter } from '../modules/attendance/attendance.router';
-import { settingsRouter   } from '../modules/settings/settings.router';
-import employeeRouter   from '../modules/employee/employee.routes.js';
-import workspaceRouter  from '../modules/workspace/workspace.routes.js';
+import { settingsRouter } from '../modules/settings/settings.router';
+import employeeRouter from '../modules/employee/employee.routes.js';
+import workspaceRouter from '../modules/workspace/workspace.routes.js';
 // import { userRouter       } from '../modules/user/user.router';
 
-import { rootRouter     } from '../modules/root/root.router';
-import { devTestRouter  } from '../modules/devtest/devtest.router';
+import { rootRouter } from '../modules/root/root.router';
+import { devTestRouter } from '../modules/devtest/devtest.router';
 import adminGeofenceRouter from '../modules/admin/geofence/admin-geofence.routes.js';
 import adminEmployeeRouter from '../modules/admin/employee/admin-employee.routes.js';
 import adminAttendanceRouter from '../modules/admin/attendance/admin-attendance.routes.js';
+import { attendanceRouter } from '../modules/attendance/attendance.router';
 
 const apiV1 = express.Router();
 
@@ -30,7 +31,10 @@ apiV1.use('/auth', async (req, res) => {
       'content-type': (req.headers['content-type'] as string) || 'application/json',
     };
     if (req.headers.cookie) headers['cookie'] = req.headers.cookie;
+    if (req.headers.authorization) headers['authorization'] = req.headers.authorization;
     if (req.headers['x-tenant-id']) headers['x-tenant-id'] = req.headers['x-tenant-id'] as string;
+    if (req.headers['platform']) headers['platform'] = req.headers['platform'] as string;
+    if (req.headers['x-platform']) headers['x-platform'] = req.headers['x-platform'] as string;
 
     const fetchResponse = await fetch(targetUrl, {
       method: req.method,
@@ -67,18 +71,18 @@ apiV1.use(tenantMiddleware);
 apiV1.use(requireProduct("clock-in-clock-out"));
 
 // API Routes
-apiV1.get('/devtest',    devTestRouter);
+apiV1.get('/devtest', devTestRouter);
 apiV1.use('/workspaces', workspaceRouter);
-apiV1.use('/employees',  employeeRouter);
+apiV1.use('/employees', employeeRouter);
+apiV1.use('/attendance', attendanceRouter);
 
 // Admin Routes (Gated by requireAdmin)
 apiV1.use('/admin/attendance/geofences', adminGeofenceRouter);
-apiV1.use('/admin/geofences',            adminGeofenceRouter);
-apiV1.use('/admin/employees',            adminEmployeeRouter);
-apiV1.use('/admin/attendance',           adminAttendanceRouter);
+apiV1.use('/admin/geofences', adminGeofenceRouter);
+apiV1.use('/admin/employees', adminEmployeeRouter);
+apiV1.use('/admin/attendance', adminAttendanceRouter);
 
-// apiV1.use('/attendance', attendanceRouter);
-apiV1.use('/settings',   settingsRouter);
+apiV1.use('/settings', settingsRouter);
 // apiV1.use('/users',      userRouter);
 
 export { apiV1 };

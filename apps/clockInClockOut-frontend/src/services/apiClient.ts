@@ -84,6 +84,11 @@ clockInApi.interceptors.request.use((config) => {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
+  // If sending FormData (file uploads), remove default Content-Type so the browser automatically sets the multipart boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+
   const tenantId = localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);

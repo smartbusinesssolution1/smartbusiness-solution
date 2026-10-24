@@ -31,7 +31,9 @@ async function startServer() {
                         take: 5,
                     });
                     for (const t of activeTenants) {
+                        await repo.getCachedActiveEmployees(t.id);
                         await service.getSummary(t.id);
+                        await service.getAttendanceReport(t.id, { page: 1, limit: 10, status: "all" });
                     }
                     logger.info("Admin cache pre-warming completed");
                 } catch (err) {

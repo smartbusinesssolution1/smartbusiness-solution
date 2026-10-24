@@ -1,14 +1,6 @@
 import type { Request, Response } from "express";
-import { AuthService } from "./auth.service.js";
-import {
-  AuthError,
-  getAccessCookieOptions,
-  getRefreshCookieOptions,
-  getCookieBase,
-  type CookieConfig,
-} from "@smartbusiness/auth";
-import { server, cookie, refreshToken as refreshTokenConfig } from "../../config/index.js";
-import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
+import type { TypedQueue, EmailJobs } from "@smartbusiness/jobs";
+import type { AuthService } from "./auth.service.js";
 import type {
   AcceptInvitationInput,
   ForgotPasswordInput,
@@ -17,8 +9,19 @@ import type {
   RegisterInputType,
   ResetPasswordInput,
 } from "./auth.schema.js";
-import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
-import { AppError } from "../../shared/errors/index.js";
+import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
+import { AppError, AuthError } from "@smartbusiness/auth";
+import {
+  getAccessCookieOptions,
+  getRefreshCookieOptions,
+  getCookieBase,
+  type CookieConfig,
+} from "@smartbusiness/auth";
+import {
+  server,
+  cookie,
+  refreshToken as refreshTokenConfig,
+} from "../../config/index.js";
 import { logger } from "../../shared/services/logger.js";
 
 export class AuthController {
@@ -31,9 +34,17 @@ export class AuthController {
     this.cookieConfig = {
       isDev: server.isDev,
       cookieDomain: cookie.domain,
-      refreshTokenMaxAge:
-        refreshTokenConfig.expiresDays * 24 * 60 * 60 * 1000,
+      refreshTokenMaxAge: refreshTokenConfig.expiresDays * 24 * 60 * 60 * 1000,
     };
+  }
+
+  private isAppPlatform(req: Request): boolean {
+    const platformHeader = (req.headers["platform"] ||
+      req.headers["x-platform"]) as string | undefined;
+    return (
+      platformHeader?.toLowerCase() === "app" ||
+      (req.body as any)?.platform === "app"
+    );
   }
 
   register = async (req: Request, res: Response): Promise<void> => {
@@ -42,24 +53,53 @@ export class AuthController {
       { ipAddress: req.ip, userAgent: req.headers["user-agent"] },
     );
 
-    this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    // The tokens go only into httpOnly cookies, never into the body: JavaScript (including a
-    // script injected through an XSS bug) can never read them, in any frontend.
-    sendCreated(res, { user: result.user, tenants: result.tenants });
+    this.setAuthCookies(
+      res,
+      result.tokens.accessToken,
+      result.tokens.refreshToken,
+    );
+
+    if (this.isAppPlatform(req)) {
+      sendCreated(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendCreated(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
-    const result = await this.authService.login(
-      req.body as LoginInputType,
-      { ipAddress: req.ip, userAgent: req.headers["user-agent"] },
+    const result = await this.authService.login(req.body as LoginInputType, {
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
+
+    this.setAuthCookies(
+      res,
+      result.tokens.accessToken,
+      result.tokens.refreshToken,
     );
 
-    this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    if (this.isAppPlatform(req)) {
+      sendSuccess(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendSuccess(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
-    const rawRefreshToken = req.cookies?.refresh_token;
+    const rawRefreshToken =
+      req.cookies?.refresh_token || req.body?.refreshToken;
 
     if (!rawRefreshToken) {
       throw new AuthError("Refresh token is required.");
@@ -67,13 +107,28 @@ export class AuthController {
 
     const result = await this.authService.refresh(rawRefreshToken);
 
-    this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+    this.setAuthCookies(
+      res,
+      result.tokens.accessToken,
+      result.tokens.refreshToken,
+    );
+
+    if (this.isAppPlatform(req) || req.body?.refreshToken) {
+      sendSuccess(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendSuccess(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
-
   logout = async (req: Request, res: Response): Promise<void> => {
-    const rawRefreshToken = req.cookies?.refresh_token;
+    const rawRefreshToken =
+      req.cookies?.refresh_token || req.body?.refreshToken;
 
     if (rawRefreshToken) {
       await this.authService.logout(rawRefreshToken);
@@ -101,12 +156,19 @@ export class AuthController {
     } catch (err) {
       // Happens equally for every email, so saying so reveals nothing.
       logger.error({ err }, "Could not queue a password reset");
-      throw new AppError("We couldn't start the reset right now. Try again in a moment.", 503, "SERVICE_UNAVAILABLE");
+      throw new AppError(
+        "We couldn't start the reset right now. Try again in a moment.",
+        503,
+        "SERVICE_UNAVAILABLE",
+      );
     }
 
     sendSuccess(
       res,
-      { message: "If an account exists for that email, we've sent a link to reset the password." },
+      {
+        message:
+          "If an account exists for that email, we've sent a link to reset the password.",
+      },
       202,
     );
   };
@@ -114,11 +176,17 @@ export class AuthController {
   resetPassword = async (req: Request, res: Response): Promise<void> => {
     const { token, password } = req.body as ResetPasswordInput;
 
-    await this.authService.resetPassword(token, password, { ipAddress: req.ip, userAgent: req.headers["user-agent"] });
+    await this.authService.resetPassword(token, password, {
+      ipAddress: req.ip,
+      userAgent: req.headers["user-agent"],
+    });
 
     // Every session was ended; clear this browser's cookies too.
     this.clearAuthCookies(res);
-    sendSuccess(res, { message: "Your password has been changed. Sign in with your new password." });
+    sendSuccess(res, {
+      message:
+        "Your password has been changed. Sign in with your new password.",
+    });
   };
 
   inspectInvitation = async (req: Request, res: Response): Promise<void> => {
@@ -129,12 +197,20 @@ export class AuthController {
   // Accepting signs the person in: the session goes into httpOnly cookies, never the body.
   acceptInvitation = async (req: Request, res: Response): Promise<void> => {
     const { token, fullName, password } = req.body as AcceptInvitationInput;
-    const result = await this.authService.acceptInvitation(token, { fullName, password }, {
-      ipAddress: req.ip,
-      userAgent: req.headers["user-agent"],
-    });
+    const result = await this.authService.acceptInvitation(
+      token,
+      { fullName, password },
+      {
+        ipAddress: req.ip,
+        userAgent: req.headers["user-agent"],
+      },
+    );
 
-    this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
+    this.setAuthCookies(
+      res,
+      result.tokens.accessToken,
+      result.tokens.refreshToken,
+    );
     sendSuccess(res, {
       user: result.user,
       tenants: result.tenants,
@@ -149,8 +225,14 @@ export class AuthController {
   };
 
   updateProfile = async (req: Request, res: Response): Promise<void> => {
-    const result = await this.authService.updateProfile(req.user!.userId, req.body);
-    sendSuccess(res, { user: result, message: "Profile updated successfully." });
+    const result = await this.authService.updateProfile(
+      req.user!.userId,
+      req.body,
+    );
+    sendSuccess(res, {
+      user: result,
+      message: "Profile updated successfully.",
+    });
   };
 
   // ─── Cookie Helpers ──────────────────────────────────────────
