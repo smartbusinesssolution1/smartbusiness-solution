@@ -507,7 +507,7 @@ export const AdminDashboard: React.FC = () => {
       </Box>
 
       {isLoading ? (
-        <BrandLoader fullScreen message="Loading dashboard metrics..." />
+        <BrandLoader fullScreen message="Loading dashboard" />
       ) : (
         <Grid container spacing={3}>
           {/* Newly Registered Tenant Notice (0 Workspaces) */}

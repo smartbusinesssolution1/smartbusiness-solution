@@ -34,6 +34,38 @@ export class WorkspaceRepository {
       },
     });
   }
+  async listByTenantAndUser(tenantId: string, userId: string) {
+    return prisma.workspace.findMany({
+      where: {
+        tenantId,
+        deletedAt: null,
+        members: {
+          some: {
+            userId,
+            deletedAt: null,
+          },
+        },
+      },
+      include: {
+        attendanceSettings: {
+          select: {
+            latitude: true,
+            longitude: true,
+            radiusMeters: true,
+            graceMinutes: true,
+          },
+        },
+        _count: {
+          select: {
+            members: {
+              where: { deletedAt: null },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  }
 
   /**
    * Find a specific active workspace by ID within a tenant.

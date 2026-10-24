@@ -27,7 +27,7 @@ export interface WorkspaceResponseDTO {
 }
 
 export class WorkspaceService {
-  constructor(private workspaceRepository: WorkspaceRepository) {}
+  constructor(private workspaceRepository: WorkspaceRepository) { }
 
   private formatWorkspace(w: any, index = 0): WorkspaceResponseDTO {
     return {
@@ -47,11 +47,11 @@ export class WorkspaceService {
       geofenceConfigured: Boolean(w.attendanceSettings),
       settings: w.attendanceSettings
         ? {
-            latitude: Number(w.attendanceSettings.latitude),
-            longitude: Number(w.attendanceSettings.longitude),
-            radiusMeters: w.attendanceSettings.radiusMeters,
-            graceMinutes: w.attendanceSettings.graceMinutes,
-          }
+          latitude: Number(w.attendanceSettings.latitude),
+          longitude: Number(w.attendanceSettings.longitude),
+          radiusMeters: w.attendanceSettings.radiusMeters,
+          graceMinutes: w.attendanceSettings.graceMinutes,
+        }
         : null,
       createdAt: w.createdAt?.toISOString?.() ?? w.createdAt,
     };
@@ -74,6 +74,20 @@ export class WorkspaceService {
       throw new NotFoundError("Workspace");
     }
     return this.formatWorkspace(record, 0);
+  }
+
+  async listAccessibleWorkspaces(tenantId: string, userId: string): Promise<WorkspaceResponseDTO[]> {
+    const workspaces = await this.workspaceRepository.listByTenantAndUser(tenantId, userId);
+
+    return workspaces.map(({ _count, attendanceSettings, ...w }, index) => ({
+      ...w,
+      name: w.businessName,
+      isDefault: index === 0,
+      employeeCount: _count.members,
+      geofenceConfigured: attendanceSettings !== null,
+      createdAt: w.createdAt.toISOString(),
+      updatedAt: w.updatedAt.toISOString(),
+    }));
   }
 
   /**

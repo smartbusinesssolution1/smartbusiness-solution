@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from "express";
 import { WorkspaceService } from "./workspace.service.js";
 
 export class WorkspaceController {
-  constructor(private workspaceService: WorkspaceService) {}
+  constructor(private workspaceService: WorkspaceService) { }
 
   /**
    * GET /api/v1/workspaces
@@ -10,8 +10,17 @@ export class WorkspaceController {
    */
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const tenantId = req.tenant!.tenantId;
-      const workspaces = await this.workspaceService.listWorkspaces(tenantId);
+      const { tenantId } = req.tenant!;
+      const { userId } = req.user!; // from the decoded access token
+
+      const workspaces = await this.workspaceService.listAccessibleWorkspaces(
+        tenantId,
+        userId,
+      );
+
+      console.log(
+        "workspaces", workspaces
+      )
 
       res.status(200).json({
         success: true,

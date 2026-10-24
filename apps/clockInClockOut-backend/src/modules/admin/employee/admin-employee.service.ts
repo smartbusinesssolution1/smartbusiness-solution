@@ -30,7 +30,7 @@ export const buildGeneralWeeklySchedule = (startTime = "09:00", endTime = "18:00
 export class AdminEmployeeService {
   private passwordService = new PasswordService();
 
-  constructor(private employeeRepo: AdminEmployeeRepository) {}
+  constructor(private employeeRepo: AdminEmployeeRepository) { }
 
   /**
    * Helper to format an employee model instance into the client-facing DTO
@@ -182,14 +182,14 @@ export class AdminEmployeeService {
     tenantId: string,
     input: CreateEmployeeInput,
     avatarFile?: Express.Multer.File,
-    callerRole?: string
+    callerRole?: string,
+    workspaceId?: string,
   ) {
     const isOwner = (callerRole || "").toUpperCase() === "OWNER";
     if (input.role === "admin" && !isOwner) {
       throw new ForbiddenError("Admins have access to create Standard Employees only. Only organization owners can create administrators.");
     }
     // 1. Resolve workspace
-    let workspaceId = input.workspaceId;
     if (!workspaceId) {
       const defaultWorkspace = await this.employeeRepo.getFirstWorkspace(tenantId);
       if (!defaultWorkspace) {
@@ -218,7 +218,7 @@ export class AdminEmployeeService {
 
     // 4. Generate secure readable temporary password and hash it with PasswordService (Argon2id)
     const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
-    const temporaryPassword = `GA#${randomSuffix}!2026`;
+    const temporaryPassword = `GA${randomSuffix}!2026`;
     const passwordHash = await this.passwordService.hash(temporaryPassword);
 
     // 5. Ensure weeklySchedule is populated as 7-day array

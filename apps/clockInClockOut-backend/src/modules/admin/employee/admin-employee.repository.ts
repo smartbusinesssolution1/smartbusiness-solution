@@ -246,21 +246,30 @@ export class AdminEmployeeRepository {
         where: { email: input.email },
       });
 
-      if (!user) {
+      if (user) {
+        const existingWorkspaceMember =
+          await tx.workspaceMember.findUnique({
+            where: {
+              workspaceId_userId: {
+                workspaceId,
+                userId: user.id,
+              },
+            },
+          });
+        if (existingWorkspaceMember) {
+          throw new Error(
+            "An employee with this email already exists in this workspace."
+          );
+        }
+
+        // User exists, but belongs to a different workspace.
+        // Reuse the user without overwriting their global details.
+      } else {
         user = await tx.user.create({
           data: {
             fullName: input.name,
             email: input.email,
             passwordHash,
-            isActive: input.status === "active",
-          },
-        });
-      } else {
-        // Update user name/active
-        user = await tx.user.update({
-          where: { id: user.id },
-          data: {
-            fullName: input.name,
             isActive: input.status === "active",
           },
         });

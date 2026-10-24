@@ -9,6 +9,7 @@ function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
   if (typeof data === 'string') return data;
   if (data.error) {
     if (typeof data.error === 'string') return data.error;
+    if (data.error.originalMessage) return data.error.originalMessage;
     if (data.error.message) return data.error.message;
   }
   if (data.message) return data.message;

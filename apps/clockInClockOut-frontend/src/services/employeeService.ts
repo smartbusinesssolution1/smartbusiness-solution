@@ -72,6 +72,7 @@ export const employeeService = {
       return response.data?.data || response.data;
     } catch (error: any) {
       const errorMsg =
+        error.response?.data?.error?.originalMessage ||
         error.response?.data?.error?.message ||
         error.response?.data?.message ||
         error.response?.data?.error ||

@@ -10,7 +10,7 @@ import {
 import { ValidationError } from "../../../shared/errors/index.js";
 
 export class AdminEmployeeController {
-  constructor(private employeeService: AdminEmployeeService) {}
+  constructor(private employeeService: AdminEmployeeService) { }
 
   /**
    * Safe helper to clean up uploaded file on failure
@@ -82,7 +82,9 @@ export class AdminEmployeeController {
    * Provision new employee with avatar image and day-wise schedule
    */
   create = async (req: Request, res: Response): Promise<void> => {
+    const headerWorkspaceId = req.headers["x-workspace-id"] as string | undefined;
     const bodyParsed = CreateEmployeeSchema.safeParse(req.body);
+
     if (!bodyParsed.success) {
       this.cleanupFile(req.file);
       const fieldErrors: Record<string, string[]> = {};
@@ -106,7 +108,8 @@ export class AdminEmployeeController {
         tenantId,
         bodyParsed.data,
         req.file,
-        callerRole
+        callerRole,
+        headerWorkspaceId
       );
       res.status(201).json({
         success: true,
