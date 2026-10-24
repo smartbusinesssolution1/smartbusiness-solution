@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate } from "react-router";
 import { useForm } from "react-hook-form";
 import { motion } from "motion/react";
 import { ArrowRight, Building2, LogOut, Plus } from "lucide-react";
-import { useLogout, useSession } from "@/api/auth";
+import { useIsCompanyOwner, useLogout, useSession } from "@/api/auth";
 import { useCreateWorkspace, useWorkspaces, type WorkspaceInput } from "@/api/workspace";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectItem } from "@/components/ui/controls";
 import { Brand } from "@/components/app/brand";
 import { CheckFace } from "@/components/app/check-face";
-import { ErrorState, InlineAlert, Skeleton } from "@/components/app/layout";
+import { EmptyState, ErrorState, InlineAlert, Skeleton } from "@/components/app/layout";
 import { Splash } from "@/app/guards";
 import { applyServerErrors, US_STATES } from "@/lib/forms";
 import { initials } from "@/lib/format";
@@ -43,13 +43,31 @@ function TopBar() {
   );
 }
 
+// For someone who isn't the company owner and has no workspace yet: only the owner opens
+// workspaces, so the way in is being added to one.
+function AskOwnerForAccess() {
+  return (
+    <div className="min-h-dvh">
+      <TopBar />
+      <div className="mx-auto max-w-md px-5 py-16">
+        <EmptyState
+          icon={<Building2 />}
+          title="You're not in a workspace yet"
+          description="Only the company owner can create a workspace. Ask them, or a workspace admin, to add you to one. Once they do, refresh this page and it appears here."
+        />
+      </div>
+    </div>
+  );
+}
+
 export function WorkspacePickerPage() {
   const { data: workspaces, isPending, error, refetch } = useWorkspaces();
+  const isOwner = useIsCompanyOwner();
   const navigate = useNavigate();
 
   if (isPending) return <Splash />;
   if (error) return <div className="mx-auto max-w-md p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>;
-  if (workspaces.length === 0) return <Navigate to="/workspaces/new" replace />;
+  if (workspaces.length === 0) return isOwner ? <Navigate to="/workspaces/new" replace /> : <AskOwnerForAccess />;
   if (workspaces.length === 1) return <Navigate to={`/w/${workspaces[0]!.id}`} replace />;
   const last = lastWorkspace();
   const ordered = [...workspaces].sort((a, b) => (a.id === last ? -1 : b.id === last ? 1 : a.businessName.localeCompare(b.businessName)));
@@ -85,17 +103,26 @@ export function WorkspacePickerPage() {
             </motion.button>
           ))}
         </div>
-        <Button variant="secondary" asChild className="self-start">
-          <Link to="/workspaces/new">
-            <Plus /> New workspace
-          </Link>
-        </Button>
+        {isOwner && (
+          <Button variant="secondary" asChild className="self-start">
+            <Link to="/workspaces/new">
+              <Plus /> New workspace
+            </Link>
+          </Button>
+        )}
       </div>
     </div>
   );
 }
 
 export function CreateWorkspacePage() {
+  // Opened by its address by someone who isn't the owner: say why instead of a form the
+  // server would refuse.
+  if (!useIsCompanyOwner()) return <AskOwnerForAccess />;
+  return <CreateWorkspaceForm />;
+}
+
+function CreateWorkspaceForm() {
   const navigate = useNavigate();
   const create = useCreateWorkspace();
   const { data: workspaces } = useWorkspaces();

@@ -51,8 +51,11 @@ router.use(requireProduct("check-printing"));
 router.use(requireTwoFactor);
 
 // Workspace CRUD
+// Only the company owner opens a workspace: its creator becomes its admin, so anyone else
+// (a viewer, say) could otherwise give themselves bank accounts and printing in a new one.
 router.post(
   "/",
+  requireCompanyOwner,
   validate(createWorkspaceSchema),
   workspaceController.create,
 );

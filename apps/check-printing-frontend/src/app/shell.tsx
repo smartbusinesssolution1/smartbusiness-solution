@@ -25,7 +25,7 @@ import {
   MonitorSmartphone,
   Plus,
 } from "lucide-react";
-import { useLogout, useSession } from "@/api/auth";
+import { useIsCompanyOwner, useLogout, useSession } from "@/api/auth";
 import { useViews } from "@/api/checks";
 import { useWorkspaces } from "@/api/workspace";
 import type { Permission, RegisterView } from "@/api/types";
@@ -201,6 +201,7 @@ function NavItem({ entry, wid, count, alert }: { entry: NavEntry; wid: string; c
 function WorkspaceSwitcher() {
   const { workspace } = useWorkspaceContext();
   const { data: workspaces } = useWorkspaces();
+  const isOwner = useIsCompanyOwner();
   const navigate = useNavigate();
   return (
     <Menu>
@@ -222,10 +223,15 @@ function WorkspaceSwitcher() {
             {w.id === workspace.id && <CheckIcon className="!text-ink" />}
           </MenuItem>
         ))}
-        <MenuSeparator />
-        <MenuItem onSelect={() => navigate("/workspaces/new")}>
-          <Plus /> New workspace
-        </MenuItem>
+        {/* Only the company owner opens workspaces (the server refuses anyone else). */}
+        {isOwner && (
+          <>
+            <MenuSeparator />
+            <MenuItem onSelect={() => navigate("/workspaces/new")}>
+              <Plus /> New workspace
+            </MenuItem>
+          </>
+        )}
       </MenuContent>
     </Menu>
   );
