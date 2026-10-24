@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
+import BrandLoader from '../../components/BrandLoader';
 import {
   Box,
   Card,
@@ -88,6 +89,8 @@ export const AttendanceHistory: React.FC = () => {
         return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
       case 'absent':
         return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+      case 'half_day':
+        return <Chip label="Half Day" color="info" size="small" />;
       case 'auto_closed':
         return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
       default:
@@ -179,13 +182,7 @@ export const AttendanceHistory: React.FC = () => {
       {/* Table Card */}
       <Card sx={{ borderRadius: 3 }}>
         {isLoading ? (
-          <Box sx={{ p: 3 }}>
-            <Skeleton variant="rectangular" height={50} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-          </Box>
+          <BrandLoader fullScreen message="Loading attendance history..." />
         ) : (
           <Box>
             <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
@@ -215,7 +212,7 @@ export const AttendanceHistory: React.FC = () => {
                           {dayjs(record.date).format('YYYY-MM-DD')}
                         </TableCell>
                         <TableCell sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                          {dayjs(record.date).format('dddd')}
+                          {dayjs(record.date).format('dddd')} {record.sessionNumber && record.sessionNumber > 1 ? `(Punch #${record.sessionNumber})` : ''}
                         </TableCell>
                         <TableCell sx={{ fontWeight: 600 }}>
                           {record.checkIn 
@@ -227,7 +224,15 @@ export const AttendanceHistory: React.FC = () => {
                             ? dayjs(`${record.date} ${record.checkOut}`).format('hh:mm A') 
                             : record.checkIn ? <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>Active Shift</span> : '--'}
                         </TableCell>
-                        <TableCell>{getStatusChip(record.status)}</TableCell>
+                        <TableCell>
+                          {record.isFirstSession !== false ? (
+                            getStatusChip(record.status)
+                          ) : (
+                            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                              --
+                            </Typography>
+                          )}
+                        </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 700 }}>
                           {record.workingHours ? `${record.workingHours} hrs` : '--'}
                         </TableCell>

@@ -39,7 +39,15 @@ export const envSchema = z
     .transform((val) => parseInt(val, 10))
     .pipe(z.number().min(1).max(90)),
 
-  CORS_ORIGIN: z.string().default("http://localhost:5173"),
+  CORS_ORIGIN: z
+    .string()
+    .default("http://localhost:5173,http://localhost:5174")
+    .transform((value) =>
+      value
+        .split(",")
+        .map((s) => s.trim().replace(/\/+$/, ""))
+        .filter(Boolean)
+    ),
 
   COOKIE_DOMAIN: z.string().optional(),
 

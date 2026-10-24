@@ -5,6 +5,7 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { employeeService } from '../../services/employeeService';
+import BrandLoader from '../../components/BrandLoader';
 import { settingsService } from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -327,20 +328,7 @@ export const EditEmployee: React.FC = () => {
       <Card sx={{ borderRadius: 3 }}>
         <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
           {isLoading ? (
-            <Grid container spacing={3}>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 1 }} />
-              </Grid>
-            </Grid>
+            <BrandLoader fullScreen message="Loading employee details..." />
           ) : (
             <form onSubmit={handleSubmit(onSubmit)}>
               <Grid container spacing={3}>

@@ -22,6 +22,11 @@ export class StorageService {
       env.aws.bucketName && env.aws.accessKeyId && env.aws.secretAccessKey
     );
 
+    // Ensure local storage directory always exists for fallback
+    if (!fs.existsSync(this.avatarsLocalDir)) {
+      fs.mkdirSync(this.avatarsLocalDir, { recursive: true });
+    }
+
     if (this.isS3Enabled) {
       this.s3Client = new S3Client({
         region: env.aws.region,
@@ -29,6 +34,7 @@ export class StorageService {
           accessKeyId: env.aws.accessKeyId!,
           secretAccessKey: env.aws.secretAccessKey!,
         },
+        maxAttempts: 2,
       });
       logger.info(
         {
@@ -38,10 +44,6 @@ export class StorageService {
         "S3 Storage Service initialized for bucket"
       );
     } else {
-      // Ensure local fallback directory exists
-      if (!fs.existsSync(this.avatarsLocalDir)) {
-        fs.mkdirSync(this.avatarsLocalDir, { recursive: true });
-      }
       logger.info(
         "AWS S3 credentials not provided. StorageService running in local disk mode."
       );
@@ -91,12 +93,11 @@ export class StorageService {
           key,
         };
       } catch (error: any) {
-        logger.error({ error: error.message, key }, "Failed to upload avatar to AWS S3");
-        throw new AppError(
-          `Failed to store employee profile image in S3 storage: ${error.message || "Unknown error"}`,
-          500,
-          "STORAGE_UPLOAD_ERROR"
+        logger.warn(
+          { error: error.message, key },
+          "Failed to upload avatar to AWS S3, falling back safely to local disk storage"
         );
+        // Fall back gracefully to local disk below
       }
     }
 
@@ -152,6 +153,36 @@ export class StorageService {
       // Non-fatal cleanup error
       logger.warn({ error: err.message, avatarUrl }, "Failed to remove previous avatar file");
     }
+  }
+
+  /**
+   * Retrieve file buffer from S3 URL or local uploads path
+   */
+  async getFileBuffer(urlOrPath: string): Promise<Buffer> {
+    if (!urlOrPath) {
+      throw new AppError("No file URL or path provided", 400, "ERR_INVALID_FILE_PATH");
+    }
+
+    if (urlOrPath.startsWith("http://") || urlOrPath.startsWith("https://")) {
+      const response = await fetch(urlOrPath);
+      if (!response.ok) {
+        throw new AppError(`Failed to fetch image from URL: ${urlOrPath}`, 400, "ERR_DOWNLOAD_FAILED");
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
+    }
+
+    const relativePart = urlOrPath.replace(/^\/?uploads\//, "");
+    const localFilePath = path.join(UPLOADS_DIR, relativePart);
+    if (fs.existsSync(localFilePath)) {
+      return await fs.promises.readFile(localFilePath);
+    }
+
+    if (fs.existsSync(urlOrPath)) {
+      return await fs.promises.readFile(urlOrPath);
+    }
+
+    throw new AppError(`File not found: ${urlOrPath}`, 404, "ERR_FILE_NOT_FOUND");
   }
 }
 

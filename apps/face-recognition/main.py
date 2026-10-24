@@ -1,46 +1,37 @@
+import logging
+from contextlib import asynccontextmanager
+
+import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import uvicorn
-import logging
 
-from routes import router
 from config import settings
+from routes import router
 
-
-# ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
+    format="%(asctime)s | %(levelname)s | %(message)s",
 )
-
 logger = logging.getLogger(__name__)
 
 
-# ── Lifespan ─────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    logger.info("🚀 Face Recognition API starting up...")
-    logger.info("Model: InsightFace (buffalo_sc)")
-    logger.info("Mode: selfie-only consistency check (no reference photo)")
-    logger.info(f"Selfie match threshold: {settings.SELFIE_MATCH_THRESHOLD} | min match ratio: {settings.MIN_SELFIE_MATCH_RATIO}")
-
+    logger.info("Attendance Face Recognition API starting up...")
+    logger.info(f"Model: InsightFace ({settings.RECOGNITION_MODEL})")
+    logger.info(f"Match threshold: {settings.MATCH_THRESHOLD}")
+    logger.info(f"Liveness threshold: {settings.LIVENESS_THRESHOLD}")
     yield
+    logger.info("Attendance Face Recognition API shutting down...")
 
-    logger.info("🛑 Face Recognition API shutting down...")
 
-
-# ── FastAPI App ──────────────────────────────────────────────────────────
 app = FastAPI(
-    title="Face Recognition API",
-    description="Dating app face verification using InsightFace ArcFace.",
+    title="Attendance Face Recognition API",
+    description="Single-photo face-match attendance verification with basic anti-spoof liveness checks.",
     version="1.0.0",
     lifespan=lifespan,
 )
 
-
-# ── CORS ─────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,16 +40,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-# ── Routes ───────────────────────────────────────────────────────────────
 app.include_router(router, prefix="/api/v1")
 
 
-# ── Health Routes ────────────────────────────────────────────────────────
 @app.get("/", tags=["Health"])
 async def root():
     return {
-        "service": "Face Recognition API",
+        "service": "Attendance Face Recognition API",
         "status": "running",
         "version": "1.0.0",
         "docs": "/docs",
@@ -67,16 +55,8 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    return {
-        "status": "healthy"
-    }
+    return {"status": "healthy"}
 
 
-# ── Entry ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    uvicorn.run(
-        "main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

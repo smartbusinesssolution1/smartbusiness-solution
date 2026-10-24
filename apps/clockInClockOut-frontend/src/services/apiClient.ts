@@ -45,6 +45,18 @@ export function markSignedOut(): void {
   }
 }
 
+// In-memory getters injected by Zustand store to avoid repeated synchronous disk I/O (localStorage) on every request
+let getTenantId: (() => string | null | undefined) | null = null;
+let getWorkspaceId: (() => string | null | undefined) | null = null;
+
+export function setAuthGetters(
+  tenantGetter: () => string | null | undefined,
+  workspaceGetter: () => string | null | undefined
+): void {
+  getTenantId = tenantGetter;
+  getWorkspaceId = workspaceGetter;
+}
+
 export function isSignedIn(): boolean {
   try {
     return localStorage.getItem(SESSION_FLAG_KEY) === '1';
@@ -84,11 +96,16 @@ clockInApi.interceptors.request.use((config) => {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
-  const tenantId = localStorage.getItem('active_tenant_id');
+  // If sending FormData (file uploads), remove default Content-Type so the browser automatically sets the multipart boundary
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+
+  const tenantId = getTenantId?.() || localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }
-  const workspaceId = localStorage.getItem('active_workspace_id');
+  const workspaceId = getWorkspaceId?.() || localStorage.getItem('active_workspace_id');
   if (workspaceId && workspaceId !== 'undefined' && workspaceId !== 'null') {
     config.headers.set('X-Workspace-Id', workspaceId);
   }
@@ -108,7 +125,7 @@ platformAuthApi.interceptors.request.use((config) => {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
-  const tenantId = localStorage.getItem('active_tenant_id');
+  const tenantId = getTenantId?.() || localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
   }
@@ -148,13 +165,23 @@ clockInApi.interceptors.response.use(
     const originalRequest = error.config as any;
     const url = originalRequest?.url || '';
 
+    // BUG-04: Suppress error toast on optional employee profile lookup (/api/v1/employees/me)
+    if (url.includes('/api/v1/employees/me') && error.response?.status === 404) {
+      return Promise.reject(error);
+    }
+
     // Never intercept auth endpoints (login, register, refresh)
     const isAuthRoute =
       url.includes('/auth/login') ||
       url.includes('/auth/register') ||
       url.includes('/auth/refresh');
 
-    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthRoute) {
+    // BUG-08: Check if 401 was due to missing tenant header rather than expired JWT session
+    const errorData = error.response?.data as any;
+    const errorMsg = typeof errorData === 'string' ? errorData : (errorData?.message || errorData?.error?.message || '');
+    const isTenantHeaderError = errorMsg.includes('Tenant') || errorMsg.includes('X-Tenant-Id');
+
+    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthRoute && !isTenantHeaderError) {
       originalRequest._retry = true;
 
       // Only a signed-in session can be renewed; otherwise there is nothing to refresh
@@ -176,6 +203,11 @@ clockInApi.interceptors.response.use(
     }
 
     if (isAuthRoute) {
+      return Promise.reject(error);
+    }
+
+    if (isTenantHeaderError) {
+      notify('Organization / Tenant identifier is required for this operation.', 'warning');
       return Promise.reject(error);
     }
 

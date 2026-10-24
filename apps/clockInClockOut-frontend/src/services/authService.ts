@@ -7,59 +7,12 @@ export const ACTIVE_WORKSPACE_STORAGE_KEY = 'active_workspace_id';
 export const CURRENT_TENANT_STORAGE_KEY = 'checkpoint_tenant';
 export const WORKSPACES_STORAGE_KEY = 'checkpoint_workspaces';
 
-export const DEFAULT_TENANT: Tenant = {
-  id: '10000000-0000-0000-0000-000000000001',
-  name: 'Green Acres Landscaping LLC',
-  role: 'OWNER',
-  status: 'ACTIVE',
-  billingEmail: 'billing@greenacres.com',
-};
-
-export const DEFAULT_WORKSPACES: Workspace[] = [
-  {
-    id: '30000000-0000-0000-0000-000000000001',
-    tenantId: '10000000-0000-0000-0000-000000000001',
-    name: 'Main Headquarters (HQ)',
-    address: '124 Industrial Pkwy',
-    city: 'Austin',
-    state: 'TX',
-    zipCode: '78745',
-    phone: '(512) 555-0100',
-    isDefault: true,
-    employeeCount: 24,
-  },
-  {
-    id: '30000000-0000-0000-0000-000000000002',
-    tenantId: '10000000-0000-0000-0000-000000000001',
-    name: 'North Branch & Operations',
-    address: '450 Research Blvd, Ste 200',
-    city: 'Round Rock',
-    state: 'TX',
-    zipCode: '78664',
-    phone: '(512) 555-0210',
-    isDefault: false,
-    employeeCount: 14,
-  },
-  {
-    id: '30000000-0000-0000-0000-000000000003',
-    tenantId: '10000000-0000-0000-0000-000000000001',
-    name: 'South Logistics & Warehouse',
-    address: '920 Congress Ave, Bay 4',
-    city: 'San Marcos',
-    state: 'TX',
-    zipCode: '78666',
-    phone: '(512) 555-0340',
-    isDefault: false,
-    employeeCount: 8,
-  },
-];
-
 export interface LoginResponse {
   user: User;
   token: string;
-  tenant: Tenant;
+  tenant: Tenant | null;
   workspaces: Workspace[];
-  currentWorkspace: Workspace;
+  currentWorkspace: Workspace | null;
 }
 
 let inFlightWorkspacesPromise: Promise<Workspace[]> | null = null;
@@ -69,7 +22,7 @@ export const authService = {
   /**
    * Get the current active company / tenant
    */
-  getCurrentTenant(): Tenant {
+  getCurrentTenant(): Tenant | null {
     try {
       const stored = localStorage.getItem(CURRENT_TENANT_STORAGE_KEY);
       if (stored) {
@@ -78,7 +31,7 @@ export const authService = {
     } catch {
       // Fallback
     }
-    return DEFAULT_TENANT;
+    return null;
   },
 
   /**
@@ -108,7 +61,7 @@ export const authService = {
     } catch {
       // Fallback
     }
-    return DEFAULT_WORKSPACES;
+    return [];
   },
 
   /**
@@ -126,11 +79,11 @@ export const authService = {
     inFlightWorkspacesPromise = (async () => {
       try {
         const res = await clockInApi.get('/api/v1/workspaces');
-        if (res.data?.success && Array.isArray(res.data.data) && res.data.data.length > 0) {
+        if (res.data?.success && Array.isArray(res.data.data)) {
           const fetchedList: Workspace[] = res.data.data.map((item: any, idx: number) => ({
             id: item.id,
             tenantId: item.tenantId,
-            name: item.name || item.businessName,
+            name: item.name || item.businessName || 'Workspace',
             address: item.address || item.addressLine1 || '',
             city: item.city || '',
             state: item.state || '',
@@ -154,12 +107,10 @@ export const authService = {
     return inFlightWorkspacesPromise;
   },
 
-
   /**
    * Persist workspaces to local storage
    */
   setWorkspaces(workspaces: Workspace[]): void {
-
     try {
       localStorage.setItem(WORKSPACES_STORAGE_KEY, JSON.stringify(workspaces));
     } catch {
@@ -170,15 +121,17 @@ export const authService = {
   /**
    * Resolve currently active workspace
    */
-  getActiveWorkspace(): Workspace {
+  getActiveWorkspace(): Workspace | null {
     const list = this.getWorkspaces();
     const activeId = localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
     if (activeId) {
       const found = list.find((w) => w.id === activeId);
       if (found) return found;
     }
-    const defaultWorkspace = list.find((w) => w.isDefault) || list[0] || DEFAULT_WORKSPACES[0];
-    localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, defaultWorkspace.id);
+    const defaultWorkspace = list.find((w) => w.isDefault) || list[0] || null;
+    if (defaultWorkspace) {
+      localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, defaultWorkspace.id);
+    }
     return defaultWorkspace;
   },
 
@@ -202,11 +155,11 @@ export const authService = {
     const currentTenant = this.getCurrentTenant();
     const payload = {
       businessName: name,
-      addressLine1: details?.address || '100 Business Pkwy',
+      addressLine1: details?.address || '',
       addressLine2: '',
-      city: details?.city || 'Austin',
-      state: (details?.state || 'TX').toUpperCase(),
-      zipCode: details?.zipCode || '78701',
+      city: details?.city || '',
+      state: (details?.state || '').toUpperCase(),
+      zipCode: details?.zipCode || '',
       phone: details?.phone || '',
     };
 
@@ -216,7 +169,7 @@ export const authService = {
         const item = res.data.data;
         const newWs: Workspace = {
           id: item.id,
-          tenantId: item.tenantId || currentTenant.id,
+          tenantId: item.tenantId || currentTenant?.id || '',
           name: item.name || item.businessName,
           address: item.address || item.addressLine1 || payload.addressLine1,
           city: item.city || payload.city,
@@ -241,41 +194,53 @@ export const authService = {
     throw new Error('Failed to create workspace.');
   },
 
-
   /**
    * Log in via Centralized platform-api (Port 3001)
    */
-  async login(email: string, password = 'Password1!'): Promise<LoginResponse> {
+  async login(email: string, password = 'Password1!', rememberDevice = false): Promise<LoginResponse> {
     try {
-      const loginRes = await platformAuthApi.post('/api/v1/auth/login', { email, password });
+      const loginRes = await platformAuthApi.post('/api/v1/auth/login', {
+        email,
+        password,
+        rememberDevice,
+      });
 
       const { user: authUser, tenants: rawTenants } = loginRes.data.data;
 
       // The session is in httpOnly cookies set by platform-api; only remember that we signed in.
       markSignedIn();
 
-      const activeRawTenant = rawTenants?.[0];
-      if (!activeRawTenant) {
+      if (!rawTenants || rawTenants.length === 0) {
         throw new Error('No organization membership found for this user account.');
       }
 
-      const tenantRole = (activeRawTenant.role || 'MEMBER').toUpperCase();
-      const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
+      // Prioritize an organization where the user has administrative privileges (OWNER or ADMIN)
+      const privilegedTenant = rawTenants.find((t: any) => {
+        const r = (t.role || '').toUpperCase();
+        return r === 'OWNER' || r === 'ADMIN';
+      });
 
-      if (!isPrivileged) {
-        // End the server session too: the cookies would otherwise stay valid.
-        await platformAuthApi.post('/api/v1/auth/logout').catch(() => {});
+      // Business Rule: Members (Employees) are NOT allowed to log into the Web Admin Panel.
+      // They must use the dedicated SmartBusiness Mobile Application.
+      if (!privilegedTenant) {
+        // End the server session immediately so session cookies do not linger
+        await platformAuthApi.post('/api/v1/auth/logout').catch(() => { });
         markSignedOut();
         localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
         localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+        localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+        localStorage.removeItem(WORKSPACES_STORAGE_KEY);
         throw new Error(
-          'Access Restricted: The Clock-In/Clock-Out Web Console is exclusively for Administrators and Managers. Employees must use the SmartBusiness Mobile App to clock in and out.'
+          'Access Restricted: The Clock-In Web Console is exclusively for Administrators and Managers. Employees must use the SmartBusiness Mobile App to clock in and out.'
         );
       }
 
+      const activeRawTenant = privilegedTenant;
+      const tenantRole = (activeRawTenant.role || 'ADMIN').toUpperCase();
+
       const tenant: Tenant = {
         id: activeRawTenant.tenantId || activeRawTenant.id,
-        name: activeRawTenant.tenantName || activeRawTenant.name || 'Green Acres Landscaping LLC',
+        name: activeRawTenant.tenantName || activeRawTenant.name || 'Organization',
         role: tenantRole as any,
         status: (activeRawTenant.status || 'ACTIVE').toUpperCase() as any,
       };
@@ -283,14 +248,22 @@ export const authService = {
       this.setCurrentTenant(tenant);
 
       // Workspaces belonging to this tenant
-      const workspaces = this.getWorkspaces().map((w) => ({
-        ...w,
-        tenantId: tenant.id,
-      }));
-      this.setWorkspaces(workspaces);
+      let workspaces: Workspace[] = [];
+      try {
+        workspaces = await this.fetchWorkspaces();
+      } catch (wsErr) {
+        console.warn('Could not fetch live workspaces during login:', wsErr);
+        workspaces = this.getWorkspaces().filter((w) => w.tenantId === tenant.id);
+      }
 
-      const currentWorkspace = this.getActiveWorkspace();
-      localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+      const currentWorkspace = workspaces.find((w) => w.isDefault) || workspaces[0] || null;
+      if (currentWorkspace) {
+        this.setWorkspaces(workspaces);
+        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+      } else {
+        this.setWorkspaces(workspaces);
+        localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+      }
 
       // Fetch employee badge profile if available
       let employeeProfile: any = null;
@@ -298,25 +271,25 @@ export const authService = {
         const empRes = await clockInApi.get('/api/v1/employees/me');
         employeeProfile = empRes.data.data;
       } catch (empErr) {
-        console.warn('Could not fetch employee profile, using fallback details:', empErr);
+        // Silently use account credentials
       }
-
 
       const user: User = {
         id: authUser.id,
-        employeeId: employeeProfile?.employeeCode || 'EMP-GA001',
+        employeeId: employeeProfile?.employeeCode || '',
         name: authUser.fullName,
         email: authUser.email,
-        phone: '+1 (555) 019-2834',
+        phone: employeeProfile?.phone || authUser.phone || '',
         role: 'admin',
         status: 'active',
-        designation: employeeProfile?.designation || 'Operations Manager',
-        department: employeeProfile?.department || 'Operations',
-        joinedDate: '2024-01-15',
-        avatarUrl: employeeProfile?.biometricPhotoUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+        designation: employeeProfile?.designation || 'Administrator',
+        department: employeeProfile?.department || 'Management',
+        joinedDate: authUser.createdAt ? authUser.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+        avatarUrl: employeeProfile?.biometricPhotoUrl || authUser.avatarUrl || '',
       };
 
       setSessionUser(user);
+
       return {
         user,
         token: 'session-cookie-active',
@@ -344,45 +317,6 @@ export const authService = {
     email: string,
     defaultPolicy?: string
   ): Promise<LoginResponse> {
-    const tenant: Tenant = {
-      id: 't_' + Date.now(),
-      name: companyName,
-      role: 'OWNER',
-      status: 'ACTIVE',
-      billingEmail: email,
-    };
-
-    const initialWorkspace: Workspace = {
-      id: 'ws_' + Date.now(),
-      tenantId: tenant.id,
-      name: 'Main Headquarters (HQ)',
-      address: '100 Enterprise Way',
-      city: 'Austin',
-      state: 'TX',
-      zipCode: '78701',
-      phone: '(512) 555-0100',
-      isDefault: true,
-      employeeCount: 1,
-      createdAt: new Date().toISOString(),
-    };
-
-    const workspaces = [
-      initialWorkspace,
-      {
-        id: 'ws_branch_' + Date.now(),
-        tenantId: tenant.id,
-        name: 'North Branch Office',
-        address: '500 Technology Dr',
-        city: 'Round Rock',
-        state: 'TX',
-        zipCode: '78664',
-        phone: '(512) 555-0200',
-        isDefault: false,
-        employeeCount: 0,
-        createdAt: new Date().toISOString(),
-      },
-    ];
-
     try {
       const res = await platformAuthApi.post('/api/v1/auth/register', {
         companyName,
@@ -391,64 +325,74 @@ export const authService = {
         password: 'Password1!',
       });
 
-      const { user: authUser } = res.data.data;
-      // The session is in httpOnly cookies set by platform-api; only remember that we signed in.
+      const { user: authUser, tenants: rawTenants } = res.data.data;
       markSignedIn();
+
+      const privilegedTenant = (rawTenants || []).find((t: any) => {
+        const r = (t.role || '').toUpperCase();
+        return r === 'OWNER' || r === 'ADMIN';
+      }) || (rawTenants && rawTenants[0]);
+
+      const tenantId = privilegedTenant?.tenantId || privilegedTenant?.id || '';
+      const tenant: Tenant = {
+        id: tenantId,
+        name: privilegedTenant?.tenantName || privilegedTenant?.name || companyName,
+        role: (privilegedTenant?.role || 'OWNER').toUpperCase() as any,
+        status: (privilegedTenant?.status || 'ACTIVE').toUpperCase() as any,
+        billingEmail: email,
+      };
+
       this.setCurrentTenant(tenant);
+      if (tenant.id) {
+        localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
+      }
+
+      let workspaces: Workspace[] = [];
+      try {
+        workspaces = await this.fetchWorkspaces();
+      } catch (wsErr) {
+        console.warn('Could not fetch live workspaces during register:', wsErr);
+      }
+
+      const currentWorkspace = workspaces.find((w) => w.isDefault) || workspaces[0] || null;
       this.setWorkspaces(workspaces);
-      localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, initialWorkspace.id);
+      if (currentWorkspace) {
+        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+      } else {
+        localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+      }
 
       const user: User = {
         id: authUser.id,
-        employeeId: 'EMP-GA001',
-        name: authUser.fullName,
-        email: authUser.email,
-        phone: '+1 (555) 019-2834',
+        employeeId: '',
+        name: authUser.fullName || fullName,
+        email: authUser.email || email,
+        phone: authUser.phone || '',
         role: 'admin',
         status: 'active',
-        designation: 'Operations Director',
-        department: 'Operations',
-        joinedDate: new Date().toISOString().split('T')[0],
-        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+        designation: 'Workspace Administrator',
+        department: 'Management',
+        joinedDate: authUser.createdAt ? authUser.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
+        avatarUrl: authUser.avatarUrl || '',
       };
 
       setSessionUser(user);
+
       return {
         user,
         token: 'session-cookie-active',
         tenant,
         workspaces,
-        currentWorkspace: initialWorkspace,
+        currentWorkspace,
       };
     } catch (error: any) {
-      console.warn('API register failed, falling back to mock registration:', error?.message);
-
-      const user: User = {
-        id: 'usr_' + Date.now(),
-        employeeId: 'EMP-GA001',
-        name: fullName,
-        email,
-        phone: '+1 (555) 019-2834',
-        role: 'admin',
-        status: 'active',
-        designation: 'Workspace Administrator',
-        department: 'Management',
-        joinedDate: new Date().toISOString().split('T')[0],
-        avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
-      };
-
-      this.setCurrentTenant(tenant);
-      this.setWorkspaces(workspaces);
-      localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, initialWorkspace.id);
-      setSessionUser(user);
-
-      return {
-        user,
-        token: 'mock-session-active',
-        tenant,
-        workspaces,
-        currentWorkspace: initialWorkspace,
-      };
+      const errorObj = error.response?.data?.error;
+      const errorMsg =
+        (typeof errorObj === 'object' ? errorObj?.message : errorObj) ||
+        error.response?.data?.message ||
+        error.message ||
+        'Registration failed. Please check your information and try again.';
+      throw new Error(errorMsg);
     }
   },
 
@@ -457,13 +401,15 @@ export const authService = {
    */
   async logout(): Promise<void> {
     try {
-      await platformAuthApi.post('/api/v1/auth/logout').catch(() => {});
+      await platformAuthApi.post('/api/v1/auth/logout').catch(() => { });
     } catch (err) {
       console.warn('Logout API error:', err);
     } finally {
       markSignedOut();
       localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
       localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+      localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+      localStorage.removeItem(WORKSPACES_STORAGE_KEY);
       setSessionUser(null);
     }
   },
@@ -494,54 +440,70 @@ export const authService = {
         const rawTenants = meRes.data.data?.tenants;
 
         if (authUser) {
-          if (rawTenants && rawTenants.length > 0) {
-            const raw = rawTenants[0];
-            const tenant: Tenant = {
-              id: raw.tenantId || raw.id,
-              name: raw.tenantName || raw.name || 'Green Acres Landscaping LLC',
-              role: (raw.role || 'MEMBER').toUpperCase() as any,
-              status: (raw.status || 'ACTIVE').toUpperCase() as any,
-            };
-            this.setCurrentTenant(tenant);
-          }
+          const privilegedTenant = (rawTenants || []).find((t: any) => {
+            const r = (t.role || '').toUpperCase();
+            return r === 'OWNER' || r === 'ADMIN';
+          });
 
-          const tenant = this.getCurrentTenant();
-          const tenantRole = tenant.role || 'MEMBER';
-          const isPrivileged = tenantRole === 'OWNER' || tenantRole === 'ADMIN';
-
-          if (!isPrivileged) {
+          // Business Rule: Members (Employees) are NOT allowed to log into the Web Admin Panel.
+          // They must use the dedicated SmartBusiness Mobile Application.
+          if (!privilegedTenant) {
             markSignedOut();
             localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
             localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+            localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+            localStorage.removeItem(WORKSPACES_STORAGE_KEY);
             setSessionUser(null);
             return null;
           }
 
+          const tenantRole = (privilegedTenant.role || 'ADMIN').toUpperCase();
+          const tenant: Tenant = {
+            id: privilegedTenant.tenantId || privilegedTenant.id,
+            name: privilegedTenant.tenantName || privilegedTenant.name || 'Organization',
+            role: tenantRole as any,
+            status: (privilegedTenant.status || 'ACTIVE').toUpperCase() as any,
+          };
+          this.setCurrentTenant(tenant);
           localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenant.id);
-          const currentWorkspace = this.getActiveWorkspace();
-          localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+
+          let workspaces: Workspace[] = [];
+          try {
+            workspaces = await this.fetchWorkspaces();
+          } catch (wsErr) {
+            console.warn('Could not fetch live workspaces during getCurrentUser:', wsErr);
+            workspaces = this.getWorkspaces().filter((w) => w.tenantId === tenant.id);
+          }
+          this.setWorkspaces(workspaces);
+
+          const currentWorkspace = workspaces.find((w) => w.isDefault) || workspaces[0] || null;
+          if (currentWorkspace) {
+            localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
+          } else {
+            localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+          }
 
           let employeeProfile: any = null;
           try {
             const empRes = await clockInApi.get('/api/v1/employees/me');
             employeeProfile = empRes.data.data;
           } catch (empErr) {
-            console.warn('Could not fetch employee profile on session restore:', empErr);
+            // Silently use account credentials
           }
 
           const existingUser = getSessionUser();
           const user: User = {
             id: authUser.id,
-            employeeId: employeeProfile?.employeeCode || existingUser?.employeeId || 'EMP-GA001',
-            name: authUser.fullName || existingUser?.name || 'Admin',
+            employeeId: employeeProfile?.employeeCode || existingUser?.employeeId || '',
+            name: authUser.fullName || existingUser?.name || 'Administrator',
             email: authUser.email,
-            phone: (existingUser && existingUser.id === authUser.id && existingUser.phone) ? existingUser.phone : '+1 (555) 019-2834',
+            phone: employeeProfile?.phone || (existingUser && existingUser.id === authUser.id && existingUser.phone) || authUser.phone || '',
             role: 'admin',
             status: 'active',
-            designation: employeeProfile?.designation || existingUser?.designation || 'Operations Manager',
-            department: employeeProfile?.department || existingUser?.department || 'Operations',
-            joinedDate: existingUser?.joinedDate || '2024-01-15',
-            avatarUrl: employeeProfile?.biometricPhotoUrl || existingUser?.avatarUrl || 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150',
+            designation: employeeProfile?.designation || existingUser?.designation || 'Administrator',
+            department: employeeProfile?.department || existingUser?.department || 'Management',
+            joinedDate: authUser.createdAt ? authUser.createdAt.split('T')[0] : existingUser?.joinedDate || new Date().toISOString().split('T')[0],
+            avatarUrl: employeeProfile?.biometricPhotoUrl || existingUser?.avatarUrl || authUser.avatarUrl || '',
           };
 
           setSessionUser(user);
@@ -552,6 +514,10 @@ export const authService = {
         // never keep showing a cached user as signed in.
         if (err?.response?.status === 401) {
           markSignedOut();
+          localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+          localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+          localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+          localStorage.removeItem(WORKSPACES_STORAGE_KEY);
           setSessionUser(null);
           return null;
         }

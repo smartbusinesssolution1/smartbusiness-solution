@@ -22,8 +22,12 @@ async function startServer() {
                 try {
                     const { AdminAttendanceRepository } = await import("./modules/admin/attendance/admin-attendance.repository.js");
                     const { AdminAttendanceService } = await import("./modules/admin/attendance/admin-attendance.service.js");
+                    const { AdminEmployeeRepository } = await import("./modules/admin/employee/admin-employee.repository.js");
+                    const { AdminEmployeeService } = await import("./modules/admin/employee/admin-employee.service.js");
                     const repo = new AdminAttendanceRepository();
                     const service = new AdminAttendanceService(repo);
+                    const empRepo = new AdminEmployeeRepository();
+                    const empService = new AdminEmployeeService(empRepo);
 
                     const activeTenants = await prisma.tenant.findMany({
                         where: { status: "ACTIVE" },
@@ -31,7 +35,10 @@ async function startServer() {
                         take: 5,
                     });
                     for (const t of activeTenants) {
+                        await repo.getCachedActiveEmployees(t.id);
                         await service.getSummary(t.id);
+                        await service.getAttendanceReport(t.id, { page: 1, limit: 10, status: "all" });
+                        await empService.listEmployees(t.id, { page: 1, limit: 10, status: "all", role: "all" });
                     }
                     logger.info("Admin cache pre-warming completed");
                 } catch (err) {

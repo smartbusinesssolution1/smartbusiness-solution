@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { getAvatarUrl } from '../utils/imageUrl';
+import BrandLoader from '../components/BrandLoader';
 import {
   Box,
   Drawer,
@@ -224,6 +225,15 @@ export const DashboardLayout: React.FC = () => {
                   onClick={() => {
                     navigate(item.path);
                     setMobileOpen(false);
+                  }}
+                  onMouseEnter={() => {
+                    // Preload route chunk on hover for instant 0ms transition
+                    if (item.path === '/admin/employees') import('../pages/admin/EmployeeList');
+                    else if (item.path === '/admin/dashboard') import('../pages/admin/AdminDashboard');
+                    else if (item.path === '/admin/reports') import('../pages/admin/AttendanceReport');
+                    else if (item.path === '/admin/settings') import('../pages/admin/OrganizationSettings');
+                    else if (item.path === '/employee/dashboard') import('../pages/employee/EmployeeDashboard');
+                    else if (item.path === '/employee/history') import('../pages/employee/AttendanceHistory');
                   }}
                   sx={{
                     borderRadius: 2,
@@ -467,7 +477,9 @@ export const DashboardLayout: React.FC = () => {
       >
         <Toolbar /> {/* Spacer for top AppBar */}
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Outlet />
+          <Suspense fallback={<BrandLoader fullScreen message="Loading workspace view..." />}>
+            <Outlet />
+          </Suspense>
         </Box>
       </Box>
     </Box>

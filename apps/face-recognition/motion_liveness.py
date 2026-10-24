@@ -1,90 +1,46 @@
 """
-Active / Burst Liveness
-========================
+Active liveness for a burst of frames, driven by a SERVER-ISSUED random
+head-turn challenge (see challenge.py).
 
-Single-frame heuristics (see liveness.py) can be beaten by a decent photo
-or a video played on a phone held up to the camera — there is no way to
-tell a static high-quality print/screen apart from a real face using only
-color/texture/frequency analysis on ONE frame. To meaningfully raise the
-bar toward "production grade", liveness needs to look at CHANGE OVER TIME
-and, ideally, ask the user to do something a photo can't do.
+Why: a pre-recorded video of the right person blinking (played on a laptop
+in front of the phone) beats any blink check, because blinking is predictable.
+A random sequence of head turns (e.g. LEFT then RIGHT) chosen by the server
+per attempt is not -- the replay would have to contain exactly that sequence.
 
-This module analyzes a short burst of frames (client captures a handful of
-frames over ~1-1.5 seconds) and checks:
+Checks (all must pass, fail-closed):
+  1. Optional challenge sequence (CHALLENGE_STEPS > 0, off by default): from
+     per-frame FaceMesh yaw, frames must show frontal -> [turn(dir) ->
+     frontal] x N, in order.
+  2. Screen/photo border around the face (screen_detect.py) on frontal frames.
+  3. Passive heuristics (liveness.check_liveness) on a sample of frontal frames.
+  4. Blink step: after the final "back to camera", eyes close then reopen
+     (relative to the user's own open-eye EAR).
+  5. Not a rigid photo: some inter-frame motion.
+If MediaPipe is unavailable the burst FAILS (no silent downgrade).
 
-1. **Blink detection** (optional, off by default — see config.REQUIRE_BLINK)
-   Uses MediaPipe FaceMesh eye landmarks to compute the Eye Aspect Ratio
-   (EAR) per frame. When REQUIRE_BLINK is True, a real face asked to blink
-   must show an EAR dip (open -> closed -> open) WITHIN THE SUBMITTED
-   FRAMES or the attempt is rejected. In the current default setup, blink
-   is instead enforced client-side as a one-time gate before capture even
-   starts (see test_attendance.html) — the submitted frames themselves are
-   captured fresh afterward and don't need to individually contain a
-   blink. Requiring the blink inside the exact submitted frames is
-   stricter but brittle: blinks are ~100-400ms and the frames sent don't
-   always land on that exact window, which was causing real, live blinks
-   to be reported as "no blink detected" and rejected. Turn
-   REQUIRE_BLINK back on only if you also change the client to submit a
-   continuous buffer spanning the blink event (frame-buffer approach)
-   rather than a fresh post-blink capture.
-
-2. **Inter-frame motion sanity check**
-   A perfectly rigid, pixel-identical sequence (someone holding a printed
-   photo very still) or a sequence with unnaturally periodic brightness
-   oscillation (screen refresh/backlight flicker) is flagged. Real faces
-   held in front of a camera always show small natural motion (breathing,
-   micro head movement, blinking itself).
-
-3. Per-frame passive heuristics (liveness.check_liveness) are run on a
-   SAMPLE of frames (not all of them — see PASSIVE_SAMPLE_MAX below) and
-   averaged in, so screen-cast/print artifacts caught there still count
-   without paying the full per-frame heuristic cost on every frame.
-
-Performance notes (this module used to be a meaningful chunk of request
-latency):
-  - The MediaPipe FaceMesh model is now created ONCE at import time and
-    reused across requests, instead of being constructed fresh on every
-    single call (model construction is the expensive part, not inference).
-  - The five-signal passive heuristic check (moire/reflection/texture/
-    dynamic-range/bezel — each involves an FFT, Hough transform, etc.) now
-    runs on a small evenly-spaced sample of frames instead of every frame
-    in the burst, since a handful of samples is enough to catch a
-    photo/screen artifact that's present throughout the whole burst anyway.
-
-None of this makes the system unbeatable — see README.md's "production
-notes" for what a genuinely high-assurance deployment needs on top of this
-(trained anti-spoof model, IR/depth camera, server-issued random
-challenges, etc). What it does do is close the two biggest gaps in the
-single-frame version: **static photos** and **plain video replay without
-a matching live challenge**.
+Still heuristic -- no trained anti-spoof model, no depth/IR. See README.
 """
 
 import logging
+import threading
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
 from liveness import check_liveness
+from screen_detect import detect_screen_around_face
 
 logger = logging.getLogger(__name__)
 
-# Run the (relatively expensive) 5-signal passive heuristic check on at
-# most this many evenly-spaced frames from the burst, instead of all of
-# them. A photo/screen/print artifact is present in every frame anyway, so
-# a small sample catches it just as reliably at a fraction of the cost.
 PASSIVE_SAMPLE_MAX = 3
 
-# Eye landmark indices (MediaPipe FaceMesh, 468-point model)
+# FaceMesh indices
 _LEFT_EYE = [33, 160, 158, 133, 153, 144]
 _RIGHT_EYE = [362, 385, 387, 263, 373, 380]
+_EYE_OUTER_A, _EYE_OUTER_B, _NOSE_TIP = 33, 263, 1
 
-# ── MediaPipe FaceMesh: built ONCE and reused ────────────────────────────
-# Constructing a FaceMesh instance loads/initializes the underlying model
-# graph and is by far the most expensive part of this check — doing it
-# fresh on every request (as an earlier version of this file did) added
-# real latency to every single attendance attempt for no benefit, since
-# the instance is safe to reuse across independent static images.
 try:
     import mediapipe as mp
     _face_mesh = mp.solutions.face_mesh.FaceMesh(
@@ -92,14 +48,22 @@ try:
         min_detection_confidence=0.5,
     )
     _HAS_MEDIAPIPE = True
-except Exception as _e:  # broken install, wrong Python version, etc.
-    logger.warning(
-        f"mediapipe unavailable ({_e}) — blink detection disabled, "
-        f"falling back to motion-only active liveness. Fix your mediapipe "
-        f"install (Python 3.9-3.12 required) to re-enable blink checks."
+except Exception as _e:  # broken install / unsupported Python
+    logger.error(
+        f"mediapipe unavailable ({_e}) — active liveness will FAIL every "
+        f"attempt. Install mediapipe==0.10.14 on Python 3.9-3.12."
     )
     _face_mesh = None
     _HAS_MEDIAPIPE = False
+
+_mesh_lock = threading.Lock()  # FaceMesh instance is not thread-safe
+
+
+@dataclass
+class FrameFeatures:
+    ear: float
+    yaw: float
+    bbox: tuple[float, float, float, float]  # landmark-based face box (px)
 
 
 @dataclass
@@ -108,166 +72,273 @@ class BurstLivenessResult:
     is_live: bool
     blink_detected: bool
     motion_ok: bool
+    challenge_ok: bool = False
+    screen_detected: bool = False
     reasons: list[str] = field(default_factory=list)
     per_frame_scores: list[float] = field(default_factory=list)
+    yaws: list[float | None] = field(default_factory=list)
+    frontal_indices: list[int] = field(default_factory=list)
 
 
-def _eye_aspect_ratio(landmarks, idxs, w, h) -> float:
-    pts = np.array([[landmarks[i].x * w, landmarks[i].y * h] for i in idxs])
-    v1 = np.linalg.norm(pts[1] - pts[5])
-    v2 = np.linalg.norm(pts[2] - pts[4])
-    hlen = np.linalg.norm(pts[0] - pts[3])
-    if hlen == 0:
-        return 0.3
-    return float((v1 + v2) / (2.0 * hlen))
+def _ear(pts: np.ndarray, idxs) -> float:
+    p = pts[idxs]
+    v1 = np.linalg.norm(p[1] - p[5])
+    v2 = np.linalg.norm(p[2] - p[4])
+    hl = np.linalg.norm(p[0] - p[3])
+    return 0.3 if hl == 0 else float((v1 + v2) / (2.0 * hl))
 
 
-def _extract_ear_sequence(frames: list[np.ndarray]) -> list[float | None]:
-    if not _HAS_MEDIAPIPE:
+def yaw_ratio_from_points(nose_xy, a_xy, b_xy) -> float:
+    """(nose_x - eye_mid_x) / eye_dist, pixel space. Same math as the client."""
+    mid_x = (a_xy[0] + b_xy[0]) / 2.0
+    d = float(np.hypot(b_xy[0] - a_xy[0], b_xy[1] - a_xy[1]))
+    return 0.0 if d == 0 else float((nose_xy[0] - mid_x) / d)
+
+
+def extract_features(frames: list[np.ndarray]) -> list[FrameFeatures | None]:
+    if not _HAS_MEDIAPIPE or _face_mesh is None:
         return [None] * len(frames)
-    ears = []
+    out: list[FrameFeatures | None] = []
     for frame in frames:
         h, w = frame.shape[:2]
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        res = _face_mesh.process(rgb)
+        with _mesh_lock:
+            res = _face_mesh.process(rgb)
         if not res.multi_face_landmarks:
-            ears.append(None)
+            out.append(None)
             continue
         lm = res.multi_face_landmarks[0].landmark
-        left = _eye_aspect_ratio(lm, _LEFT_EYE, w, h)
-        right = _eye_aspect_ratio(lm, _RIGHT_EYE, w, h)
-        ears.append((left + right) / 2.0)
-    return ears
+        pts = np.array([[p.x * w, p.y * h] for p in lm], dtype=np.float32)
+        ear = (_ear(pts, _LEFT_EYE) + _ear(pts, _RIGHT_EYE)) / 2.0
+        yaw = yaw_ratio_from_points(pts[_NOSE_TIP], pts[_EYE_OUTER_A], pts[_EYE_OUTER_B])
+        x1, y1 = pts.min(axis=0)
+        x2, y2 = pts.max(axis=0)
+        out.append(FrameFeatures(float(ear), float(yaw), (float(x1), float(y1), float(x2), float(y2))))
+    return out
 
 
-def _blink_detected(ear_sequence: list[float | None],
-                     closed_thresh: float = 0.19,
-                     open_thresh: float = 0.24) -> bool:
-    """True if the sequence shows open -> closed -> open (a real blink)."""
-    vals = [e for e in ear_sequence if e is not None]
-    if len(vals) < 3:
-        return False
-    seen_open_before = False
-    seen_closed = False
-    for e in ear_sequence:
-        if e is None:
-            continue
-        if e >= open_thresh:
-            if seen_closed:
-                return True
-            seen_open_before = True
-        elif e <= closed_thresh and seen_open_before:
-            seen_closed = True
-    return False
+def verify_challenge_sequence_idx(
+    yaws: Sequence[float | None],
+    steps: Sequence[str],
+    frontal_max: float,
+    turn_min: float,
+    left_sign: int,
+) -> tuple[bool, str | None, int]:
+    """Frames must show: frontal, then for each step: turn(dir) -> frontal.
+    Returns (ok, reason, index of the final frontal frame)."""
+    n = len(yaws)
+
+    def frontal(i):
+        y = yaws[i]
+        return y is not None and abs(y) <= frontal_max
+
+    def turned(i, sign):
+        y = yaws[i]
+        return y is not None and y * sign >= turn_min
+
+    first = next((i for i in range(n) if frontal(i)), None)
+    if first is None:
+        return False, "no frontal (camera-facing) frame at start", -1
+    p = first + 1
+    last = first
+    for k, step in enumerate(steps):
+        sign = left_sign if step == "left" else -left_sign
+        t = next((i for i in range(p, n) if turned(i, sign)), None)
+        if t is None:
+            return False, f"challenge failed: head turn {k + 1} ({step}) not seen", -1
+        c = next((i for i in range(t + 1, n) if frontal(i)), None)
+        if c is None:
+            return False, f"challenge failed: no return to camera after turn {k + 1}", -1
+        p = c + 1
+        last = c
+    return True, None, last
 
 
-def _motion_check(frames: list[np.ndarray], bboxes: list[tuple]) -> tuple[bool, float, list[str]]:
-    """
-    Returns (motion_ok, mean_frame_diff, reasons). Flags two failure modes:
-      - near-zero motion across the whole burst (rigid photo)
-      - strongly periodic brightness oscillation (screen refresh/flicker)
-    """
-    reasons = []
-    diffs = []
-    brightness = []
+def verify_challenge_sequence(yaws, steps, frontal_max, turn_min, left_sign) -> tuple[bool, str | None]:
+    ok, why, _ = verify_challenge_sequence_idx(yaws, steps, frontal_max, turn_min, left_sign)
+    return ok, why
 
+
+def verify_blink_after(
+    ears: Sequence[float | None],
+    yaws: Sequence[float | None],
+    start_idx: int,
+    baseline_idxs: Sequence[int],
+    frontal_max: float,
+    closed_ratio: float,
+    open_ratio: float,
+) -> tuple[bool, str | None, int]:
+    """After start_idx (final back-to-camera frame): eyes closed, then open
+    again, both facing the camera. Relative to the user's own open-eye EAR.
+    Returns (ok, reason, index of the closed-eye frame)."""
+    base_vals = [float(e) for e in (ears[i] for i in baseline_idxs) if e is not None]
+    if len(base_vals) < 1:
+        return False, "blink step failed: no open-eye baseline", -1
+    base = float(np.median(base_vals))
+    n = len(ears)
+
+    def eye_ok(i, test):
+        e, y = ears[i], yaws[i]
+        return e is not None and y is not None and abs(y) <= frontal_max and test(e)
+
+    j = next((i for i in range(start_idx + 1, n) if eye_ok(i, lambda e: e <= closed_ratio * base)), None)
+    if j is None:
+        return False, "blink step failed: no closed-eye frame after returning to camera", -1
+    k = next((i for i in range(j + 1, n) if eye_ok(i, lambda e: e >= open_ratio * base)), None)
+    if k is None:
+        return False, "blink step failed: eyes not seen reopening", -1
+    return True, None, j
+
+
+def _is_frontal(value: float | None, yaw: float | None, frontal_max: float) -> bool:
+    """value (ear or yaw) was measured AND the face was camera-facing."""
+    return value is not None and yaw is not None and abs(yaw) <= frontal_max
+
+
+def _motion_ok(frames, bboxes) -> tuple[bool, list[str]]:
     grays = []
     for frame, bbox in zip(frames, bboxes):
         x1, y1, x2, y2 = [int(v) for v in bbox]
-        crop = frame[max(0, y1):y2, max(0, x1):x2]
+        crop = frame[max(0, y1):max(0, y2), max(0, x1):max(0, x2)]
         if crop.size == 0:
             crop = frame
-        g = cv2.cvtColor(cv2.resize(crop, (120, 120)), cv2.COLOR_BGR2GRAY)
-        grays.append(g)
-        brightness.append(float(g.mean()))
-
-    for a, b in zip(grays, grays[1:]):
-        diffs.append(float(np.mean(cv2.absdiff(a, b))))
-
-    mean_diff = float(np.mean(diffs)) if diffs else 0.0
-
-    motion_ok = True
-    if mean_diff < 0.8:
-        motion_ok = False
-        reasons.append("almost no motion between frames (looks like a static photo)")
-
-    # Periodic brightness oscillation = screen refresh/backlight flicker.
-    if len(brightness) >= 4:
-        b = np.array(brightness)
-        b = b - b.mean()
-        if b.std() > 0.5:
-            ac1 = float(np.corrcoef(b[:-1], b[1:])[0, 1]) if len(b) > 2 else 0.0
-            if ac1 < -0.5:
-                motion_ok = False
-                reasons.append("periodic brightness flicker detected (possible screen refresh)")
-
-    return motion_ok, mean_diff, reasons
+        grays.append(cv2.cvtColor(cv2.resize(crop, (120, 120)), cv2.COLOR_BGR2GRAY))
+    diffs = [float(np.mean(cv2.absdiff(a, b))) for a, b in zip(grays, grays[1:])]
+    if (float(np.mean(diffs)) if diffs else 0.0) < 0.8:
+        return False, ["almost no motion between frames (looks like a static photo)"]
+    return True, []
 
 
-def _sample_indices(n: int, max_samples: int) -> list[int]:
-    """Evenly-spaced frame indices to run the passive heuristic check on."""
-    if n <= max_samples:
-        return list(range(n))
-    return sorted(set(np.linspace(0, n - 1, max_samples).round().astype(int).tolist()))
+def _sample(indices: list[int], k: int) -> list[int]:
+    if len(indices) <= k:
+        return list(indices)
+    pos = np.linspace(0, len(indices) - 1, k).round().astype(int).tolist()
+    return [indices[i] for i in sorted(set(pos))]
 
 
 def analyze_burst(
     frames: list[np.ndarray],
-    bboxes: list[tuple],
+    features: list[FrameFeatures | None],
+    face_bboxes: list[tuple | None],
+    steps: list[str],
     passive_threshold: float,
-    require_blink: bool = True,
+    frontal_max: float,
+    turn_min: float,
+    left_sign: int,
+    min_frontal_frames: int,
+    pre_frontal_frames: int = 1,
+    blink_step: bool = True,
+    blink_closed_ratio: float = 0.75,
+    blink_open_ratio: float = 0.80,
+    screen_hard_reject: bool = True,
 ) -> BurstLivenessResult:
-    if len(frames) < 3:
+    """
+    face_bboxes[i]: InsightFace box for frame i, or None if not detected
+    (allowed for turned frames). Falls back to the landmark box for motion.
+    """
+    reasons: list[str] = []
+    n = len(frames)
+    yaws = [f.yaw if f else None for f in features]
+
+    def fail(msg: str, **kw) -> BurstLivenessResult:
         return BurstLivenessResult(
             score=0.0, is_live=False, blink_detected=False, motion_ok=False,
-            reasons=["burst too short — need at least 3 frames"],
+            reasons=reasons + [msg], yaws=yaws, **kw,
         )
 
-    sample_idx = _sample_indices(len(frames), PASSIVE_SAMPLE_MAX)
-    per_frame_scores = []
-    reasons: list[str] = []
-    for i in sample_idx:
-        r = check_liveness(frames[i], bboxes[i], threshold=passive_threshold)
-        per_frame_scores.append(r.score)
+    if not _HAS_MEDIAPIPE:
+        return fail("liveness engine unavailable (mediapipe not installed) — failing closed")
+
+    # 1. Challenge sequence -------------------------------------------------
+    challenge_ok, why, last_idx = verify_challenge_sequence_idx(yaws, steps, frontal_max, turn_min, left_sign)
+    if not challenge_ok:
+        return fail(why or "challenge failed")
+
+    # 1b. Blink step (after the final "back to camera") ---------------------
+    ears = [f.ear if f else None for f in features]
+    blink = False
+    closed_idx = -1
+    if blink_step:
+        # Open-eye baseline = median over all camera-facing frames (robust:
+        # most are open). Blink frames must come AFTER the pre-frames/turns.
+        base_idxs = [i for i in range(n) if _is_frontal(ears[i], yaws[i], frontal_max)]
+        start = max(last_idx, pre_frontal_frames - 1)
+        blink, bwhy, closed_idx = verify_blink_after(
+            ears, yaws, start, base_idxs, frontal_max, blink_closed_ratio, blink_open_ratio)
+        if not blink:
+            return fail(bwhy or "blink step failed", challenge_ok=True)
+
+    # Frontal frames usable for identity + passive checks (need a detected face).
+    frontal_idx = [
+        i for i in range(n)
+        if _is_frontal(yaws[i], yaws[i], frontal_max) and face_bboxes[i] is not None
+        and i != closed_idx
+    ]
+    if len(frontal_idx) < min_frontal_frames:
+        return fail(
+            f"need at least {min_frontal_frames} clear camera-facing frames, got {len(frontal_idx)}",
+            challenge_ok=True,
+        )
+
+    sample = _sample(frontal_idx, PASSIVE_SAMPLE_MAX)
+
+    # 2. Screen / photo border ---------------------------------------------
+    flagged = 0
+    for i in sample:
+        det = detect_screen_around_face(frames[i], face_bboxes[i])
+        if det.detected:
+            flagged += 1
+            for r in det.reasons:
+                if r not in reasons:
+                    reasons.append(r)
+    need = (len(sample) + 1) // 2
+    screen_detected = flagged >= need
+
+    # 3. Passive heuristics -------------------------------------------------
+    per_frame = []
+    for i in sample:
+        r = check_liveness(frames[i], face_bboxes[i], threshold=passive_threshold)
+        per_frame.append(r.score)
         for reason in r.reasons:
             if reason not in reasons:
                 reasons.append(reason)
+    passive_avg = float(np.mean(per_frame))
 
-    passive_avg = float(np.mean(per_frame_scores))
-
-    ear_seq = _extract_ear_sequence(frames)
-    blink = _blink_detected(ear_seq)
-    effective_require_blink = require_blink and _HAS_MEDIAPIPE
-    if not _HAS_MEDIAPIPE:
-        reasons.append(
-            "blink detection unavailable (mediapipe not installed correctly) "
-            "— relying on motion + passive checks only"
-        )
-    elif effective_require_blink and not blink:
-        reasons.append("no blink detected during capture")
-
-    motion_ok, mean_diff, motion_reasons = _motion_check(frames, bboxes)
+    # 4. Motion / blink (info) ---------------------------------------------
+    motion_bboxes = []
+    for i in range(n):
+        fb, ft = face_bboxes[i], features[i]
+        if fb is not None:
+            motion_bboxes.append(fb)
+        elif ft is not None:
+            motion_bboxes.append(ft.bbox)
+        else:
+            motion_bboxes.append((0, 0, frames[i].shape[1], frames[i].shape[0]))
+    motion_ok, motion_reasons = _motion_ok(frames, motion_bboxes)
     reasons.extend(r for r in motion_reasons if r not in reasons)
 
-    # Combine: passive per-frame average is the base signal; blink and
-    # motion are HARD GATES — a perfect passive score with no blink and no
-    # motion is still almost certainly a spoof, so it can't pass on
-    # passive score alone.
     score = passive_avg
-    if effective_require_blink and not blink:
-        score *= 0.4
     if not motion_ok:
         score *= 0.5
+    if screen_detected and screen_hard_reject:
+        score *= 0.3
 
-    # Blink is a hard requirement when available: no blink -> not live,
-    # full stop, regardless of how high the other signals score.
-    is_live = score >= passive_threshold and motion_ok and (blink or not effective_require_blink)
+    is_live = (
+        challenge_ok
+        and motion_ok
+        and score >= passive_threshold
+        and not (screen_detected and screen_hard_reject)
+    )
 
     return BurstLivenessResult(
         score=round(float(np.clip(score, 0.0, 1.0)), 4),
         is_live=is_live,
         blink_detected=blink,
         motion_ok=motion_ok,
+        challenge_ok=challenge_ok,
+        screen_detected=screen_detected,
         reasons=reasons,
-        per_frame_scores=[round(s, 4) for s in per_frame_scores],
+        per_frame_scores=[round(s, 4) for s in per_frame],
+        yaws=yaws,
+        frontal_indices=frontal_idx,
     )

@@ -100,5 +100,22 @@ export class WorkspaceService {
 
     return this.formatWorkspace(record, 1);
   }
+
+  /**
+   * Update an existing workspace.
+   */
+  async updateWorkspace(
+    workspaceId: string,
+    tenantId: string,
+    input: Partial<CreateWorkspaceInput>,
+  ): Promise<WorkspaceResponseDTO> {
+    const existing = await this.workspaceRepository.findWorkspaceById(workspaceId, tenantId);
+    if (!existing) {
+      throw new NotFoundError("Workspace");
+    }
+
+    const updated = await this.workspaceRepository.updateWorkspace(workspaceId, tenantId, input);
+    return this.formatWorkspace(updated, 0);
+  }
 }
 

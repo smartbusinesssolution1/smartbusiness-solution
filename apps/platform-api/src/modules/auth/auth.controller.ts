@@ -1,24 +1,25 @@
 import type { Request, Response } from "express";
-import { AuthService } from "./auth.service.js";
+import type { TypedQueue, EmailJobs } from "@smartbusiness/jobs";
+import type { AuthService } from "./auth.service.js";
+import type {
+  RegisterInputType,
+  LoginInputType,
+  ForgotPasswordInput,
+  ResetPasswordInput,
+  AcceptInvitationInput,
+  InvitationTokenInput,
+} from "./auth.schema.js";
+import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
+import { AppError, AuthError } from "@smartbusiness/auth";
 import {
-  AuthError,
   getAccessCookieOptions,
   getRefreshCookieOptions,
   getCookieBase,
   type CookieConfig,
 } from "@smartbusiness/auth";
 import { server, cookie, refreshToken as refreshTokenConfig } from "../../config/index.js";
-import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
-import type {
-  AcceptInvitationInput,
-  ForgotPasswordInput,
-  InvitationTokenInput,
-  LoginInputType,
-  RegisterInputType,
-  ResetPasswordInput,
-} from "./auth.schema.js";
-import type { EmailJobs, TypedQueue } from "@smartbusiness/jobs";
-import { AppError } from "../../shared/errors/index.js";
+
+
 import { logger } from "../../shared/services/logger.js";
 
 export class AuthController {
@@ -36,6 +37,11 @@ export class AuthController {
     };
   }
 
+  private isAppPlatform(req: Request): boolean {
+    const platformHeader = (req.headers["platform"] || req.headers["x-platform"]) as string | undefined;
+    return platformHeader?.toLowerCase() === "app" || (req.body as any)?.platform === "app";
+  }
+
   register = async (req: Request, res: Response): Promise<void> => {
     const result = await this.authService.register(
       req.body as RegisterInputType,
@@ -43,9 +49,18 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    // The tokens go only into httpOnly cookies, never into the body: JavaScript (including a
-    // script injected through an XSS bug) can never read them, in any frontend.
-    sendCreated(res, { user: result.user, tenants: result.tenants });
+
+    if (this.isAppPlatform(req)) {
+      sendCreated(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendCreated(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
   login = async (req: Request, res: Response): Promise<void> => {
@@ -55,11 +70,22 @@ export class AuthController {
     );
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+
+    if (this.isAppPlatform(req)) {
+      sendSuccess(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendSuccess(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
-    const rawRefreshToken = req.cookies?.refresh_token;
+    const rawRefreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
 
     if (!rawRefreshToken) {
       throw new AuthError("Refresh token is required.");
@@ -68,12 +94,22 @@ export class AuthController {
     const result = await this.authService.refresh(rawRefreshToken);
 
     this.setAuthCookies(res, result.tokens.accessToken, result.tokens.refreshToken);
-    sendSuccess(res, { user: result.user, tenants: result.tenants });
+
+    if (this.isAppPlatform(req) || req.body?.refreshToken) {
+      sendSuccess(res, {
+        user: result.user,
+        tenants: result.tenants,
+        tokens: result.tokens,
+        accessToken: result.tokens.accessToken,
+        refreshToken: result.tokens.refreshToken,
+      });
+    } else {
+      sendSuccess(res, { user: result.user, tenants: result.tenants });
+    }
   };
 
-
   logout = async (req: Request, res: Response): Promise<void> => {
-    const rawRefreshToken = req.cookies?.refresh_token;
+    const rawRefreshToken = req.cookies?.refresh_token || req.body?.refreshToken;
 
     if (rawRefreshToken) {
       await this.authService.logout(rawRefreshToken);

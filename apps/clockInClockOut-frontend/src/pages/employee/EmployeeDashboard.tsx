@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import BrandLoader from '../../components/BrandLoader';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
 import { settingsService } from '../../services/settingsService';
 import { useGeolocation } from '../../hooks/useGeolocation';
-import { AttendanceCameraDialog } from '../../components/AttendanceCameraDialog';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import {
   Box,
@@ -38,11 +38,11 @@ import {
 import dayjs from 'dayjs';
 
 export const EmployeeDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, currentWorkspace } = useAuth();
   const theme = useTheme();
   const queryClient = useQueryClient();
 
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'warning' | 'info' }>({
     open: false,
     message: '',
     severity: 'success',
@@ -52,7 +52,6 @@ export const EmployeeDashboard: React.FC = () => {
   const [usingGeo, setUsingGeo] = useState<boolean>(false);
 
   const { getPosition, loading: isLocating } = useGeolocation();
-  const [cameraDialogOpen, setCameraDialogOpen] = useState<boolean>(false);
   const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
 
   // Fetch metrics
@@ -62,22 +61,30 @@ export const EmployeeDashboard: React.FC = () => {
     enabled: !!user?.employeeId,
   });
 
-  // Check In Mutation
+  // Pre-load geofence settings so instant check-in never performs an extra HTTP request on click
+  const { data: officeSettings } = useQuery({
+    queryKey: ['workspaceSettings', currentWorkspace?.id],
+    queryFn: () => settingsService.getSettings(),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Check In Mutation (1-Click Instant Punch)
   const checkInMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      return attendanceService.checkIn(formData);
+    mutationFn: async (payload: { latitude: number; longitude: number; accuracy?: number; employeeId: string; employeeName: string }) => {
+      return attendanceService.checkIn(payload);
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['employeeDashboardMetrics', user?.employeeId] });
       queryClient.invalidateQueries({ queryKey: ['employeeAttendanceHistory', user?.employeeId] });
+      const checkInFormatted = data?.checkInTime || dayjs().format('hh:mm A');
       setSnackbar({
         open: true,
-        message: 'Attendance marked successfully.',
+        message: `Clock-in successful at ${checkInFormatted}! Have a productive shift.`,
         severity: 'success',
       });
     },
     onError: (error: any) => {
-      const serverError = error?.response?.data?.error || error?.message || 'Check-in failed.';
+      const serverError = error?.response?.data?.error?.message || error?.response?.data?.error || error?.message || 'Check-in failed.';
       setSnackbar({
         open: true,
         message: serverError,
@@ -108,62 +115,40 @@ export const EmployeeDashboard: React.FC = () => {
   });
 
   const triggerCheckIn = async () => {
+    let coords = {
+      latitude: officeSettings?.latitude ? Number(officeSettings.latitude) : 0,
+      longitude: officeSettings?.longitude ? Number(officeSettings.longitude) : 0,
+      accuracy: 15,
+    };
+
     if (usingGeo) {
       try {
-        // Request browser location permission via HTML5 Geolocation API
         const position = await getPosition();
-        const coords = {
+        coords = {
           latitude: position.latitude,
           longitude: position.longitude,
           accuracy: position.accuracy,
         };
-        setSimulatedCoords(coords);
-        setCurrentCoords(coords);
-        // Open selfie capture dialog
-        setCameraDialogOpen(true);
       } catch (err: any) {
         setSnackbar({
           open: true,
-          message: err?.message || 'Location permission is required to check in.',
-          severity: 'error',
-        });
-      }
-    } else {
-      try {
-        // Use mock coordinates when real geofencing verification is disabled
-        const settings = await settingsService.getSettings();
-        const coords = {
-          latitude: settings.latitude,
-          longitude: settings.longitude,
-          accuracy: 15,
-        };
-        setSimulatedCoords(coords);
-        setCurrentCoords(coords);
-        // Open selfie capture dialog
-        setCameraDialogOpen(true);
-      } catch (err: any) {
-        setSnackbar({
-          open: true,
-          message: 'Failed to fetch office configuration settings from server.',
-          severity: 'error',
+          message: err?.message || 'Location permission unavailable. Using office default location.',
+          severity: 'warning',
         });
       }
     }
-  };
 
-  const handleCaptureSelfie = (selfieFile: File) => {
-    if (!currentCoords) return;
+    setSimulatedCoords(coords);
+    setCurrentCoords(coords);
 
-    const formData = new FormData();
-    formData.append('selfie', selfieFile);
-    formData.append('latitude', String(currentCoords.latitude));
-    formData.append('longitude', String(currentCoords.longitude));
-    formData.append('accuracy', String(currentCoords.accuracy));
-    formData.append('capturedAt', new Date().toISOString());
-    formData.append('employeeId', user?.employeeId || '');
-    formData.append('employeeName', user?.name || '');
-
-    checkInMutation.mutate(formData);
+    // 1-Click Instant Check-In: punch directly without preliminary HTTP requests
+    checkInMutation.mutate({
+      latitude: coords.latitude,
+      longitude: coords.longitude,
+      accuracy: coords.accuracy,
+      employeeId: user?.employeeId || '',
+      employeeName: user?.name || '',
+    });
   };
 
   const triggerCheckOut = () => {
@@ -178,21 +163,39 @@ export const EmployeeDashboard: React.FC = () => {
     return 'Good Evening';
   };
 
-  const isCheckedIn = !!metrics?.todayAttendance?.checkIn;
-  const isCheckedOut = !!metrics?.todayAttendance?.checkOut;
+  // Multi-session state machine
+  const hasActiveSession = metrics?.hasActiveSession !== undefined
+    ? metrics.hasActiveSession
+    : Boolean(metrics?.todayAttendance?.checkIn && !metrics?.todayAttendance?.checkOut);
 
-  // Calculate circular progress percentage for working hours
+  const todaySessions = metrics?.todaySessions || [];
+  const completedSessionsCount = todaySessions.filter((s) => !s.isActive).length;
+  const hasAnySessionToday = todaySessions.length > 0 || Boolean(metrics?.todayAttendance?.checkIn);
+
+  // Total working hours accumulated today
   const workingHoursToday = metrics?.todayAttendance?.workingHours || 0;
-  // If checked in but not checked out, calculate elapsed hours in real time
+
+  // Real-time elapsed hours calculation
   const getElapsedHours = () => {
-    if (isCheckedOut) return workingHoursToday;
-    if (isCheckedIn && metrics?.todayAttendance?.checkIn) {
+    if (!hasActiveSession) return workingHoursToday;
+
+    const activeSess = todaySessions.find((s) => s.isActive);
+    const activeCheckIn = activeSess?.checkIn || metrics?.todayAttendance?.checkIn;
+    if (activeCheckIn) {
       const todayStr = dayjs().format('YYYY-MM-DD');
-      const checkInTime = dayjs(`${todayStr} ${metrics.todayAttendance.checkIn}`, 'YYYY-MM-DD HH:mm:ss');
-      const elapsed = parseFloat(dayjs().diff(checkInTime, 'hour', true).toFixed(2));
-      return isNaN(elapsed) ? 0 : elapsed;
+      const checkInTime = dayjs(`${todayStr} ${activeCheckIn}`, 'YYYY-MM-DD hh:mm A');
+      const sessionElapsed = parseFloat(
+        dayjs()
+          .diff(checkInTime.isValid() ? checkInTime : dayjs(`${todayStr} ${activeCheckIn}`), 'hour', true)
+          .toFixed(2)
+      );
+      const baseHours = todaySessions
+        .filter((s) => !s.isActive)
+        .reduce((acc, s) => acc + (s.workingHours || 0), 0);
+      const total = baseHours + (isNaN(sessionElapsed) || sessionElapsed < 0 ? 0 : sessionElapsed);
+      return Math.max(workingHoursToday, parseFloat(total.toFixed(2)));
     }
-    return 0;
+    return workingHoursToday;
   };
 
   const elapsedHours = parseFloat(getElapsedHours().toFixed(2));
@@ -206,6 +209,8 @@ export const EmployeeDashboard: React.FC = () => {
         return <Chip label="Late" color="warning" size="small" icon={<LateIcon />} />;
       case 'absent':
         return <Chip label="Absent" color="error" size="small" />;
+      case 'half_day':
+        return <Chip label="Half Day" color="info" size="small" />;
       case 'auto_closed':
         return <Chip label="Auto-Closed" color="secondary" size="small" />;
       default:
@@ -230,18 +235,9 @@ export const EmployeeDashboard: React.FC = () => {
         </IconButton>
       </Box>
 
-      {/* Loading Skeletons */}
+      {/* Loading State */}
       {isLoading ? (
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 8 }}>
-            <Skeleton variant="rectangular" height={180} sx={{ borderRadius: 3, mb: 3 }} />
-            <Skeleton variant="rectangular" height={260} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Skeleton variant="rectangular" height={150} sx={{ borderRadius: 3, mb: 3 }} />
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-        </Grid>
+        <BrandLoader fullScreen message="Loading employee dashboard..." />
       ) : (
         <Grid container spacing={3}>
           
@@ -289,13 +285,13 @@ export const EmployeeDashboard: React.FC = () => {
                     SHIFT STATUS
                   </Typography>
                   
-                  {isCheckedOut ? (
-                    <Alert severity="success" icon={<PresentIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
-                      Shift completed successfully today. Thank you!
-                    </Alert>
-                  ) : isCheckedIn ? (
+                  {hasActiveSession ? (
                     <Alert severity="info" icon={<ClockIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
-                      You are checked in and active. Keep up the great work!
+                      You are currently clocked in {todaySessions.length > 0 ? `(Session #${todaySessions.length})` : ''}. Shift in progress!
+                    </Alert>
+                  ) : hasAnySessionToday ? (
+                    <Alert severity="success" icon={<PresentIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
+                      Currently clocked out / on break. Total logged today: {workingHoursToday} hrs across {completedSessionsCount || 1} session(s). Ready to clock in again!
                     </Alert>
                   ) : (
                     <Alert severity="warning" icon={<LateIcon />} sx={{ width: '100%', maxWidth: 450, borderRadius: 2, mb: 2 }}>
@@ -309,13 +305,15 @@ export const EmployeeDashboard: React.FC = () => {
                       variant="contained"
                       color="primary"
                       size="large"
-                      disabled={isCheckedIn || checkInMutation.isPending || isLocating}
+                      disabled={hasActiveSession || checkInMutation.isPending || isLocating}
                       startIcon={<CheckInIcon />}
                       onClick={triggerCheckIn}
                       sx={{ py: 1.5, borderRadius: 2, fontWeight: 700 }}
                     >
                       {checkInMutation.isPending || isLocating ? (
                         <CircularProgress size={24} color="inherit" />
+                      ) : hasAnySessionToday ? (
+                        `Clock In Again (Session #${todaySessions.length + 1})`
                       ) : (
                         'Check In'
                       )}
@@ -326,7 +324,7 @@ export const EmployeeDashboard: React.FC = () => {
                       variant="contained"
                       color="secondary"
                       size="large"
-                      disabled={!isCheckedIn || isCheckedOut || checkOutMutation.isPending}
+                      disabled={!hasActiveSession || checkOutMutation.isPending}
                       startIcon={<CheckOutIcon />}
                       onClick={triggerCheckOut}
                       sx={{ py: 1.5, borderRadius: 2, fontWeight: 700 }}
@@ -419,7 +417,7 @@ export const EmployeeDashboard: React.FC = () => {
                               Logged Time
                             </Typography>
                           </Box>
-                          {getStatusChip(record.status)}
+                          {record.isFirstSession !== false && getStatusChip(record.status)}
                         </Box>
                       </Paper>
                     ))}
@@ -446,11 +444,15 @@ export const EmployeeDashboard: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <ClockIcon color="action" />
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Check In</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {todaySessions.length > 1 ? 'Latest Check In' : 'Check In'}
+                      </Typography>
                     </Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                       {metrics?.todayAttendance?.checkIn 
-                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).format('hh:mm A') 
+                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).isValid()
+                          ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkIn}`).format('hh:mm A')
+                          : metrics.todayAttendance.checkIn
                         : '--:--'}
                     </Typography>
                   </Box>
@@ -460,12 +462,20 @@ export const EmployeeDashboard: React.FC = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       <ClockIcon color="action" />
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>Check Out</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                        {todaySessions.length > 1 ? 'Latest Check Out' : 'Check Out'}
+                      </Typography>
                     </Box>
                     <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                      {metrics?.todayAttendance?.checkOut 
-                        ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).format('hh:mm A') 
-                        : '--:--'}
+                      {hasActiveSession ? (
+                        <Chip label="Active Now" color="primary" size="small" sx={{ height: 20, fontSize: '0.7rem' }} />
+                      ) : metrics?.todayAttendance?.checkOut ? (
+                        dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).isValid()
+                          ? dayjs(`${dayjs().format('YYYY-MM-DD')} ${metrics.todayAttendance.checkOut}`).format('hh:mm A')
+                          : metrics.todayAttendance.checkOut
+                      ) : (
+                        '--:--'
+                      )}
                     </Typography>
                   </Box>
 
@@ -480,6 +490,43 @@ export const EmployeeDashboard: React.FC = () => {
                       ? getStatusChip(metrics.todayAttendance.status) 
                       : <Chip label="Unreported" size="small" />}
                   </Box>
+
+                  {/* Multi-session timeline breakdown */}
+                  {todaySessions.length > 0 && (
+                    <Box sx={{ mt: 1, pt: 2, borderTop: `1px dashed ${theme.palette.divider}` }}>
+                      <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', display: 'block', mb: 1 }}>
+                        Today's Sessions ({todaySessions.length})
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                        {todaySessions.map((session) => (
+                          <Box
+                            key={session.id}
+                            sx={{
+                              p: 1.2,
+                              borderRadius: 1.5,
+                              bgcolor: session.isActive ? 'action.selected' : 'action.hover',
+                              border: `1px solid ${session.isActive ? theme.palette.primary.main : theme.palette.divider}`,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Box>
+                              <Typography variant="caption" sx={{ fontWeight: 700, display: 'block' }}>
+                                Session #{session.sessionNumber} {session.isActive && '• In Progress'}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {session.checkIn} → {session.checkOut || 'Active'}
+                              </Typography>
+                            </Box>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: session.isActive ? 'primary.main' : 'text.primary' }}>
+                              {session.isActive ? 'Logging...' : `${session.workingHours} hrs`}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>
@@ -616,25 +663,6 @@ export const EmployeeDashboard: React.FC = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-
-      <AttendanceCameraDialog
-        open={cameraDialogOpen}
-        onClose={() => setCameraDialogOpen(false)}
-        employeeId={user?.employeeId || ''}
-        employeeName={user?.name || ''}
-        latitude={currentCoords?.latitude || null}
-        longitude={currentCoords?.longitude || null}
-        accuracy={currentCoords?.accuracy || null}
-        onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['employeeDashboardMetrics', user?.employeeId] });
-          queryClient.invalidateQueries({ queryKey: ['employeeAttendanceHistory', user?.employeeId] });
-          setSnackbar({
-            open: true,
-            message: 'Attendance marked successfully after matching face!',
-            severity: 'success',
-          });
-        }}
-      />
     </Box>
   );
 };

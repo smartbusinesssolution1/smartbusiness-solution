@@ -157,6 +157,9 @@ export const AdminProfile: React.FC = () => {
       saveUsers(dbUsers);
       setSessionUser(updated);
       updateCurrentUserState(updated);
+      if (user?.id && (avatarPreview || updated.avatarUrl)) {
+        localStorage.setItem(`avatar_uploaded_${user.id}`, 'true');
+      }
       setSnackbarSeverity('success');
       setSnackbarMsg('Administrator details updated and saved successfully!');
       setSnackbarOpen(true);

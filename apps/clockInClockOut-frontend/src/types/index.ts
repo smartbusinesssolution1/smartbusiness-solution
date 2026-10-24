@@ -55,20 +55,43 @@ export interface User {
   weeklySchedule?: WeeklySchedule;
 }
 
+export interface AttendanceSessionLog {
+  id: string;
+  sessionNumber: number;
+  isFirstSession?: boolean;
+  checkIn: string | null;
+  checkOut: string | null;
+  status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
+  workingHours: number;
+  notes?: string | null;
+  selfieUrl?: string | null;
+  clockInFaceMatchConfidence?: number | null;
+  clockInLatitude?: number | null;
+  clockInLongitude?: number | null;
+  clockOutFaceMatchConfidence?: number | null;
+  clockOutLatitude?: number | null;
+  clockOutLongitude?: number | null;
+  isAutoClosed?: boolean;
+}
+
 export interface AttendanceRecord {
   id: string;
   employeeId: string;
   employeeName: string;
   avatarUrl?: string | null;
   date: string; // YYYY-MM-DD
-  checkIn: string | null; // HH:mm:ss or null
-  checkOut: string | null; // HH:mm:ss or null
+  checkIn: string | null; // HH:mm:ss or null (First clock-in)
+  checkOut: string | null; // HH:mm:ss or null (Last clock-out)
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
-  workingHours: number; // in hours
+  workingHours: number; // in hours (Total sum)
   notes?: string;
   selfieUrl?: string;
   workspaceId?: string;
   workspaceName?: string;
+  totalSessions?: number;
+  sessions?: AttendanceSessionLog[];
+  sessionNumber?: number;
+  isFirstSession?: boolean;
 }
 
 export interface AttendanceReportSummary {
@@ -111,6 +134,9 @@ export interface GeofenceSettingsResponse {
 }
 
 export interface UpdateGeofencePayload {
+  corporateName?: string;
+  organizationName?: string;
+  workspaceName?: string;
   latitude: number;
   longitude: number;
   radiusMeters: number;
@@ -167,6 +193,16 @@ export interface AdminDashboardMetrics {
   departmentStats?: DepartmentAttendanceStat[];
 }
 
+export interface TodaySessionInfo {
+  id: string;
+  sessionNumber: number;
+  checkIn: string;
+  checkOut: string | null;
+  workingHours: number;
+  status: string;
+  isActive: boolean;
+}
+
 export interface EmployeeDashboardMetrics {
   todayAttendance: AttendanceRecord | null;
   totalPresent: number;
@@ -174,4 +210,7 @@ export interface EmployeeDashboardMetrics {
   totalWorkingHours: number;
   attendanceRate: number;
   recentAttendance: AttendanceRecord[];
+  hasActiveSession?: boolean;
+  activeSessionId?: string | null;
+  todaySessions?: TodaySessionInfo[];
 }

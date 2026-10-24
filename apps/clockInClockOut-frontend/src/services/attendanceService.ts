@@ -39,6 +39,16 @@ export interface ExportReportResponse {
   totalRecords: number;
 }
 
+export interface CheckInPayload {
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracy?: number | null;
+  employeeId?: string;
+  employeeName?: string;
+  workspaceId?: string;
+  notes?: string;
+}
+
 export const attendanceService = {
   /**
    * Admin: Get paginated attendance report with multi-criteria filters & KPI summaries.
@@ -160,12 +170,13 @@ export const attendanceService = {
     }
   },
 
-  async checkIn(formData: FormData): Promise<AttendanceRecord> {
-    const response = await clockInApi.post('/api/v1/attendance/check-in', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+  async checkIn(payload: FormData | CheckInPayload): Promise<AttendanceRecord> {
+    const isFormData = typeof FormData !== 'undefined' && payload instanceof FormData;
+    const response = await clockInApi.post(
+      '/api/v1/attendance/check-in',
+      payload,
+      isFormData ? undefined : { headers: { 'Content-Type': 'application/json' } }
+    );
     return response.data?.data || response.data;
   },
 

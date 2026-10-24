@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { settingsService } from '../../services/settingsService';
+import BrandLoader from '../../components/BrandLoader';
 import { useAuth } from '../../context/AuthContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -39,14 +41,16 @@ import {
 
 // Form validation schema matching backend UpdateGeofenceSchema
 const schema = z.object({
+  corporateName: z.string().trim().min(1, 'Organization name is required'),
+  workspaceName: z.string().trim().optional(),
   latitude: z
-    .number({ message: 'Latitude is required' })
-    .min(-90, 'Latitude must be between -90 and 90')
-    .max(90, 'Latitude must be between -90 and 90'),
+    .union([z.number(), z.nan()])
+    .refine((val) => typeof val === 'number' && !isNaN(val), 'Latitude is required')
+    .pipe(z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90')),
   longitude: z
-    .number({ message: 'Longitude is required' })
-    .min(-180, 'Longitude must be between -180 and 180')
-    .max(180, 'Longitude must be between -180 and 180'),
+    .union([z.number(), z.nan()])
+    .refine((val) => typeof val === 'number' && !isNaN(val), 'Longitude is required')
+    .pipe(z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180')),
   radiusMeters: z
     .number({ message: 'Radius is required' })
     .min(10, 'Geofence radius must be at least 10 meters')
@@ -68,8 +72,9 @@ type SettingsFormValues = z.infer<typeof schema>;
 
 export const OrganizationSettingsPage: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, currentTenant, workspaces, currentWorkspace } = useAuth();
+  const { user, currentTenant, workspaces, currentWorkspace, isSuperAdmin, updateOrganizationAndWorkspace } = useAuth();
 
   // Helper to sanitize workspace ID
   const cleanId = (id?: string | null): string => {
@@ -85,6 +90,7 @@ export const OrganizationSettingsPage: React.FC = () => {
     '';
 
   const isValidWorkspaceId = Boolean(activeWorkspaceId);
+  const activeWs = workspaces?.find((w) => w.id === activeWorkspaceId) || currentWorkspace;
 
   // GPS detection state
   const [isDetectingGps, setIsDetectingGps] = useState(false);
@@ -119,8 +125,10 @@ export const OrganizationSettingsPage: React.FC = () => {
   } = useForm<SettingsFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      latitude: 30.2672,
-      longitude: -97.7431,
+      corporateName: currentTenant?.name || '',
+      workspaceName: activeWs?.name || '',
+      latitude: '' as any,
+      longitude: '' as any,
       radiusMeters: 100,
       graceMinutes: 15,
       defaultShiftStartTime: '09:00',
@@ -189,8 +197,10 @@ export const OrganizationSettingsPage: React.FC = () => {
         !(Number(g.latitude) === 0 && Number(g.longitude) === 0);
 
       reset({
-        latitude: hasValidCoords ? Number(g.latitude) : 0,
-        longitude: hasValidCoords ? Number(g.longitude) : 0,
+        corporateName: settingsData.corporateName || currentTenant?.name || '',
+        workspaceName: settingsData.workspaceName || activeWs?.name || '',
+        latitude: hasValidCoords ? Number(g.latitude) : ('' as any),
+        longitude: hasValidCoords ? Number(g.longitude) : ('' as any),
         radiusMeters: g?.radiusMeters ?? 100,
         graceMinutes: g?.graceMinutes ?? 15,
         defaultShiftStartTime: g?.defaultShiftStartTime ?? '09:00',
@@ -199,34 +209,69 @@ export const OrganizationSettingsPage: React.FC = () => {
 
       if (hasValidCoords) {
         setHasUnsavedAutoGps(false);
+        if (activeWorkspaceId) {
+          localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        }
+        if (currentTenant?.id) {
+          localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        }
       }
 
-      // If backend did not provide coordinates, automatically capture current live location
-      if (!hasValidCoords && autoGpsAttemptedRef.current !== activeWorkspaceId) {
-        autoGpsAttemptedRef.current = activeWorkspaceId;
-        handleDetectLiveLocation(true);
+      if (g?.defaultShiftStartTime && g?.defaultShiftEndTime) {
+        if (activeWorkspaceId) {
+          localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        }
+        if (currentTenant?.id) {
+          localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        }
       }
+    } else if (!isValidWorkspaceId) {
+      reset({
+        corporateName: currentTenant?.name || '',
+        workspaceName: '',
+        latitude: '' as any,
+        longitude: '' as any,
+        radiusMeters: 100,
+        graceMinutes: 15,
+        defaultShiftStartTime: '09:00',
+        defaultShiftEndTime: '18:00',
+      });
     }
-  }, [settingsData, reset, activeWorkspaceId]);
+  }, [settingsData, reset, activeWorkspaceId, isValidWorkspaceId, currentTenant?.name, currentTenant?.id, activeWs?.name]);
 
   // Update Mutation
   const updateMutation = useMutation({
     mutationFn: (data: SettingsFormValues) =>
       settingsService.updateGeofence(activeWorkspaceId, {
-        latitude: data.latitude,
-        longitude: data.longitude,
+        corporateName: data.corporateName,
+        organizationName: data.corporateName,
+        workspaceName: data.workspaceName,
+        latitude: Number(data.latitude),
+        longitude: Number(data.longitude),
         radiusMeters: data.radiusMeters,
         graceMinutes: data.graceMinutes,
         defaultShiftStartTime: data.defaultShiftStartTime,
         defaultShiftEndTime: data.defaultShiftEndTime,
       }),
-    onSuccess: () => {
+    onSuccess: (res, variables) => {
       setHasUnsavedAutoGps(false);
-      queryClient.invalidateQueries({ queryKey: ['adminGeofence', activeWorkspaceId] });
+      updateOrganizationAndWorkspace(variables.corporateName, variables.workspaceName);
+      queryClient.invalidateQueries({ queryKey: ['adminGeofence'] });
       queryClient.invalidateQueries({ queryKey: ['adminSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'] });
+
+      if (activeWorkspaceId) {
+        localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+      }
+      if (currentTenant?.id) {
+        localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+      }
+
       setSnackbar({
         open: true,
-        message: 'Organization geofence perimeter and shift schedule saved successfully!',
+        message: 'Organization and workspace settings saved successfully!',
         severity: 'success',
       });
     },
@@ -251,8 +296,6 @@ export const OrganizationSettingsPage: React.FC = () => {
     updateMutation.mutate(data);
   };
 
-  const activeWs = workspaces?.find((w) => w.id === activeWorkspaceId) || currentWorkspace;
-  const corporateName = currentTenant?.name || settingsData?.corporateName || 'Corporate Organization';
   const isConfigured = Boolean(settingsData?.isConfigured);
 
   return (
@@ -263,27 +306,49 @@ export const OrganizationSettingsPage: React.FC = () => {
           Organization
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Configure physical office boundaries, GPS check-in perimeters, and standard shift hours for{' '}
-          <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-            {activeWs?.name || 'the active campus'}
-          </Box>
+          Configure physical office boundaries, GPS check-in perimeters, and standard shift hours
+          {activeWs?.name ? (
+            <>
+              {' for '}
+              <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                {activeWs.name}
+              </Box>
+            </>
+          ) : ''}
           .
         </Typography>
       </Box>
 
+      {/* 0 Workspace Notice Banner */}
+      {(!isValidWorkspaceId || (workspaces && workspaces.length === 0)) && (
+        <Alert
+          severity="info"
+          icon={<CampusIcon sx={{ fontSize: 20 }} />}
+          sx={{ mb: 3, borderRadius: 2.5 }}
+          action={
+            <Button
+              color="primary"
+              variant="contained"
+              size="small"
+              onClick={() => navigate('/workspace/select')}
+              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
+            >
+              Create Workspace
+            </Button>
+          }
+        >
+          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+            No Active Workspace Found
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            To configure geographic perimeters and shift rules, start by creating your primary workspace location.
+          </Typography>
+        </Alert>
+      )}
+
       {isLoading ? (
         <Card sx={{ borderRadius: 3 }}>
-          <CardContent sx={{ p: 4 }}>
-            <Skeleton variant="text" height={40} width="60%" sx={{ mb: 3 }} />
-            <Grid container spacing={3}>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 2 }} />
-              </Grid>
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Skeleton variant="rectangular" height={56} sx={{ borderRadius: 2 }} />
-              </Grid>
-            </Grid>
-          </CardContent>
+          <BrandLoader fullScreen message="Loading organization settings..." />
         </Card>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -307,11 +372,27 @@ export const OrganizationSettingsPage: React.FC = () => {
                       <TextField
                         fullWidth
                         label="Parent Corporate Organization"
-                        value={corporateName}
-                        slotProps={{ input: { readOnly: true } }}
-                        helperText="Corporate entity (Tenant level)"
-                        variant="filled"
+                        error={!!errors.corporateName}
+                        helperText={
+                          errors.corporateName?.message ||
+                          (isSuperAdmin
+                            ? 'Corporate entity name (Editable by Super Admin)'
+                            : 'Corporate entity (Tenant level)')
+                        }
+                        variant={isSuperAdmin ? 'outlined' : 'filled'}
                         size="small"
+                        disabled={updateMutation.isPending}
+                        slotProps={{
+                          input: {
+                            readOnly: !isSuperAdmin,
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <CompanyIcon fontSize="small" color={isSuperAdmin ? 'primary' : 'action'} />
+                              </InputAdornment>
+                            ),
+                          },
+                        }}
+                        {...register('corporateName')}
                       />
                     </Grid>
 
@@ -319,20 +400,30 @@ export const OrganizationSettingsPage: React.FC = () => {
                       <TextField
                         fullWidth
                         label="Active Campus / Site"
-                        value={activeWs?.name || 'Primary Branch'}
+                        placeholder={activeWs ? 'e.g. Main Branch' : 'No workspace created yet'}
+                        error={!!errors.workspaceName}
+                        helperText={
+                          errors.workspaceName?.message ||
+                          (activeWs
+                            ? isSuperAdmin
+                              ? 'Campus / Branch name (Editable by Super Admin)'
+                              : activeWs.address || 'Physical site configured in the top navigation bar'
+                            : '')
+                        }
+                        variant={isSuperAdmin && activeWs ? 'outlined' : 'filled'}
+                        size="small"
+                        disabled={updateMutation.isPending || !activeWs}
                         slotProps={{
                           input: {
-                            readOnly: true,
+                            readOnly: !isSuperAdmin || !activeWs,
                             startAdornment: (
                               <InputAdornment position="start">
-                                <CampusIcon fontSize="small" color="primary" />
+                                <CampusIcon fontSize="small" color={activeWs ? (isSuperAdmin ? 'primary' : 'action') : 'disabled'} />
                               </InputAdornment>
                             ),
                           },
                         }}
-                        helperText={activeWs?.address || 'Physical site configured in the top navigation bar'}
-                        variant="filled"
-                        size="small"
+                        {...register('workspaceName')}
                       />
                     </Grid>
                   </Grid>
@@ -418,6 +509,7 @@ export const OrganizationSettingsPage: React.FC = () => {
                         type="number"
                         slotProps={{ htmlInput: { step: 'any' } }}
                         label="Center Latitude"
+                        placeholder="e.g. 19.0760"
                         error={!!errors.latitude}
                         helperText={errors.latitude?.message || 'Decimal degrees (-90 to +90)'}
                         disabled={updateMutation.isPending}
@@ -431,6 +523,7 @@ export const OrganizationSettingsPage: React.FC = () => {
                         type="number"
                         slotProps={{ htmlInput: { step: 'any' } }}
                         label="Center Longitude"
+                        placeholder="e.g. 72.8777"
                         error={!!errors.longitude}
                         helperText={errors.longitude?.message || 'Decimal degrees (-180 to +180)'}
                         disabled={updateMutation.isPending}
@@ -545,10 +638,10 @@ export const OrganizationSettingsPage: React.FC = () => {
                   </Box>
 
                   <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                    {activeWs?.name || 'Selected Campus'}
+                    {activeWs?.name || 'No workspace selected'}
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                    {activeWs?.address || 'Address unlisted'}
+                    {activeWs?.address || 'No campus address'}
                   </Typography>
 
                   <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2, mb: 2 }}>
@@ -567,10 +660,10 @@ export const OrganizationSettingsPage: React.FC = () => {
                       )}
                     </Box>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Lat: {watchedValues.latitude || '0.000000'}
+                      Lat: {typeof watchedValues.latitude === 'number' && !isNaN(watchedValues.latitude) ? watchedValues.latitude : '—'}
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Lon: {watchedValues.longitude || '0.000000'}
+                      Lon: {typeof watchedValues.longitude === 'number' && !isNaN(watchedValues.longitude) ? watchedValues.longitude : '—'}
                     </Typography>
                     <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, display: 'block', mt: 1 }}>
                       Perimeter Radius: {watchedValues.radiusMeters || 100} meters

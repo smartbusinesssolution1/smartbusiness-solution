@@ -28,7 +28,6 @@ export const AdminAttendanceQuerySchema = z.object({
   workspaceId: z.preprocess((val) => {
     const clean = emptyToUndefined(val);
     if (!clean || typeof clean !== "string") return undefined;
-    // Accept standard 8-4-4-4-12 hex UUIDs (including synthetic ones like 30000000-0000-0000-0000-000000000001)
     if (uuidRegex.test(clean)) return clean;
     return undefined;
   }, z.string().optional()),
@@ -56,6 +55,24 @@ export const AdminAttendanceExportSchema = z.object({
 
 export type AdminAttendanceExportInput = z.infer<typeof AdminAttendanceExportSchema>;
 
+export interface FormattedAttendanceSession {
+  id: string;
+  sessionNumber: number;
+  checkIn: string | null;
+  checkOut: string | null;
+  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
+  workingHours: number;
+  notes: string | null;
+  selfieUrl: string | null;
+  clockInFaceMatchConfidence: number | null;
+  clockInLatitude: number | null;
+  clockInLongitude: number | null;
+  clockOutFaceMatchConfidence: number | null;
+  clockOutLatitude: number | null;
+  clockOutLongitude: number | null;
+  isAutoClosed: boolean;
+}
+
 export interface FormattedAttendanceItem {
   id: string;
   date: string;
@@ -69,6 +86,8 @@ export interface FormattedAttendanceItem {
   notes: string;
   workspaceId: string;
   workspaceName: string;
+  totalSessions?: number;
+  sessions?: FormattedAttendanceSession[];
 }
 
 export interface AttendanceSummaryMetrics {
@@ -104,4 +123,3 @@ export interface AdminSummaryMetrics {
   weeklyStats: WeeklyAttendanceStat[];
   departmentStats: DepartmentAttendanceStat[];
 }
-

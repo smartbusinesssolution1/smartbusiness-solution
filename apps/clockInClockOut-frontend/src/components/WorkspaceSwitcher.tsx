@@ -67,7 +67,10 @@ export const WorkspaceSwitcher: React.FC = () => {
   };
 
   // Company monogram helper
-  const companyName = currentTenant?.name || 'Green Acres Landscaping LLC';
+  const companyName = currentTenant?.name || 'Organization';
+  const hasWorkspace = Boolean(workspaces && workspaces.length > 0 && (currentWorkspace?.name || workspaces[0]?.name));
+  const activeWorkspaceName = currentWorkspace?.name || workspaces?.[0]?.name || '';
+
   const getInitials = (name: string) => {
     const parts = name.trim().split(/\s+/);
     if (parts.length >= 2) {
@@ -129,38 +132,58 @@ export const WorkspaceSwitcher: React.FC = () => {
           {getInitials(companyName)}
         </Avatar>
 
-        {/* Two-Line Stack: Tenant / Company Name (Top) + Active Workspace (Bottom) */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, flexGrow: 1 }}>
-          <Typography
-            component="span"
-            sx={{
-              fontSize: '10px',
-              fontWeight: 600,
-              color: theme.palette.mode === 'light' ? '#4338CA' : '#A5B4FC',
-              lineHeight: 1.1,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {companyName}
-          </Typography>
-          <Typography
-            component="span"
-            sx={{
-              fontSize: '12px',
-              fontWeight: 600,
-              color: theme.palette.text.primary,
-              lineHeight: 1.25,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              maxWidth: { xs: 130, sm: 190 },
-            }}
-          >
-            {currentWorkspace?.name || 'Main Headquarters (HQ)'}
-          </Typography>
-        </Box>
+        {/* Workspace Display: If workspaces exist, show Two-Line Stack; If 0 workspaces, show ONLY company name */}
+        {hasWorkspace ? (
+          <Box sx={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, flexGrow: 1 }}>
+            <Typography
+              component="span"
+              sx={{
+                fontSize: '10px',
+                fontWeight: 600,
+                color: theme.palette.mode === 'light' ? '#4338CA' : '#A5B4FC',
+                lineHeight: 1.1,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {companyName}
+            </Typography>
+            <Typography
+              component="span"
+              sx={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: theme.palette.text.primary,
+                lineHeight: 1.25,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: { xs: 130, sm: 190 },
+              }}
+            >
+              {activeWorkspaceName}
+            </Typography>
+          </Box>
+        ) : (
+          <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden', minWidth: 0, flexGrow: 1 }}>
+            <Typography
+              component="span"
+              sx={{
+                fontSize: '13px',
+                fontWeight: 700,
+                color: theme.palette.text.primary,
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: { xs: 140, sm: 210 },
+              }}
+            >
+              {companyName}
+            </Typography>
+          </Box>
+        )}
 
         {/* Dropdown Chevron */}
         <KeyboardArrowDownRoundedIcon
@@ -257,7 +280,7 @@ export const WorkspaceSwitcher: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {workspaces.length} Workspaces
+            {workspaces.length} {workspaces.length === 1 ? 'Workspace' : 'Workspaces'}
           </Box>
         </Box>
 
@@ -272,97 +295,116 @@ export const WorkspaceSwitcher: React.FC = () => {
               letterSpacing: '0.05em',
             }}
           >
-            Select Workspace / Branch
+            {workspaces.length === 0 ? 'Workspaces' : 'Select Workspace / Branch'}
           </Typography>
         </Box>
 
         {/* Workspaces List (Only Workspaces / Branches!) */}
         <Box sx={{ maxHeight: 240, overflowY: 'auto', py: 0.5, px: 0.75 }}>
-          {workspaces.map((ws) => {
-            const isSelected = ws.id === currentWorkspace?.id;
-            return (
-              <MenuItem
-                key={ws.id}
-                onClick={() => handleSelectWorkspace(ws)}
+          {workspaces.length === 0 ? (
+            <Box sx={{ py: 2.5, px: 2, textAlign: 'center' }}>
+              <StorefrontRoundedIcon
                 sx={{
-                  borderRadius: 2,
-                  py: 1,
-                  px: 1.25,
-                  my: 0.25,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  gap: 1.25,
-                  backgroundColor: isSelected
-                    ? theme.palette.mode === 'light'
-                      ? '#EEF2FF'
-                      : alpha(theme.palette.primary.main, 0.2)
-                    : 'transparent',
-                  '&:hover': {
+                  fontSize: 28,
+                  color: theme.palette.text.secondary,
+                  opacity: 0.4,
+                  mb: 0.75,
+                }}
+              />
+              <Typography sx={{ fontSize: '12px', fontWeight: 600, color: theme.palette.text.secondary }}>
+                No workspaces added yet
+              </Typography>
+              <Typography sx={{ fontSize: '11px', color: theme.palette.text.secondary, opacity: 0.8, mt: 0.25 }}>
+                Create your primary location to begin
+              </Typography>
+            </Box>
+          ) : (
+            workspaces.map((ws) => {
+              const isSelected = ws.id === currentWorkspace?.id;
+              return (
+                <MenuItem
+                  key={ws.id}
+                  onClick={() => handleSelectWorkspace(ws)}
+                  sx={{
+                    borderRadius: 2,
+                    py: 1,
+                    px: 1.25,
+                    my: 0.25,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 1.25,
                     backgroundColor: isSelected
                       ? theme.palette.mode === 'light'
-                        ? '#E0E7FF'
-                        : alpha(theme.palette.primary.main, 0.28)
-                      : theme.palette.mode === 'light'
-                      ? '#F8FAFC'
-                      : alpha(theme.palette.common.white, 0.05),
-                  },
-                }}
-              >
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, flexGrow: 1 }}>
-                  <StorefrontRoundedIcon
-                    sx={{
-                      fontSize: 16,
-                      color: isSelected
-                        ? theme.palette.primary.main
-                        : theme.palette.text.secondary,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography
+                        ? '#EEF2FF'
+                        : alpha(theme.palette.primary.main, 0.2)
+                      : 'transparent',
+                    '&:hover': {
+                      backgroundColor: isSelected
+                        ? theme.palette.mode === 'light'
+                          ? '#E0E7FF'
+                          : alpha(theme.palette.primary.main, 0.28)
+                        : theme.palette.mode === 'light'
+                        ? '#F8FAFC'
+                        : alpha(theme.palette.common.white, 0.05),
+                    },
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0, flexGrow: 1 }}>
+                    <StorefrontRoundedIcon
                       sx={{
-                        fontSize: '12px',
-                        fontWeight: isSelected ? 700 : 500,
+                        fontSize: 16,
                         color: isSelected
-                          ? theme.palette.mode === 'light'
-                            ? '#3730A3'
-                            : '#C7D2FE'
-                          : theme.palette.text.primary,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
+                          ? theme.palette.primary.main
+                          : theme.palette.text.secondary,
+                        flexShrink: 0,
                       }}
-                    >
-                      {ws.name}
-                    </Typography>
-                    <Typography
-                      sx={{
-                        fontSize: '10px',
-                        color: theme.palette.text.secondary,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {ws.city && ws.state ? `${ws.city}, ${ws.state}` : ws.address || 'Branch Office'}
-                      {ws.employeeCount ? ` • ${ws.employeeCount} Staff` : ''}
-                    </Typography>
+                    />
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography
+                        sx={{
+                          fontSize: '12px',
+                          fontWeight: isSelected ? 700 : 500,
+                          color: isSelected
+                            ? theme.palette.mode === 'light'
+                              ? '#3730A3'
+                              : '#C7D2FE'
+                            : theme.palette.text.primary,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {ws.name}
+                      </Typography>
+                      <Typography
+                        sx={{
+                          fontSize: '10px',
+                          color: theme.palette.text.secondary,
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {ws.city && ws.state ? `${ws.city}, ${ws.state}` : ws.address || 'Branch Office'}
+                        {ws.employeeCount ? ` • ${ws.employeeCount} Staff` : ''}
+                      </Typography>
+                    </Box>
                   </Box>
-                </Box>
 
-                {isSelected && (
-                  <CheckRoundedIcon
-                    sx={{
-                      fontSize: 16,
-                      color: theme.palette.primary.main,
-                      flexShrink: 0,
-                    }}
-                  />
-                )}
-              </MenuItem>
-            );
-          })}
+                  {isSelected && (
+                    <CheckRoundedIcon
+                      sx={{
+                        fontSize: 16,
+                        color: theme.palette.primary.main,
+                        flexShrink: 0,
+                      }}
+                    />
+                  )}
+                </MenuItem>
+              );
+            })
+          )}
         </Box>
 
         <Divider />
@@ -391,7 +433,7 @@ export const WorkspaceSwitcher: React.FC = () => {
           >
             <AddRoundedIcon sx={{ fontSize: 16 }} />
             <Typography sx={{ fontSize: '12px', fontWeight: 600, color: 'inherit' }}>
-              Manage or Add Workspaces
+              {workspaces.length === 0 ? 'Create Primary Workspace' : 'Manage or Add Workspaces'}
             </Typography>
           </MenuItem>
         </Box>
