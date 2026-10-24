@@ -21,20 +21,23 @@ function formatTimeToAMPM(timeStr: string): string {
 }
 
 export class EmployeeService {
-  constructor(private employeeRepo: EmployeeRepository) {}
+  constructor(private employeeRepo: EmployeeRepository) { }
 
   /**
    * Resolve authenticated user's full employee profile and assigned workspaces
    */
   async getEmployeeProfile(userId: string, tenantId: string, role?: string) {
-    const employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
-
+    // const employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
+    const [employee, assignedMembers] = await Promise.all([
+      this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId),
+      this.employeeRepo.findAssignedWorkspaces(userId, tenantId),
+    ]);
     if (!employee) {
       throw new NotFoundError("Employee profile");
     }
 
     const user = employee.workspaceMember.user;
-    const assignedMembers = await this.employeeRepo.findAssignedWorkspaces(userId, tenantId);
+    // const assignedMembers = await this.employeeRepo.findAssignedWorkspaces(userId, tenantId);
 
     const assignedWorkspaces = assignedMembers.map((member) => {
       const ws = member.workspace;
@@ -50,13 +53,13 @@ export class EmployeeService {
         address: [ws.addressLine1, ws.city, ws.state].filter(Boolean).join(", "),
         geofence: ws.attendanceSettings
           ? {
-              latitude: Number(ws.attendanceSettings.latitude),
-              longitude: Number(ws.attendanceSettings.longitude),
-              radiusMeters: ws.attendanceSettings.radiusMeters,
-              officeStartTime: ws.attendanceSettings.defaultShiftStartTime,
-              officeEndTime: ws.attendanceSettings.defaultShiftEndTime,
-              graceMinutes: ws.attendanceSettings.graceMinutes,
-            }
+            latitude: Number(ws.attendanceSettings.latitude),
+            longitude: Number(ws.attendanceSettings.longitude),
+            radiusMeters: ws.attendanceSettings.radiusMeters,
+            officeStartTime: ws.attendanceSettings.defaultShiftStartTime,
+            officeEndTime: ws.attendanceSettings.defaultShiftEndTime,
+            graceMinutes: ws.attendanceSettings.graceMinutes,
+          }
           : null,
       };
     });
@@ -93,10 +96,10 @@ export class EmployeeService {
 
     const formattedJoinedDate = employee.createdAt
       ? new Date(employee.createdAt).toLocaleDateString("en-US", {
-          month: "long",
-          day: "numeric",
-          year: "numeric",
-        })
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
       : "";
 
     return {

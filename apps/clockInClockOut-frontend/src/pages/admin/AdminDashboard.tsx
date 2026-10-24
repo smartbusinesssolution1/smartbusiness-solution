@@ -4,6 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import { attendanceService } from '../../services/attendanceService';
 import { employeeService } from '../../services/employeeService';
 import { useAuth } from '../../context/AuthContext';
+import BrandLoader from '../../components/BrandLoader';
+import { settingsService } from '../../services/settingsService';
+import { OnboardingChecklistWidget } from '../../components/OnboardingChecklistWidget';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import { User } from '../../types';
 import {
@@ -56,6 +59,8 @@ import {
   Check as CheckIcon,
   Close as CloseIcon,
   EventNote as EventNoteIcon,
+  Cancel as AbsentIcon,
+  CheckCircle as OnTimeIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 
@@ -66,7 +71,7 @@ interface StreamRecord {
   workspace: string;
   time: string;
   type: string;
-  status: 'present' | 'late' | 'gps' | 'biometric';
+  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
   avatarUrl?: string | null;
 }
 
@@ -74,7 +79,7 @@ export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDark = theme.palette.mode === 'dark';
-  const { user, workspaces, currentWorkspace } = useAuth();
+  const { user, workspaces, currentWorkspace, currentTenant } = useAuth();
 
   // Active chart view tab
   const [chartTab, setChartTab] = useState<'weekly' | 'dept'>('weekly');
@@ -158,6 +163,18 @@ export const AdminDashboard: React.FC = () => {
     gcTime: 300_000,
   });
 
+  // Fetch workspace geofence and shift configuration for active workspace
+  const {
+    data: geofenceSettings,
+    refetch: refetchGeofence,
+  } = useQuery({
+    queryKey: ['adminGeofence', activeWorkspaceId],
+    queryFn: () => settingsService.getGeofence(activeWorkspaceId),
+    enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 30_000,
+    gcTime: 300_000,
+  });
+
   const employees: User[] = useMemo(() => {
     if (!employeesData) return [];
     if (Array.isArray(employeesData)) return employeesData;
@@ -170,6 +187,7 @@ export const AdminDashboard: React.FC = () => {
     refetchMetrics();
     refetchAttendance();
     refetchEmployees();
+    refetchGeofence();
   };
 
   // 1. Row 1: 5-Pillar High-Impact KPI Strip
@@ -396,7 +414,7 @@ export const AdminDashboard: React.FC = () => {
           workspace: workspaceName,
           time: checkInTime,
           type: isLate ? 'Late Arrival' : isGps ? 'GPS Verified' : 'On Time',
-          status: isLate ? 'late' : isGps ? 'gps' : 'present',
+          status: item?.status,
           avatarUrl: (item as any).avatarUrl || item.selfieUrl || null,
         };
       });
@@ -456,6 +474,9 @@ export const AdminDashboard: React.FC = () => {
     [totalStaffCount, presentStaffCount]
   );
 
+
+
+
   return (
     <Box sx={{ pb: 4 }}>
       {/* Dashboard Top Header */}
@@ -486,34 +507,48 @@ export const AdminDashboard: React.FC = () => {
       </Box>
 
       {isLoading ? (
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12 }}>
-            <Grid container spacing={2.5}>
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={i}>
-                  <Skeleton variant="rectangular" height={130} sx={{ borderRadius: 3 }} />
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-          <Grid size={{ xs: 12 }}>
-            <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, lg: 8 }}>
-            <Skeleton variant="rectangular" height={380} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <Skeleton variant="rectangular" height={380} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Skeleton variant="rectangular" height={280} sx={{ borderRadius: 3 }} />
-          </Grid>
-        </Grid>
+        <BrandLoader fullScreen message="Loading dashboard metrics..." />
       ) : (
         <Grid container spacing={3}>
+          {/* Newly Registered Tenant Notice (0 Workspaces) */}
+          {workspaces && workspaces.length === 0 && (
+            <Grid size={{ xs: 12 }}>
+              <Alert
+                severity="info"
+                icon={<DomainIcon sx={{ fontSize: 22 }} />}
+                sx={{
+                  borderRadius: 3,
+                  alignItems: 'center',
+                  '& .MuiAlert-message': { width: '100%' },
+                }}
+                action={
+                  <Button
+                    color="primary"
+                    variant="contained"
+                    size="small"
+                    onClick={() => {
+                      const step1Btn = document.getElementById('checklist-step-1');
+                      if (step1Btn) {
+                        step1Btn.click();
+                      } else {
+                        navigate('/workspace/select');
+                      }
+                    }}
+                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, mr: 1 }}
+                  >
+                    Create Workspace
+                  </Button>
+                }
+              >
+                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
+                  Tenant Account Registered: {currentTenant?.name || (user as any)?.tenantName || 'Organization'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                  To begin tracking attendance, start by creating your primary workspace in the Onboarding Guide on the right.
+                </Typography>
+              </Alert>
+            </Grid>
+          )}
           {/* ======================================================================
               ROW 1: 5-Pillar High-Impact KPI Strip
               ====================================================================== */}
@@ -763,7 +798,7 @@ export const AdminDashboard: React.FC = () => {
                 </ButtonGroup>
               </Box>
 
-              <Box sx={{ width: '100%', height: 310, mt: 'auto' }}>
+              <Box sx={{ width: '100%', flex: 1, minHeight: 340, mt: 2, display: 'flex', flexDirection: 'column' }}>
                 <ResponsiveContainer width="100%" height="100%">
                   {chartTab === 'weekly' ? (
                     <RechartsBarChart
@@ -783,9 +818,9 @@ export const AdminDashboard: React.FC = () => {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="present" name="On Time" fill="#10b981" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="late" name="Late Check-In" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="absent" name="Absent" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="present" name="On Time" stackId="attendance" fill="#10b981" barSize={38} />
+                      <Bar dataKey="late" name="Late Check-In" stackId="attendance" fill="#f59e0b" barSize={38} />
+                      <Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={38} />
                     </RechartsBarChart>
                   ) : departmentStats.length === 0 ? (
                     <Box
@@ -821,7 +856,7 @@ export const AdminDashboard: React.FC = () => {
                         }}
                       />
                       <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="rate" name="Attendance Rate (%)" fill={theme.palette.primary.main} radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="rate" name="Attendance Rate (%)" fill={theme.palette.primary.main} radius={[4, 4, 0, 0]} barSize={38} />
                     </RechartsBarChart>
                   )}
                 </ResponsiveContainer>
@@ -831,168 +866,207 @@ export const AdminDashboard: React.FC = () => {
 
           {/* Right Panel: Live Operational Pulse (Real-Time Check-In Stream) */}
           <Grid size={{ xs: 12, lg: 4 }}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 3,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Live Operational Pulse
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
-                    Real-Time Check-In Stream
-                  </Typography>
-                </Box>
-                <Chip
-                  icon={
-                    <Box
-                      sx={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: '50%',
-                        bgcolor: colors.present.main,
-                        boxShadow: `0 0 6px ${colors.present.main}`,
-                        mr: 0.5,
-                      }}
-                    />
-                  }
-                  label="LIVE FEED"
-                  size="small"
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.68rem',
-                    bgcolor: colors.present.bg,
-                    color: colors.present.main,
-                    borderRadius: 1.5,
-                    height: 22,
-                    border: `1px solid ${colors.present.main}30`,
-                  }}
-                />
-              </Box>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, height: '100%' }}>
+              <OnboardingChecklistWidget
+                totalEmployeesCount={totalEmployeesCount}
+                hasGeofenceConfigured={Boolean(
+                  (geofenceSettings?.isConfigured &&
+                    geofenceSettings?.geofence &&
+                    (Number(geofenceSettings.geofence.latitude) !== 0 || Number(geofenceSettings.geofence.longitude) !== 0)) ||
+                  (activeWorkspaceId && localStorage.getItem(`geofence_configured_${activeWorkspaceId}`) === 'true') ||
+                  (currentTenant?.id && localStorage.getItem(`geofence_configured_${currentTenant.id}`) === 'true')
+                )}
+                hasShiftConfigured={Boolean(
+                  (geofenceSettings?.isConfigured &&
+                    geofenceSettings?.geofence?.defaultShiftStartTime &&
+                    geofenceSettings?.geofence?.defaultShiftEndTime) ||
+                  (activeWorkspaceId && localStorage.getItem(`shifts_configured_${activeWorkspaceId}`) === 'true') ||
+                  (currentTenant?.id && localStorage.getItem(`shifts_configured_${currentTenant.id}`) === 'true')
+                )}
+                hasAvatarUploaded={Boolean(user?.avatarUrl && user.avatarUrl.trim() !== '' && !user.avatarUrl.includes('placeholder'))}
+              />
 
-              <Box
+              <Card
                 sx={{
+                  borderRadius: 3,
+                  border: `1px solid ${theme.palette.divider}`,
+                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
+                  p: 3,
+
                   display: 'flex',
                   flexDirection: 'column',
-                  gap: 1.5,
-                  maxHeight: 310,
-                  overflowY: 'auto',
-                  pr: 0.5,
-                  '&::-webkit-scrollbar': { width: 5 },
-                  '&::-webkit-scrollbar-thumb': {
-                    bgcolor: 'divider',
-                    borderRadius: 4,
-                  },
                 }}
               >
-                {liveStreamRecords.length === 0 ? (
-                  <Box sx={{ py: 6, textAlign: 'center' }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      No live activity yet
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                      Live Operational Pulse
                     </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      Employee punches will stream here in real time.
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
+                      Real-Time Check-In Stream
                     </Typography>
                   </Box>
-                ) : (
-                  liveStreamRecords.map((stream) => {
-                    const initials = stream.name
-                      .split(' ')
-                      .map((n) => n[0])
-                      .join('')
-                      .substring(0, 2);
-
-                    const isLate = stream.status === 'late';
-                    const isGps = stream.status === 'gps';
-
-                    return (
+                  <Chip
+                    icon={
                       <Box
-                        key={stream.id}
                         sx={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          p: 1.25,
-                          borderRadius: 2,
-                          bgcolor: isDark ? 'background.default' : '#f8fafc',
-                          border: `1px solid ${theme.palette.divider}`,
-                          transition: 'background-color 0.15s ease',
-                          '&:hover': {
-                            bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
-                          },
+                          width: 7,
+                          height: 7,
+                          borderRadius: '50%',
+                          bgcolor: colors.present.main,
+                          boxShadow: `0 0 6px ${colors.present.main}`,
+                          mr: 0.5,
                         }}
-                      >
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Box sx={{ position: 'relative' }}>
-                            <Avatar
-                              src={getAvatarUrl(stream.avatarUrl)}
-                              alt={stream.name}
-                              sx={{
-                                width: 36,
-                                height: 36,
-                                fontSize: '0.8rem',
-                                fontWeight: 700,
-                                bgcolor: isLate ? colors.late.bg : colors.primary.bg,
-                                color: isLate ? colors.late.main : colors.primary.main,
-                              }}
-                            >
-                              {initials}
-                            </Avatar>
-                            <Box
-                              sx={{
-                                position: 'absolute',
-                                bottom: 0,
-                                right: 0,
-                                width: 9,
-                                height: 9,
-                                borderRadius: '50%',
-                                bgcolor: isLate ? colors.late.main : colors.present.main,
-                                border: `2px solid ${theme.palette.background.paper}`,
-                              }}
-                            />
-                          </Box>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                              {stream.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                              {stream.empId} · {stream.workspace}
-                            </Typography>
-                          </Box>
-                        </Box>
+                      />
+                    }
+                    label="LIVE FEED"
+                    size="small"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: '0.68rem',
+                      bgcolor: colors.present.bg,
+                      color: colors.present.main,
+                      borderRadius: 1.5,
+                      height: 22,
+                      border: `1px solid ${colors.present.main}30`,
+                    }}
+                  />
+                </Box>
 
-                        <Box sx={{ textAlign: 'right' }}>
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                            {stream.time}
-                          </Typography>
-                          <Chip
-                            label={stream.type}
-                            size="small"
-                            sx={{
-                              height: 18,
-                              fontSize: '0.65rem',
-                              fontWeight: 700,
-                              borderRadius: 1,
-                              bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
-                              color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
-                              mt: 0.25,
-                            }}
-                          />
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 1.5,
+                    maxHeight: 310,
+                    overflowY: 'auto',
+                    pr: 0.5,
+                    '&::-webkit-scrollbar': { width: 5 },
+                    '&::-webkit-scrollbar-thumb': {
+                      bgcolor: 'divider',
+                      borderRadius: 4,
+                    },
+                  }}
+                >
+                  {liveStreamRecords.length === 0 ? (
+                    <Box sx={{ py: 6, textAlign: 'center' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                        No live activity yet
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                        Employee punches will stream here in real time.
+                      </Typography>
+                    </Box>
+                  ) : (
+                    liveStreamRecords.map((stream) => {
+                      const initials = stream.name
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .substring(0, 2);
+
+                      const getStatusChip = (status: string) => {
+                        switch (status) {
+                          case 'present':
+                            return <Chip label="On Time" color="success" size="small" icon={<OnTimeIcon />} />;
+                          case 'late':
+                            return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
+                          case 'absent':
+                            return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+                          case 'half_day':
+                            return <Chip label="Half Day" color="info" size="small" />;
+                          case 'auto_closed':
+                            return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
+                          default:
+                            return <Chip label={status} size="small" />;
+                        }
+                      };
+                      const isLate = stream.status === 'late';
+                      const gps = getStatusChip(stream.status)
+                      return (
+                        <Box
+                          key={stream.id}
+                          sx={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            p: 1.25,
+                            borderRadius: 2,
+                            bgcolor: isDark ? 'background.default' : '#f8fafc',
+                            border: `1px solid ${theme.palette.divider}`,
+                            transition: 'background-color 0.15s ease',
+                            '&:hover': {
+                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
+                            },
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{ position: 'relative' }}>
+                              <Avatar
+                                src={getAvatarUrl(stream.avatarUrl)}
+                                alt={stream.name}
+                                sx={{
+                                  width: 36,
+                                  height: 36,
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  bgcolor: isLate ? colors.late.bg : colors.primary.bg,
+                                  color: isLate ? colors.late.main : colors.primary.main,
+                                }}
+                              >
+                                {initials}
+                              </Avatar>
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  bottom: 0,
+                                  right: 0,
+                                  width: 9,
+                                  height: 9,
+                                  borderRadius: '50%',
+                                  bgcolor: isLate ? colors.late.main : colors.present.main,
+                                  border: `2px solid ${theme.palette.background.paper}`,
+                                }}
+                              />
+                            </Box>
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
+                                {stream.name}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                {stream.empId} · {stream.workspace}
+                              </Typography>
+                            </Box>
+                          </Box>
+
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
+                              {stream.time}
+                            </Typography>
+                            {/* <Chip
+                              label={stream.type}
+                              size="small"
+                              sx={{
+                                height: 18,
+                                fontSize: '0.65rem',
+                                fontWeight: 700,
+                                borderRadius: 1,
+                                bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
+                                color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
+                                mt: 0.25,
+                              }}
+                            /> */}
+                            <div>
+                              {gps}
+                            </div>
+                          </Box>
                         </Box>
-                      </Box>
-                    );
-                  })
-                )}
-              </Box>
-            </Card>
+                      );
+                    })
+                  )}
+                </Box>
+              </Card>
+            </Box>
           </Grid>
 
           {/* ======================================================================

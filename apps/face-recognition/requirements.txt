@@ -1,25 +1,20 @@
-fastapi==0.135.1
-uvicorn==0.42.0
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
 
 numpy==1.26.4
-opencv-python==4.8.1.78
+opencv-python==4.10.0.84
+Pillow==11.2.1
 
 insightface==0.7.3
-onnxruntime==1.18.0
-onnx==1.21.0
+# pip install insightface --only-binary=:all:
+onnx==1.17.0
+onnxruntime==1.18.1
 
 mediapipe==0.10.14
-protobuf==4.25.9
+protobuf==4.25.3
 
-pydantic==2.12.5
-pydantic-settings==2.2.1
+pydantic==2.10.6
+pydantic-settings==2.7.1
 
-python-dotenv==1.2.2
-python-multipart==0.0.22
-
-requests==2.32.5
-scipy==1.15.3
-scikit-learn==1.7.2
-
-Pillow==12.1.1
-tqdm==4.67.3
+python-dotenv==1.0.1
+python-multipart==0.0.20

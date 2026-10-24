@@ -2,12 +2,12 @@ import type { Request, Response } from "express";
 import type { TypedQueue, EmailJobs } from "@smartbusiness/jobs";
 import type { AuthService } from "./auth.service.js";
 import type {
-  AcceptInvitationInput,
   ForgotPasswordInput,
-  InvitationTokenInput,
   LoginInputType,
   RegisterInputType,
   ResetPasswordInput,
+  AcceptInvitationInput,
+  InvitationTokenInput,
 } from "./auth.schema.js";
 import { sendCreated, sendSuccess } from "../../shared/utils/response.js";
 import { AppError, AuthError } from "@smartbusiness/auth";

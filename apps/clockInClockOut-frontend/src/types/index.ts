@@ -134,6 +134,9 @@ export interface GeofenceSettingsResponse {
 }
 
 export interface UpdateGeofencePayload {
+  corporateName?: string;
+  organizationName?: string;
+  workspaceName?: string;
   latitude: number;
   longitude: number;
   radiusMeters: number;

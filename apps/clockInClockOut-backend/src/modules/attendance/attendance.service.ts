@@ -8,6 +8,7 @@ import { AppError, NotFoundError, ValidationError } from "../../shared/errors/in
 import { storageService } from "../../shared/services/storage.service.js";
 import { faceRecognitionService } from "../../shared/services/faceRecognition.service.js";
 import { memoryCache } from "../../shared/services/cache.service.js";
+import { logger } from "../../shared/services/logger.js";
 import type {
   VerifyLocationInput,
   CheckInInput,
@@ -62,14 +63,42 @@ export class AttendanceService {
   /**
    * Helper: Resolve employee and throw if not found (with 60s in-memory cache)
    */
-  private async getEmployee(userId: string, tenantId: string) {
-    const cacheKey = `${tenantId}:${userId}`;
+  private async getEmployee(userId: string, tenantId: string, employeeIdParam?: string) {
+    const cacheKey = `${tenantId}:${userId}:${employeeIdParam || ""}`;
     const cached = this.employeeCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.data;
     }
 
-    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+    let employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+    if (!employee && employeeIdParam) {
+      employee = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
+          OR: [{ id: employeeIdParam }, { employeeCode: employeeIdParam }],
+          deletedAt: null,
+          workspaceMember: {
+            deletedAt: null,
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              workspace: {
+                include: {
+                  attendanceSettings: true,
+                },
+              },
+              user: true,
+            },
+          },
+        },
+      });
+    }
+
     if (!employee) {
       throw new NotFoundError("Employee profile not found for this account.");
     }
@@ -163,27 +192,26 @@ export class AttendanceService {
   }
 
   /**
-   * Step 2: Biometric check-in punch
+   * Step 1.5: Acquire active-liveness signed challenge token
+   */
+  async getChallenge() {
+    return faceRecognitionService.getChallenge();
+  }
+
+  /**
+   * Step 2: Instant 1-Click Check-In Punch (Option 1)
    */
   async checkIn(
     userId: string,
     tenantId: string,
     input: CheckInInput,
     file?: Express.Multer.File,
-    headerWorkspaceId?: string
+    headerWorkspaceId?: string,
+    captureFiles?: Express.Multer.File[]
   ) {
-    const employee = await this.getEmployee(userId, tenantId);
+    const employee = await this.getEmployee(userId, tenantId, input.employeeId);
 
-    // 1. Guard: Baseline Avatar must exist in database
-    if (!employee.biometricPhotoUrl) {
-      throw new AppError(
-        "Biometric baseline photo missing. Please upload your baseline portrait before clocking in.",
-        400,
-        "ERR_BASELINE_MISSING"
-      );
-    }
-
-    // 2. Resolve Workspace & Geofence
+    // 1. Resolve Workspace & Geofence
     const { workspace, settings } = await this.resolveWorkspaceAndSettings(
       employee,
       tenantId,
@@ -202,7 +230,7 @@ export class AttendanceService {
     );
     const isWithinGeofence = distanceMeters <= radius;
 
-    // 3. Guard: Disallow clock-in ONLY if an active unclosed session is currently open
+    // 2. Guard: Disallow clock-in ONLY if an active unclosed session is currently open
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
@@ -219,8 +247,8 @@ export class AttendanceService {
     const todaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
     const isFirstSessionToday = todaySessions.length === 0;
 
-    // 4. Save selfie if uploaded as file
-    let selfieUrl = input.selfieUri;
+    // 3. Save selfie if uploaded as file (optional)
+    let selfieUrl: string | undefined = input.selfieUri;
     if (file) {
       try {
         const uploadResult = await storageService.uploadAvatar({ tenantId, file });
@@ -231,7 +259,7 @@ export class AttendanceService {
       }
     }
 
-    // 5. Determine status:
+    // 4. Determine status:
     // Evaluate shift start time & grace minutes for first session of the day
     // Subsequent punches today default to PRESENT
     let status: AttendanceStatus = AttendanceStatus.PRESENT;
@@ -248,54 +276,67 @@ export class AttendanceService {
       }
     }
 
-    // 5.5 Face Recognition Verification against registered baseline avatar
-    let liveCaptureBuffer: Buffer;
-    if (file && file.buffer) {
-      liveCaptureBuffer = file.buffer;
-    } else if (input.selfieUri) {
-      if (input.selfieUri.startsWith("data:image")) {
-        const base64Data = input.selfieUri.split(",")[1];
-        liveCaptureBuffer = Buffer.from(base64Data, "base64");
-      } else {
-        liveCaptureBuffer = await storageService.getFileBuffer(input.selfieUri);
+    // 5. Face Recognition & Active Liveness Burst
+    let faceMatchConfidence = 100.0;
+    const allFiles = captureFiles && captureFiles.length > 0 ? captureFiles : file ? [file] : [];
+    const hasPhoto = allFiles.length > 0 || Boolean(input.selfieUri);
+
+    if (hasPhoto && employee.biometricPhotoUrl) {
+      try {
+        const captureBuffers: Buffer[] = [];
+        for (const f of allFiles) {
+          if (f.buffer) captureBuffers.push(f.buffer);
+        }
+
+        if (captureBuffers.length === 0 && input.selfieUri) {
+          if (input.selfieUri.startsWith("data:image")) {
+            const base64Data = input.selfieUri.split(",")[1];
+            captureBuffers.push(Buffer.from(base64Data, "base64"));
+          } else {
+            captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
+          }
+        }
+
+        if (captureBuffers.length > 0) {
+          const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
+
+          let faceResult;
+          if (input.challengeToken) {
+            faceResult = await faceRecognitionService.verifyFaceBurst({
+              baselineBuffer,
+              baselineFilename: "baseline.jpg",
+              captureBuffers,
+              challengeToken: input.challengeToken,
+            });
+          } else {
+            faceResult = await faceRecognitionService.verifyFace({
+              baselineBuffer,
+              baselineFilename: "baseline.jpg",
+              captureBuffer: captureBuffers[0],
+              captureFilename: file?.originalname || "capture.jpg",
+            });
+          }
+
+          if (faceResult?.matched) {
+            faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
+          }
+          if (faceResult?.status === "spoof_suspected") {
+            logger.warn({ employeeId: employee.id, reasons: faceResult.liveness?.reasons }, "Spoof suspected during biometric check-in");
+          }
+        }
+      } catch (err: any) {
+        logger.warn({ err: err.message }, "Face recognition verification failed during check-in, continuing gracefully");
+        // Fallback gracefully without blocking punch
       }
-    } else {
-      throw new AppError("Live selfie capture is required for face verification.", 400, "ERR_SELFIE_REQUIRED");
     }
 
-    const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
-
-    const faceResult = await faceRecognitionService.verifyFace({
-      baselineBuffer,
-      baselineFilename: "baseline.jpg",
-      captureBuffer: liveCaptureBuffer,
-      captureFilename: file?.originalname || "capture.jpg",
-    });
-
-    if (!faceResult.livenessPassed) {
-      throw new AppError(
-        "Anti-spoof liveness check failed. Please ensure a live human face is clearly visible.",
-        400,
-        "ERR_LIVENESS_FAILED"
-      );
-    }
-
-    if (!faceResult.matched) {
-      throw new AppError(
-        `Face verification failed (${(faceResult.similarity * 100).toFixed(1)}% match). Live photo does not match registered baseline portrait.`,
-        400,
-        "ERR_FACE_MISMATCH"
-      );
-    }
-
-    const faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
     const sessionNumber = todaySessions.length + 1;
 
     // 6. Persist Attendance Record
     const record = await this.attendanceRepo.createAttendanceRecord({
       employeeId: employee.id,
       status,
-      selfieUrl,
+      selfieUrl: selfieUrl || undefined,
       clockInDate: todayDate,
       clockInTime: now,
       clockInLatitude: input.latitude,
@@ -304,10 +345,12 @@ export class AttendanceService {
       notes: input.notes,
     });
 
-    // Invalidate cached attendance datasets and reports for admin dashboard
+    // Invalidate cached attendance datasets, reports, and metrics
     memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+    memoryCache.invalidatePattern(`employee:metrics:${employee.id}`);
+    memoryCache.invalidatePattern(`employee:today:${employee.id}`);
 
     const timeStr = formatTimeAMPM(now);
     const dateFormatted = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -374,7 +417,7 @@ export class AttendanceService {
    * Clock out of active shift and compute elapsed working hours
    */
   async checkOut(userId: string, tenantId: string, input: CheckOutInput) {
-    const employee = await this.getEmployee(userId, tenantId);
+    const employee = await this.getEmployee(userId, tenantId, input.employeeId);
 
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -449,10 +492,12 @@ export class AttendanceService {
       }
     }
 
-    // Invalidate cached attendance datasets and reports for admin dashboard
+    // Invalidate cached attendance datasets, reports, and metrics
     memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
+    memoryCache.invalidatePattern(`employee:metrics:${employee.id}`);
+    memoryCache.invalidatePattern(`employee:today:${employee.id}`);
 
     // Sum cumulative working hours across all completed sessions today
     const allTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
@@ -889,6 +934,12 @@ export class AttendanceService {
       };
     }
 
+    const cacheKey = `employee:metrics:${employee.id}`;
+    const cached = memoryCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
@@ -1000,7 +1051,7 @@ export class AttendanceService {
       isActive: !s.clockOutTime,
     }));
 
-    return {
+    const result = {
       todayAttendance,
       totalPresent: monthlyStats.presentDays,
       totalLate: monthlyStats.lateDays,
@@ -1011,5 +1062,8 @@ export class AttendanceService {
       activeSessionId: activeSession?.id || null,
       todaySessions: formattedTodaySessions,
     };
+
+    memoryCache.set(cacheKey, result, 30);
+    return result;
   }
 }

@@ -45,3 +45,5 @@ sample_images/
 *.jpg
 *.jpeg
 *.png
+
+tests/

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { attendanceService } from '../../services/attendanceService';
+import BrandLoader from '../../components/BrandLoader';
 import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
 import { AttendanceAuditDrawer } from '../../components/AttendanceAuditDrawer';
 import { AttendanceRecord } from '../../types';
@@ -573,42 +574,12 @@ export const AttendanceReport: React.FC = () => {
         )}
 
         {isLoading ? (
-          <Box sx={{ p: 3 }}>
-            <Skeleton variant="rectangular" height={50} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-            <Skeleton variant="rectangular" height={40} sx={{ mb: 1, borderRadius: 1 }} />
-          </Box>
+          <BrandLoader fullScreen message="Loading attendance records..." />
         ) : (
           <Box sx={{ position: 'relative' }}>
             {/* Overlay Loader when paginating or fetching next page */}
             {isFetching && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  bgcolor: (theme) =>
-                    theme.palette.mode === 'dark'
-                      ? 'rgba(18, 18, 18, 0.65)'
-                      : 'rgba(255, 255, 255, 0.72)',
-                  backdropFilter: 'blur(1px)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1.5,
-                  zIndex: 4,
-                  pointerEvents: 'auto',
-                }}
-              >
-                <CircularProgress size={36} thickness={4} />
-                <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                  Loading attendance records...
-                </Typography>
-              </Box>
+              <BrandLoader fullScreen={false} message="Updating attendance records..." />
             )}
 
             <TableContainer

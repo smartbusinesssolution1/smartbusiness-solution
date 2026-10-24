@@ -911,6 +911,7 @@ model AttendanceRecord {
   @@index([employeeId])
   @@index([clockInDate])
   @@index([employeeId, clockInDate])
+  @@index([employeeId, clockOutTime])
   @@index([clockInDate, status])
   @@index([clockInDate(sort: Desc), clockInTime(sort: Desc)])
   @@map("attendance_records")

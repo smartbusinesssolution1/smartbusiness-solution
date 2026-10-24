@@ -74,4 +74,24 @@ export class AdminGeofenceRepository {
       },
     });
   }
+
+  /**
+   * Update tenant organization name
+   */
+  async updateTenantName(tenantId: string, name: string) {
+    return prisma.tenant.update({
+      where: { id: tenantId },
+      data: { name },
+    });
+  }
+
+  /**
+   * Update workspace / campus business name
+   */
+  async updateWorkspaceName(workspaceId: string, tenantId: string, businessName: string) {
+    return prisma.workspace.update({
+      where: { id: workspaceId, tenantId },
+      data: { businessName },
+    });
+  }
 }

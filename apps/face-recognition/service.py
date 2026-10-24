@@ -1,30 +1,43 @@
 """
-Face Recognition & Verification Service
-========================================
-(see prior docstring — unchanged in spirit)
+Attendance Face-Matching Service
+=================================
+Live-capture-only attendance flow:
+
+    profile_image (stored reference)  --\
+                                          >-- match (frontal frames) --> mark
+    live burst + server random challenge --/   + active/passive liveness
+
+One InsightFace model does detection + embedding (ArcFace via buffalo_sc).
+Liveness: random head-turn challenge, screen-border detection, passive
+heuristics (see motion_liveness.py).
 """
 
-import hashlib
+import io
+import logging
+
 import cv2
 import numpy as np
 from PIL import Image
-import io
-import insightface
-from insightface.app import FaceAnalysis
 from fastapi import HTTPException
-import logging
-from config import settings
-from schemas import PairResult, VerificationResponse, VerificationStatus
+from insightface.app import FaceAnalysis
 
-from pose_estimation import HeadPoseEstimator
+from config import settings
+from challenge import expected_frames, verify_and_consume
+from motion_liveness import analyze_burst, extract_features
+from schemas import (
+    AttendanceBurstResponse,
+    AttendanceStatus,
+    BurstLivenessDetail,
+    DetectFaceResponse,
+    FaceBox,
+)
 
 logger = logging.getLogger(__name__)
-pose_estimator = HeadPoseEstimator(static_image_mode=True)
 
 
-# ── Model Loading ─────────────────────────────────────────────────────────────
+# ── Model Loading ────────────────────────────────────────────────────────
 
-def _load_model(name: str, det_size=(640, 640)):
+def _load_model(name: str, det_size=(640, 640)) -> FaceAnalysis:
     app = FaceAnalysis(name=name, providers=["CPUExecutionProvider"])
     app.prepare(ctx_id=-1, det_size=det_size)
     logger.info(f"InsightFace model '{name}' loaded.")
@@ -32,35 +45,24 @@ def _load_model(name: str, det_size=(640, 640)):
 
 
 try:
-    face_app = _load_model("buffalo_sc")
-except Exception as _e:
-    logger.error(f"buffalo_sc failed to load: {_e}")
+    face_app = _load_model(settings.RECOGNITION_MODEL, det_size=(640, 640))
+except Exception as e:  # pragma: no cover - environment dependent
+    logger.error(f"Failed to load face model '{settings.RECOGNITION_MODEL}': {e}")
     face_app = None
 
-
-# ── Global Thresholds — all read from config, grouped by slot ────────────────
-
-SELFIE_MATCH_THRESHOLD    = settings.SELFIE_MATCH_THRESHOLD
-MIN_SELFIE_MATCH_RATIO    = settings.MIN_SELFIE_MATCH_RATIO
-NEAR_DUPLICATE_THRESHOLD  = 0.02
-
-# Slot 0 — front: yaw + pitch + roll
-FRONT_YAW_MAX   = settings.FRONT_YAW_MAX
-FRONT_PITCH_MAX = settings.FRONT_PITCH_MAX
-FRONT_ROLL_MAX  = settings.FRONT_ROLL_MAX
-
-# Slot 1 — left: yaw + roll only (pitch unconstrained)
-LEFT_YAW_MIN  = settings.LEFT_YAW_MIN
-LEFT_YAW_MAX  = settings.LEFT_YAW_MAX
-LEFT_ROLL_MAX = settings.LEFT_ROLL_MAX
-
-# Slot 2 — right: yaw + roll only (pitch unconstrained)
-RIGHT_YAW_MIN  = settings.RIGHT_YAW_MIN
-RIGHT_YAW_MAX  = settings.RIGHT_YAW_MAX
-RIGHT_ROLL_MAX = settings.RIGHT_ROLL_MAX
+# Second instance with a smaller detector input for burst capture frames —
+# these are always close-up selfie shots, so a smaller det_size loses
+# essentially no accuracy but detects noticeably faster (less pixels to
+# run the detector over). Profile photos (which may be shot from further
+# away / cropped from a bigger picture) still use the full-size `face_app`.
+try:
+    face_app_fast = _load_model(settings.RECOGNITION_MODEL, det_size=settings.BURST_DET_SIZE)
+except Exception as e:  # pragma: no cover - environment dependent
+    logger.error(f"Failed to load fast face model: {e}")
+    face_app_fast = face_app
 
 
-# ── Image Decoding ────────────────────────────────────────────────────────────
+# ── Image Decoding ───────────────────────────────────────────────────────
 
 def decode_image(image_bytes: bytes, filename: str) -> np.ndarray:
     ext = filename.rsplit(".", 1)[-1].lower()
@@ -93,239 +95,61 @@ def decode_image(image_bytes: bytes, filename: str) -> np.ndarray:
     )
 
 
-# ── Standalone pose estimation for /pose endpoint ────────────────────────────
-
-def estimate_pose_only(img_bgr: np.ndarray) -> dict:
-    """
-    Lightweight pose estimation used by the live preview endpoint.
-    Returns yaw/pitch/roll + per-slot validity flags using per-slot axis rules:
-      front         : yaw + pitch + roll
-      left  / right : yaw + roll only (pitch ignored)
-    Frontend uses these flags to color the oval green/yellow/red in real time.
-    """
-    pose = pose_estimator.estimate_pose(img_bgr)
-    if pose is None:
-        return {
-            "detected": False,
-            "yaw": None,
-            "pitch": None,
-            "roll": None,
-            "slots": {"front": False, "left": False, "right": False},
-            "thresholds": _pose_thresholds_payload(),
-        }
-
-    yaw, pitch, roll = pose["yaw"], pose["pitch"], pose["roll"]
-
-    # Each slot enforces only its relevant axes
-    front_ok = (
-        abs(roll)  <= FRONT_ROLL_MAX and
-        abs(yaw)   <= FRONT_YAW_MAX  and
-        abs(pitch) <= FRONT_PITCH_MAX
-    )
-    left_ok = (
-        abs(roll) <= LEFT_ROLL_MAX and
-        LEFT_YAW_MIN <= yaw <= LEFT_YAW_MAX
-        # pitch NOT checked for side slots
-    )
-    right_ok = (
-        abs(roll) <= RIGHT_ROLL_MAX and
-        -RIGHT_YAW_MAX <= yaw <= -RIGHT_YAW_MIN
-        # pitch NOT checked for side slots
-    )
-
-    return {
-        "detected": True,
-        "yaw":   yaw,
-        "pitch": pitch,
-        "roll":  roll,
-        "slots": {
-            "front": front_ok,
-            "left":  left_ok,
-            "right": right_ok,
-        },
-        "thresholds": _pose_thresholds_payload(),
-    }
-
-
-def _pose_thresholds_payload() -> dict:
-    """
-    Nested per-slot thresholds sent to the frontend so JS gauge/hint logic
-    reads the same values the backend enforces — no duplication.
-    """
-    return {
-        "front": {
-            "yaw_max":   FRONT_YAW_MAX,
-            "pitch_max": FRONT_PITCH_MAX,
-            "roll_max":  FRONT_ROLL_MAX,
-        },
-        "left": {
-            "yaw_min": LEFT_YAW_MIN,
-            "yaw_max": LEFT_YAW_MAX,
-            "roll_max": LEFT_ROLL_MAX,
-        },
-        "right": {
-            "yaw_min": RIGHT_YAW_MIN,
-            "yaw_max": RIGHT_YAW_MAX,
-            "roll_max": RIGHT_ROLL_MAX,
-        },
-    }
-
-
-# ── Face Detection ────────────────────────────────────────────────────────────
-
-def _bgr_to_rgb(img: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
+# ── Face Detection ───────────────────────────────────────────────────────
 
 def _largest_face(faces):
     return max(faces, key=lambda f: (f.bbox[2] - f.bbox[0]) * (f.bbox[3] - f.bbox[1]))
 
 
-def _detect(img_bgr: np.ndarray, filename: str, app=None):
-    app = app or face_app
+def _detect_faces_with_app(img_bgr: np.ndarray, app):
     if app is None:
-        raise HTTPException(status_code=500, detail="Face recognition model not loaded.")
+        return []
     try:
-        faces = app.get(_bgr_to_rgb(img_bgr))
+        return app.get(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
     except Exception as e:
-        logger.error(f"InsightFace error on '{filename}': {e}")
-        raise HTTPException(status_code=422, detail=f"Face detection failed for '{filename}': {e}")
+        logger.warning(f"InsightFace detection error with one detector: {e}")
+        return []
+
+
+def _detect_one_face(img_bgr: np.ndarray, filename: str, app=None, fallback: bool = True):
+    """
+    Detect a single face, trying `app` first and — if nothing is found —
+    falling back to the other loaded detector before giving up.
+
+    Why this matters: the fast 320px detector (used for quick burst
+    frames) can miss faces in photos where the face is smaller/further
+    from frame than a close-up selfie — which is exactly what a typical
+    profile picture looks like. Previously a missed detection on the
+    faster model just failed outright ("No face detected") even though
+    the accurate model would have found it fine. Now both are tried.
+    """
+    primary = app or face_app
+    faces = _detect_faces_with_app(img_bgr, primary)
+
+    if not faces and fallback:
+        secondary = face_app if primary is face_app_fast else face_app_fast
+        if secondary is not None and secondary is not primary:
+            faces = _detect_faces_with_app(img_bgr, secondary)
+
+    if primary is None and not faces:
+        raise HTTPException(status_code=500, detail="Face recognition model not loaded.")
     if not faces:
         raise HTTPException(
             status_code=422,
-            detail=f"No face detected in '{filename}'. Ensure the face is clearly visible and well-lit.",
+            detail=(
+                f"No face detected in '{filename}'. Make sure the face is clearly "
+                f"visible, well-lit, and not too small/far in the frame."
+            ),
         )
-    if len(faces) > 1:
-        logger.warning(f"Multiple faces in '{filename}' — using largest.")
-    return [_largest_face(faces) if len(faces) > 1 else faces[0]]
+    face = _largest_face(faces) if len(faces) > 1 else faces[0]
 
-
-# ── Duplicate detection ───────────────────────────────────────────────────────
-
-def _sha256(img: np.ndarray) -> str:
-    return hashlib.sha256(img.tobytes()).hexdigest()
-
-
-def _check_no_duplicates(selfie_images, selfie_filenames, selfie_embeddings):
-    n = len(selfie_images)
-    hashes = [_sha256(img) for img in selfie_images]
-    for i in range(n):
-        for j in range(i + 1, n):
-            if hashes[i] == hashes[j]:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Duplicate image: '{selfie_filenames[i]}' and '{selfie_filenames[j]}' are identical.",
-                )
-            dist = cosine_distance(selfie_embeddings[i], selfie_embeddings[j])
-            if dist < NEAR_DUPLICATE_THRESHOLD:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Near-duplicate: '{selfie_filenames[i]}' vs '{selfie_filenames[j]}' (dist={dist:.4f}). "
-                           f"Move slightly between shots.",
-                )
-
-
-# ── Pose helpers ──────────────────────────────────────────────────────────────
-
-def _pose(img_bgr: np.ndarray, filename: str):
-    pose = pose_estimator.estimate_pose(img_bgr)
-    if pose is None:
-        logger.warning(f"No pose detected for '{filename}'")
-        return None, None, None
-    yaw, pitch, roll = pose["yaw"], pose["pitch"], pose["roll"]
-    logger.info(f"[POSE] {filename} | yaw={yaw:.2f} pitch={pitch:.2f} roll={roll:.2f}")
-    return yaw, pitch, roll
-
-
-# ── Slot checkers ─────────────────────────────────────────────────────────────
-
-def _check_left(face, img_bgr, filename: str) -> None:
-    """
-    Slot 1 — left turn. LOGS ONLY, does not reject.
-    See _check_frontal docstring for why pose is non-blocking here.
-    """
-    yaw, _, roll = _pose(img_bgr, filename)
-    if yaw is None:
-        return
-    if (roll is not None and abs(roll) > LEFT_ROLL_MAX) or not (LEFT_YAW_MIN <= yaw <= LEFT_YAW_MAX):
-        logger.info(f"[Slot 1 — left] '{filename}': pose outside soft range (yaw={yaw:.1f}° roll={roll:.1f}°) — not rejected, logged only.")
-
-
-def _check_right(face, img_bgr, filename: str) -> None:
-    """
-    Slot 2 — right turn. LOGS ONLY, does not reject.
-    See _check_frontal docstring for why pose is non-blocking here.
-    """
-    yaw, _, roll = _pose(img_bgr, filename)
-    if yaw is None:
-        return
-    if (roll is not None and abs(roll) > RIGHT_ROLL_MAX) or not (-RIGHT_YAW_MAX <= yaw <= -RIGHT_YAW_MIN):
-        logger.info(f"[Slot 2 — right] '{filename}': pose outside soft range (yaw={yaw:.1f}° roll={roll:.1f}°) — not rejected, logged only.")
-
-
-def _check_frontal(face, img_bgr, filename: str, slot_label: str) -> None:
-    """
-    Front pose sanity check — LOGS ONLY, does not reject.
-
-    Why non-blocking: the frontend already gates capture in real time using
-    MediaPipe FaceLandmarker's transformation matrix (a full metric 3D face
-    model). This backend check uses a cruder 6-point FaceMesh + solvePnP with
-    a generic 3D model and no real camera calibration — a fundamentally
-    different algorithm that reads several degrees off the frontend's number
-    on the exact same photo (this is what caused already-"captured!" selfies
-    to come back rejected — e.g. frontend read pitch fine, backend recomputed
-    39.9° and rejected it). Hard-rejecting here means re-litigating an angle
-    the user already satisfied, with a less accurate method. Pose direction
-    doesn't affect identity matching anyway (that's the point of ArcFace);
-    the only thing that must actually gate here is face presence.
-    """
-    yaw, pitch, roll = _pose(img_bgr, filename)
-    if yaw is None:
-        return
-    if abs(roll) > FRONT_ROLL_MAX or abs(yaw) > FRONT_YAW_MAX or abs(pitch) > FRONT_PITCH_MAX:
-        logger.info(
-            f"[{slot_label}] '{filename}': pose outside soft range "
-            f"(yaw={yaw:.1f}° pitch={pitch:.1f}° roll={roll:.1f}°) — not rejected, logged only."
+    x1, y1, x2, y2 = face.bbox
+    if (x2 - x1) < settings.MIN_FACE_SIZE_PX or (y2 - y1) < settings.MIN_FACE_SIZE_PX:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Face in '{filename}' is too small/far from the camera.",
         )
-
-
-def _check_straight(face, img_bgr, filename: str) -> None:
-    _check_frontal(face, img_bgr, filename, "Slot 0 — straight")
-
-
-# ── Slot registry ─────────────────────────────────────────────────────────────
-
-SELFIE_SLOTS = {
-    0: {"label": "straight / neutral selfie",
-        "instruction": "Look straight into the camera with neutral expression",
-        "pose_check": lambda f, i, n: _check_straight(f, i, n)},
-    1: {"label": "left-turn selfie",
-        "instruction": "Turn your head to YOUR LEFT",
-        "pose_check": lambda f, i, n: _check_left(f, i, n)},
-    2: {"label": "right-turn selfie",
-        "instruction": "Turn your head to YOUR RIGHT",
-        "pose_check": lambda f, i, n: _check_right(f, i, n)},
-    3: {"label": "straight / confirm selfie",
-        "instruction": "Look straight into the camera again to confirm",
-        "pose_check": lambda f, i, n: _check_straight(f, i, n)},
-}
-REQUIRED_SELFIE_COUNT = len(SELFIE_SLOTS)
-
-
-# ── Embedding helpers ─────────────────────────────────────────────────────────
-
-def get_face_embedding(img: np.ndarray, filename: str) -> np.ndarray:
-    return _detect(img, filename)[0].embedding
-
-
-def get_face_embedding_with_pose_check(img, filename, slot_index):
-    if slot_index not in SELFIE_SLOTS:
-        raise HTTPException(status_code=400, detail=f"Unknown slot {slot_index}.")
-    slot = SELFIE_SLOTS[slot_index]
-    faces = _detect(img, filename)
-    face = faces[0]
-    slot["pose_check"](face, img, filename)
-    return face.embedding
+    return face
 
 
 def cosine_distance(a, b) -> float:
@@ -336,61 +160,158 @@ def cosine_distance(a, b) -> float:
     return float(1.0 - np.dot(a, b) / (na * nb))
 
 
-def distance_to_confidence(distance, threshold) -> float:
+def _distance_to_confidence(distance: float, threshold: float) -> float:
     return float(max(0.0, min(1.0, 1.0 - distance / (threshold * 2.0))))
 
 
-# ── Verification pipeline ─────────────────────────────────────────────────────
+def detect_face_for_preview(img_bgr: np.ndarray) -> DetectFaceResponse:
+    """
+    Lightweight detection-only call used by the frontend to draw a
+    face-outline guide (a circle/oval) over the preview image. Does not
+    run matching or liveness — just: is there a face, and where.
 
-# ── Verification pipeline — SELFIE-ONLY MODE ──────────────────────────────────
-# No reference photo. We trust the 4-selfie capture flow itself (front, left,
-# right, front-confirm) as the identity claim, and approve/reject based on
-# whether all 4 shots are mutually consistent (same face embedding cluster).
-# This is a liveness/self-consistency check, not a lookup against a stored
-# photo — so an old/bad reference photo can no longer cause a false reject.
+    Tries the FAST (320px) detector first for speed, and falls back to
+    the accurate 640px detector if nothing is found — this is what fixes
+    profile photos (where the face is often smaller/further from frame
+    than a close-up selfie) failing to detect after the earlier speed
+    optimization that used only the fast detector.
+    """
+    h, w = img_bgr.shape[:2]
+    if face_app is None and face_app_fast is None:
+        raise HTTPException(status_code=500, detail="Face recognition model not loaded.")
 
-def verify_faces(selfie_images, selfie_filenames):
-    if len(selfie_images) != REQUIRED_SELFIE_COUNT:
+    faces = _detect_faces_with_app(img_bgr, face_app_fast)
+    if not faces:
+        faces = _detect_faces_with_app(img_bgr, face_app)
+
+    if not faces:
+        return DetectFaceResponse(detected=False, image_width=w, image_height=h)
+
+    face = _largest_face(faces) if len(faces) > 1 else faces[0]
+    x1, y1, x2, y2 = [int(v) for v in face.bbox]
+    return DetectFaceResponse(
+        detected=True,
+        box=FaceBox(x1=x1, y1=y1, x2=x2, y2=y2),
+        image_width=w,
+        image_height=h,
+    )
+
+
+# ── Main attendance check ────────────────────────────────────────────────
+
+def _try_detect_face(img_bgr: np.ndarray):
+    """Largest face or None (never raises). Tries fast detector, then full."""
+    for app in (face_app_fast, face_app):
+        if app is None:
+            continue
+        faces = _detect_faces_with_app(img_bgr, app)
+        if faces:
+            f = _largest_face(faces) if len(faces) > 1 else faces[0]
+            x1, y1, x2, y2 = f.bbox
+            if (x2 - x1) >= settings.MIN_FACE_SIZE_PX and (y2 - y1) >= settings.MIN_FACE_SIZE_PX:
+                return f
+            return None
+    return None
+
+
+def mark_attendance_burst(
+    profile_img: np.ndarray,
+    capture_frames: list[np.ndarray],
+    profile_filename: str,
+    challenge_token: str,
+) -> AttendanceBurstResponse:
+    """
+    Live capture vs stored profile photo. Frames must be in capture order and
+    perform the server's random head-turn challenge (frontal, then
+    [turn, frontal] per step, then closed-eye + open-eye blink frames). See motion_liveness.py.
+    """
+    if face_app is None and face_app_fast is None:
+        raise HTTPException(status_code=500, detail="Face recognition model not loaded.")
+
+    n_steps = settings.CHALLENGE_STEPS
+    expected = expected_frames()
+    if len(capture_frames) != expected:
         raise HTTPException(
             status_code=400,
-            detail=f"Exactly {REQUIRED_SELFIE_COUNT} selfies required (got {len(selfie_images)}).",
+            detail=f"Expected exactly {expected} capture frames, got {len(capture_frames)}.",
         )
 
-    selfie_embeddings = []
-    for i, (img, fn) in enumerate(zip(selfie_images, selfie_filenames)):
-        selfie_embeddings.append(get_face_embedding_with_pose_check(img, fn, slot_index=i))
+    # Burns the token (single use) — validated before any heavy work.
+    steps = verify_and_consume(challenge_token)
+    if len(steps) != n_steps:
+        raise HTTPException(status_code=400, detail="Challenge does not match server settings. Retake.")
 
-    _check_no_duplicates(selfie_images, selfie_filenames, selfie_embeddings)
+    profile_face = _detect_one_face(profile_img, profile_filename)
 
-    pair_results, matched = [], 0
-    n = len(selfie_embeddings)
-    for i in range(n):
-        for j in range(i + 1, n):
-            d = cosine_distance(selfie_embeddings[i], selfie_embeddings[j])
-            is_match = d < SELFIE_MATCH_THRESHOLD
-            conf = distance_to_confidence(d, SELFIE_MATCH_THRESHOLD)
-            if is_match:
-                matched += 1
-            pair_results.append(PairResult(
-                selfie_a_index=i, selfie_b_index=j, is_match=is_match,
-                confidence_score=round(conf, 4), distance=round(d, 4),
-            ))
+    features = extract_features(capture_frames)
+    faces = [_try_detect_face(f) for f in capture_frames]
+    bboxes = [f.bbox if f is not None else None for f in faces]
 
-    total = len(pair_results)
-    ratio = matched / total if total else 0.0
-    overall = round(
-        (sum(p.confidence_score for p in pair_results if p.is_match) / matched) if matched
-        else max((p.confidence_score for p in pair_results), default=0.0),
-        4,
+    burst = analyze_burst(
+        capture_frames, features, bboxes, steps,
+        passive_threshold=settings.LIVENESS_THRESHOLD,
+        frontal_max=settings.FRONTAL_MAX,
+        turn_min=settings.TURN_MIN,
+        left_sign=settings.LEFT_YAW_SIGN,
+        min_frontal_frames=settings.MIN_FRONTAL_FRAMES,
+        pre_frontal_frames=settings.PRE_FRONTAL_FRAMES,
+        blink_step=settings.BLINK_STEP,
+        blink_closed_ratio=settings.BLINK_CLOSED_RATIO,
+        blink_open_ratio=settings.BLINK_OPEN_RATIO,
+        screen_hard_reject=settings.SCREEN_BORDER_HARD_REJECT,
     )
-    is_verified = ratio >= MIN_SELFIE_MATCH_RATIO
-    status = VerificationStatus.VERIFIED if is_verified else VerificationStatus.REJECTED
-    msg = (
-        f"Identity {'verified' if is_verified else 'rejected'} — "
-        f"{matched}/{total} selfie pairs consistent ({ratio*100:.1f}%)."
+    liveness_detail = BurstLivenessDetail(
+        is_live=burst.is_live,
+        liveness_score=burst.score,
+        blink_detected=burst.blink_detected,
+        motion_ok=burst.motion_ok,
+        challenge_ok=burst.challenge_ok,
+        screen_detected=burst.screen_detected,
+        reasons=burst.reasons,
+        per_frame_scores=burst.per_frame_scores,
     )
-    return VerificationResponse(
-        status=status, confidence_score=overall, matched_pairs=matched,
-        total_pairs=total, match_ratio=round(ratio, 4),
-        pair_results=pair_results, message=msg,
+
+    # Identity: majority of FRONTAL frames must match the profile photo.
+    # Turned frames only need to be "not an obviously different person".
+    frontal_faces = [(i, faces[i]) for i in burst.frontal_indices if faces[i] is not None]
+    frontal = [i for i, _ in frontal_faces]
+    if frontal_faces:
+        f_dist = [cosine_distance(profile_face.embedding, f.embedding) for _, f in frontal_faces]
+        avg_distance = float(np.mean(f_dist))
+        matched = sum(1 for d in f_dist if d < settings.MATCH_THRESHOLD)
+        is_match = matched >= (len(f_dist) // 2 + 1)
+    else:
+        avg_distance, is_match = 1.0, False
+    if is_match:
+        frontal_set = set(frontal)
+        for i, f in enumerate(faces):
+            if i not in frontal_set and f is not None:
+                if cosine_distance(profile_face.embedding, f.embedding) > settings.SAME_PERSON_MAX_DIST:
+                    is_match = False
+                    break
+    confidence = round(_distance_to_confidence(avg_distance, settings.MATCH_THRESHOLD), 4)
+
+    if not burst.is_live:
+        status = AttendanceStatus.SPOOF_SUSPECTED
+        message = f"Liveness check failed — {', '.join(burst.reasons) or 'low overall score'}."
+    elif is_match:
+        status = AttendanceStatus.MARKED
+        message = f"Attendance marked. Face matched profile photo (confidence {confidence:.2f})."
+    else:
+        status = AttendanceStatus.REJECTED
+        message = f"Face did not match the profile photo (confidence {confidence:.2f})."
+
+    logger.info(
+        f"[ATTENDANCE-BURST] steps={steps} yaws={[None if y is None else round(y, 2) for y in burst.yaws]} "
+        f"match={is_match} avg_dist={avg_distance:.4f} live={burst.is_live} score={burst.score} "
+        f"challenge={burst.challenge_ok} screen={burst.screen_detected} -> {status}"
+    )
+
+    return AttendanceBurstResponse(
+        status=status,
+        is_match=is_match,
+        match_confidence=confidence,
+        distance=round(avg_distance, 4),
+        liveness=liveness_detail,
+        message=message,
     )

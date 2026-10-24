@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useForm } from 'react-hook-form';
@@ -6,40 +6,49 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import {
   Box,
-  Card,
-  CardContent,
   TextField,
   Button,
-  Typography,
   Alert,
-  CircularProgress,
   InputAdornment,
-  MenuItem,
-  Divider,
 } from '@mui/material';
 import {
+  ShieldOutlined as ShieldIcon,
+  ArrowForward as ArrowForwardIcon,
   Apartment as ApartmentIcon,
   Person as PersonIcon,
   Email as EmailIcon,
-  ArrowForward as ArrowForwardIcon,
+  AccessTime as AccessTimeIcon,
 } from '@mui/icons-material';
+import { WorkspaceShowcase } from './components/WorkspaceShowcase';
+import { BrandLoader } from '../../components/BrandLoader';
 
-// Zod validation schema (Password field removed per specification)
+// Zod validation schema
 const registerSchema = z.object({
   companyName: z.string().trim().min(2, 'Company / Organization Name is required'),
-  fullName: z.string().trim().min(2, 'Your Full Name is required'),
+  fullName: z.string().trim().min(2, 'Administrator Full Name is required'),
   email: z.string().trim().email('Please enter a valid work email address'),
-  defaultPolicy: z.string().min(1, 'Please select a default policy'),
 });
 
 type RegisterFormValues = z.infer<typeof registerSchema>;
 
-const policyOptions = [
-  'Standard Fixed Shift (9:00 AM - 5:00 PM)',
-  'Flexible Shift (8 Hours / Day)',
-  'Field & Remote GPS Geofenced',
-  'Rotational 24/7 Shifts',
-];
+function format12h(timeStr: string): string {
+  if (!timeStr || !timeStr.includes(':')) return timeStr;
+  const [h, m] = timeStr.split(':');
+  let hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  hour = hour % 12 || 12;
+  return `${String(hour).padStart(2, '0')}:${m} ${ampm}`;
+}
+
+function calculateDuration(startStr: string, endStr: string): string {
+  if (!startStr || !endStr) return '8';
+  const [sh, sm] = startStr.split(':').map(Number);
+  const [eh, em] = endStr.split(':').map(Number);
+  let diff = (eh * 60 + em) - (sh * 60 + sm);
+  if (diff < 0) diff += 24 * 60;
+  const hours = (diff / 60).toFixed(diff % 60 === 0 ? 0 : 1);
+  return hours;
+}
 
 export const RegisterPage: React.FC = () => {
   const { register: registerWorkspace } = useAuth();
@@ -48,11 +57,14 @@ export const RegisterPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Operating shift hours state
+  const [startTime, setStartTime] = useState<string>('09:00');
+  const [endTime, setEndTime] = useState<string>('17:00');
+
   const {
     register,
     handleSubmit,
     watch,
-    setValue,
     formState: { errors },
   } = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -60,21 +72,29 @@ export const RegisterPage: React.FC = () => {
       companyName: '',
       fullName: '',
       email: '',
-      defaultPolicy: policyOptions[0],
     },
   });
 
-  const selectedPolicy = watch('defaultPolicy');
+  // Live watched inputs for real-time showcase synchronization
+  const watchedCompanyName = watch('companyName');
+  const watchedFullName = watch('fullName');
+
+  // Formatted duration badge
+  const durationText = useMemo(() => {
+    const hours = calculateDuration(startTime, endTime);
+    return `${hours}h Standard Shift`;
+  }, [startTime, endTime]);
 
   const onSubmit = async (data: RegisterFormValues) => {
     setError(null);
     setIsSubmitting(true);
     try {
+      const defaultPolicy = `Standard Shift (${format12h(startTime)} - ${format12h(endTime)})`;
       const user = await registerWorkspace(
         data.companyName,
         data.fullName,
         data.email,
-        data.defaultPolicy
+        defaultPolicy
       );
       if (user) {
         navigate('/admin/dashboard', { replace: true });
@@ -93,617 +113,372 @@ export const RegisterPage: React.FC = () => {
         bgcolor: '#F8FAFC',
         display: 'flex',
         flexDirection: 'column',
-        justifyContent: 'space-between',
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       }}
     >
-      {/* Top Navbar Header matching remix-smartbusinesssolutions */}
-      <Box
-        component="header"
-        sx={{
-          px: { xs: 2, sm: 4, md: 6 },
-          py: { xs: 1.5, sm: 2 },
-          borderBottom: '1px solid #E2E8F0',
-          bgcolor: '#FFFFFF',
-          width: '100%',
-        }}
-      >
-        <Box
-          sx={{
-            maxWidth: 1280,
-            mx: 'auto',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: { xs: 1, sm: 2 },
-            width: '100%',
-          }}
-        >
-          {/* Brand Logo & Product Badge */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1.25, sm: 1.5 } }}>
-            <Box
-              sx={{
-                width: { xs: 36, sm: 40 },
-                height: { xs: 36, sm: 40 },
-                borderRadius: '12px',
-                bgcolor: '#EFF6FF',
-                border: '1px solid #DBEAFE',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-                overflow: 'hidden',
-                transition: 'transform 0.2s ease',
-                '&:hover': { transform: 'scale(1.05)' },
-              }}
-            >
-              <Box
-                component="img"
-                src="/auth-icon.png"
-                alt="SmartBusiness"
-                sx={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'contain',
-                }}
-              />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: { xs: 0.75, sm: 1 } }}>
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: { xs: '0.92rem', sm: '1rem' },
-                  fontWeight: 800,
-                  color: '#0F172A',
-                  letterSpacing: '-0.025em',
-                }}
-              >
-                SmartBusiness
-              </Typography>
-              <Typography
-                component="span"
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.72rem',
-                  fontWeight: 600,
-                  color: '#2563EB',
-                  bgcolor: '#EFF6FF',
-                  px: 1.25,
-                  py: 0.35,
-                  borderRadius: '9999px',
-                  border: '1px solid #BFDBFE',
-                  display: { xs: 'none', sm: 'inline-block' },
-                }}
-              >
-                Clock-In Clock-Out SaaS
-              </Typography>
-            </Box>
-          </Box>
+      {/* Fullscreen centered BrandLoader overlay during submission */}
+      {isSubmitting && (
+        <BrandLoader fullScreen message="Deploying your organization workspace..." />
+      )}
 
-          {/* Right Header Navigation */}
-          <Typography
-            sx={{
-              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-              fontSize: { xs: '0.75rem', sm: '0.78rem' },
-              color: '#64748B',
-              fontWeight: 500,
-            }}
-          >
-            Already have an account?{' '}
-            <Typography
-              component="span"
-              onClick={() => navigate('/login')}
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: { xs: '0.75rem', sm: '0.78rem' },
-                color: '#2563EB',
-                fontWeight: 600,
-                cursor: 'pointer',
-                transition: 'color 0.15s ease',
-                '&:hover': {
-                  color: '#1D4ED8',
-                  textDecoration: 'underline',
-                },
-              }}
-            >
-              Sign In
-            </Typography>
-          </Typography>
-        </Box>
-      </Box>
+      {/* Main Split Screen Container */}
+      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] transition-all duration-300">
 
-      {/* Main Form Container */}
-      <Box
-        component="main"
-        sx={{
-          flex: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          p: { xs: 2, sm: 4, md: 6 },
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
-      >
-        <Card
-          className="auth-card-enter"
-          sx={{
-            width: '100%',
-            maxWidth: { xs: '100%', sm: 580 },
-            borderRadius: { xs: '20px', sm: '24px' },
-            bgcolor: '#FFFFFF',
-            border: '1px solid #E2E8F0',
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.03)',
-            transition: 'box-shadow 0.3s ease',
-            '&:hover': {
-              boxShadow: '0 25px 35px -5px rgba(0, 0, 0, 0.07), 0 10px 15px -6px rgba(0, 0, 0, 0.04)',
-            },
-          }}
+        {/* =================================================================== */}
+        {/* COLUMN 1: CREATE WORKSPACE FORM (Left Side)                         */}
+        {/* =================================================================== */}
+        <section
+          aria-labelledby="create-workspace-heading"
+          className="flex flex-col justify-between px-6 py-6 sm:px-12 md:px-16 lg:px-20 bg-[#F8FAFC]"
         >
-          <CardContent sx={{ p: { xs: 2.5, sm: 4, md: 4.5 }, '&:last-child': { pb: { xs: 2.5, sm: 4, md: 4.5 } } }}>
-            {/* Header Row: App Icon & Badge */}
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 1.5,
-                mb: { xs: 2.5, sm: 3 },
-              }}
-            >
-              <Box
-                sx={{
-                  width: { xs: 46, sm: 54 },
-                  height: { xs: 46, sm: 54 },
-                  borderRadius: { xs: '14px', sm: '16px' },
-                  bgcolor: '#EFF6FF',
-                  border: '1px solid #DBEAFE',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                  boxShadow: '0 2px 5px rgba(37, 99, 235, 0.08)',
-                  transition: 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                  '&:hover': {
-                    transform: 'scale(1.06)',
-                  },
-                }}
-              >
-                <Box
-                  component="img"
+          {/* Top Clean Brand Header (Exact match to LoginPage.tsx) */}
+          <header className="flex items-center py-2">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-[#EFF6FF] border border-[#DBEAFE] flex items-center justify-center shadow-sm overflow-hidden">
+                <img
                   src="/auth-icon.png"
-                  alt="Clock In Clock Out"
-                  sx={{
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                  }}
+                  alt="SmartBusiness"
+                  className="w-full h-full object-contain"
                 />
-              </Box>
+              </div>
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold tracking-tight text-slate-900">
+                    SmartBusiness
+                  </span>
+                  <span className="px-2 py-0.5 text-[10px] font-semibold text-[#2563EB] bg-[#EFF6FF] border border-[#BFDBFE] rounded-full">
+                    Clock-In Clock-Out SaaS
+                  </span>
+                </div>
+                <span className="font-mono text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+                  Enterprise Attendance
+                </span>
+              </div>
+            </div>
+          </header>
 
-              <Box
-                sx={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 0.75,
-                  px: { xs: 1.25, sm: 1.5 },
-                  py: { xs: 0.45, sm: 0.6 },
-                  borderRadius: '9999px',
-                  bgcolor: '#F0FDF4',
-                  border: '1px solid #BBF7D0',
+          {/* Center Create Workspace Card */}
+          <div className="flex flex-1 items-center justify-center py-8">
+            <div className="w-full max-w-[30.9rem]">
+              <div
+                className="rounded-2xl border border-slate-200 bg-white transition-all duration-300 overflow-hidden"
+                style={{
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04), 0 20px 45px -20px rgba(37, 99, 235, 0.28)',
                 }}
               >
-                <Typography
-                  sx={{
-                    fontSize: { xs: '0.72rem', sm: '0.78rem' },
-                    fontWeight: 600,
-                    color: '#15803D',
-                    letterSpacing: '0.01em',
-                  }}
-                >
-                  Enterprise Registration
-                </Typography>
-              </Box>
-            </Box>
+                <div className="p-7 sm:p-9 flex flex-col gap-5">
+                  {/* Card Header */}
+                  <div className="flex flex-col gap-1.5">
+                    <h1
+                      id="create-workspace-heading"
+                      className="text-2xl font-bold tracking-tight text-slate-900"
+                    >
+                      Create your Workspace
+                    </h1>
+                    <p className="text-sm text-slate-500 leading-relaxed">
+                      Set up attendance registers, GPS boundaries, and standard shift hours.
+                    </p>
+                  </div>
 
-            {/* Header Title & Subtitle */}
-            <Typography
-              variant="h5"
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontWeight: 800,
-                fontSize: { xs: '1.35rem', sm: '1.5rem', md: '1.65rem' },
-                color: '#0F172A',
-                letterSpacing: '-0.025em',
-                lineHeight: 1.25,
-                mb: 1,
-              }}
-            >
-              Create your Clock-In Clock-Out Workspace
-            </Typography>
-
-            <Typography
-              sx={{
-                fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                fontSize: { xs: '0.82rem', sm: '0.875rem' },
-                color: '#64748B',
-                lineHeight: 1.5,
-                mb: { xs: 2, sm: 3 },
-              }}
-            >
-              Set up your attendance tracking, geofence rules, and staff rosters in minutes.
-            </Typography>
-
-            {/* Top Divider */}
-            <Divider sx={{ mb: { xs: 2.5, sm: 3.5 }, borderColor: '#F1F5F9' }} />
-
-            {/* Error Alert */}
-            {error && (
-              <Alert
-                severity="error"
-                sx={{
-                  mb: 2.5,
-                  borderRadius: '12px',
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  animation: 'authCardEntrance 0.3s ease-out forwards',
-                }}
-              >
-                {error}
-              </Alert>
-            )}
-
-            {/* Registration Form */}
-            <form onSubmit={handleSubmit(onSubmit)}>
-              {/* Field 1: Company / Organization Name */}
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: '#1E293B',
-                  mb: 0.75,
-                }}
-              >
-                Company / Organization Name
-              </Typography>
-              <TextField
-                fullWidth
-                placeholder="e.g. Acme Financial Group LLC"
-                variant="outlined"
-                error={!!errors.companyName}
-                helperText={errors.companyName?.message}
-                disabled={isSubmitting}
-                {...register('companyName')}
-                slotProps={{
-                  input: {
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <ApartmentIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-                sx={{
-                  mb: 2.5,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '10px',
-                    bgcolor: '#FFFFFF',
-                    fontSize: '0.9rem',
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    transition: 'all 0.2s ease-in-out',
-                    '& fieldset': {
-                      borderColor: '#E2E8F0',
-                      transition: 'border-color 0.2s ease-in-out',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: '#CBD5E1',
-                    },
-                    '&.Mui-focused': {
-                      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: '#2563EB',
-                    },
-                  },
-                }}
-              />
-
-              {/* Field 2 & 3: Two Columns Row (Full Name & Work Email) */}
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                  gap: 2,
-                  mb: 2.5,
-                }}
-              >
-                {/* Left Column: Your Full Name */}
-                <Box>
-                  <Typography
-                    sx={{
-                      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      color: '#1E293B',
-                      mb: 0.75,
-                    }}
-                  >
-                    Your Full Name
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    placeholder="e.g. Maria Davis"
-                    variant="outlined"
-                    error={!!errors.fullName}
-                    helperText={errors.fullName?.message}
-                    disabled={isSubmitting}
-                    {...register('fullName')}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <PersonIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: '10px',
-                        bgcolor: '#FFFFFF',
-                        fontSize: '0.9rem',
+                  {/* Error Alert Display */}
+                  {error && (
+                    <Alert
+                      severity="error"
+                      sx={{
+                        borderRadius: '12px',
                         fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                        transition: 'all 0.2s ease-in-out',
-                        '& fieldset': {
-                          borderColor: '#E2E8F0',
-                          transition: 'border-color 0.2s ease-in-out',
-                        },
-                        '&:hover fieldset': {
-                          borderColor: '#CBD5E1',
-                        },
-                        '&.Mui-focused': {
-                          boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
-                        },
-                        '&.Mui-focused fieldset': {
-                          borderColor: '#2563EB',
-                        },
-                      },
-                    }}
-                  />
-                </Box>
+                        fontSize: '0.85rem',
+                      }}
+                    >
+                      {error}
+                    </Alert>
+                  )}
 
-                {/* Right Column: Work Email */}
-                <Box>
-                  <Typography
-                    sx={{
-                      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                      fontSize: '0.82rem',
-                      fontWeight: 600,
-                      color: '#1E293B',
-                      mb: 0.75,
-                    }}
-                  >
-                    Work Email
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    placeholder="maria@acme.com"
-                    variant="outlined"
-                    error={!!errors.email}
-                    helperText={errors.email?.message}
-                    disabled={isSubmitting}
-                    {...register('email')}
-                    slotProps={{
-                      input: {
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <EmailIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: '10px',
-                        bgcolor: '#FFFFFF',
-                        fontSize: '0.9rem',
+                  {/* One-Step Form */}
+                  <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
+
+                    {/* Organization / Company Name */}
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="companyName" className="text-xs font-semibold text-slate-700">
+                        Company / Organization Name
+                      </label>
+                      <TextField
+                        id="companyName"
+                        fullWidth
+                        placeholder="e.g. Apex Global Logistics"
+                        variant="outlined"
+                        error={!!errors.companyName}
+                        helperText={errors.companyName?.message}
+                        disabled={isSubmitting}
+                        {...register('companyName')}
+                        slotProps={{
+                          input: {
+                            startAdornment: (
+                              <InputAdornment position="start">
+                                <ApartmentIcon sx={{ fontSize: 18, color: '#94A3B8' }} />
+                              </InputAdornment>
+                            ),
+                          },
+                        }}
+                        sx={{
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: '10px',
+                            bgcolor: '#FFFFFF',
+                            fontSize: '0.88rem',
+                            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                            '& fieldset': {
+                              borderColor: '#E2E8F0',
+                              transition: 'border-color 0.2s ease-in-out',
+                            },
+                            '&:hover fieldset': {
+                              borderColor: '#CBD5E1',
+                            },
+                            '&.Mui-focused': {
+                              boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+                            },
+                            '&.Mui-focused fieldset': {
+                              borderColor: '#2563EB',
+                            },
+                          },
+                        }}
+                      />
+                    </div>
+
+                    {/* Administrator Name & Work Email (Side-by-Side) */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="fullName" className="text-xs font-semibold text-slate-700">
+                          Administrator Name
+                        </label>
+                        <TextField
+                          id="fullName"
+                          fullWidth
+                          placeholder="Alex Morgan"
+                          variant="outlined"
+                          error={!!errors.fullName}
+                          helperText={errors.fullName?.message}
+                          disabled={isSubmitting}
+                          {...register('fullName')}
+                          slotProps={{
+                            input: {
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <PersonIcon sx={{ fontSize: 17, color: '#94A3B8' }} />
+                                </InputAdornment>
+                              ),
+                            },
+                          }}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: '10px',
+                              bgcolor: '#FFFFFF',
+                              fontSize: '0.85rem',
+                              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                              '& fieldset': {
+                                borderColor: '#E2E8F0',
+                              },
+                              '&:hover fieldset': {
+                                borderColor: '#CBD5E1',
+                              },
+                              '&.Mui-focused': {
+                                boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+                              },
+                              '&.Mui-focused fieldset': {
+                                borderColor: '#2563EB',
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label htmlFor="email" className="text-xs font-semibold text-slate-700">
+                          Work Email
+                        </label>
+                        <TextField
+                          id="email"
+                          type="email"
+                          fullWidth
+                          placeholder="name@company.com"
+                          variant="outlined"
+                          error={!!errors.email}
+                          helperText={errors.email?.message}
+                          disabled={isSubmitting}
+                          {...register('email')}
+                          slotProps={{
+                            input: {
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <EmailIcon sx={{ fontSize: 17, color: '#94A3B8' }} />
+                                </InputAdornment>
+                              ),
+                            },
+                          }}
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: '10px',
+                              bgcolor: '#FFFFFF',
+                              fontSize: '0.85rem',
+                              fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                              '& fieldset': {
+                                borderColor: '#E2E8F0',
+                              },
+                              '&:hover fieldset': {
+                                borderColor: '#CBD5E1',
+                              },
+                              '&.Mui-focused': {
+                                boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+                              },
+                              '&.Mui-focused fieldset': {
+                                borderColor: '#2563EB',
+                              },
+                            },
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Standard Shift Hours: Time Pickers ONLY */}
+                    <div className="flex flex-col gap-2 pt-1">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-semibold text-slate-700">
+                          Standard Shift Hours
+                        </label>
+                        <span className="text-[10px] font-mono font-bold text-[#2563EB] bg-[#EFF6FF] px-2 py-0.5 rounded border border-[#BFDBFE]">
+                          {durationText}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Start Time Picker Card */}
+                        <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label
+                              htmlFor="shiftStartTime"
+                              className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5"
+                            >
+                              <AccessTimeIcon sx={{ fontSize: 15, color: '#2563EB' }} />
+                              Start Time
+                            </label>
+                            <span className="font-mono text-[10px] font-bold text-[#2563EB] bg-blue-50 px-1.5 py-0.5 rounded">
+                              {format12h(startTime)}
+                            </span>
+                          </div>
+                          <input
+                            type="time"
+                            id="shiftStartTime"
+                            value={startTime}
+                            onChange={(e) => setStartTime(e.target.value)}
+                            disabled={isSubmitting}
+                            className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs font-mono font-bold text-slate-900 focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/15 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* End Time Picker Card */}
+                        <div className="p-3 rounded-xl border border-slate-200 bg-slate-50/70">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label
+                              htmlFor="shiftEndTime"
+                              className="text-[11px] font-semibold text-slate-600 flex items-center gap-1.5"
+                            >
+                              <AccessTimeIcon sx={{ fontSize: 15, color: '#2563EB' }} />
+                              End Time
+                            </label>
+                            <span className="font-mono text-[10px] font-bold text-[#2563EB] bg-blue-50 px-1.5 py-0.5 rounded">
+                              {format12h(endTime)}
+                            </span>
+                          </div>
+                          <input
+                            type="time"
+                            id="shiftEndTime"
+                            value={endTime}
+                            onChange={(e) => setEndTime(e.target.value)}
+                            disabled={isSubmitting}
+                            className="w-full bg-white border border-slate-200 rounded-lg py-1.5 px-2.5 text-xs font-mono font-bold text-slate-900 focus:border-[#2563EB] focus:outline-none focus:ring-2 focus:ring-[#2563EB]/15 cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Submit Button */}
+                    <Button
+                      fullWidth
+                      size="large"
+                      type="submit"
+                      variant="contained"
+                      disabled={isSubmitting}
+                      sx={{
+                        mt: 1,
+                        py: 1.6,
+                        borderRadius: '12px',
+                        bgcolor: '#2563EB',
+                        color: '#FFFFFF',
                         fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                        transition: 'all 0.2s ease-in-out',
-                        '& fieldset': {
-                          borderColor: '#E2E8F0',
-                          transition: 'border-color 0.2s ease-in-out',
+                        fontSize: '0.93rem',
+                        fontWeight: 700,
+                        textTransform: 'none',
+                        boxShadow: '0 4px 14px rgba(37, 99, 235, 0.28)',
+                        transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 1,
+                        '&:hover': {
+                          bgcolor: '#1D4ED8',
+                          boxShadow: '0 8px 22px rgba(37, 99, 235, 0.38)',
+                          transform: 'translateY(-1.5px)',
                         },
-                        '&:hover fieldset': {
-                          borderColor: '#CBD5E1',
+                        '&:active': {
+                          transform: 'translateY(0.5px) scale(0.99)',
                         },
-                        '&.Mui-focused': {
-                          boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
+                        '& .button-arrow-icon': {
+                          transition: 'transform 0.2s ease',
                         },
-                        '&.Mui-focused fieldset': {
-                          borderColor: '#2563EB',
+                        '&:hover .button-arrow-icon': {
+                          transform: 'translateX(3px)',
                         },
-                      },
-                    }}
-                  />
-                </Box>
-              </Box>
+                      }}
+                    >
+                      Create Workspace
+                      <ArrowForwardIcon className="button-arrow-icon" sx={{ fontSize: 18 }} />
+                    </Button>
 
-              {/* Note: Password field removed per specification */}
+                  </form>
+                </div>
 
-              {/* Field 4: Dropdown Selection */}
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: '0.82rem',
-                  fontWeight: 600,
-                  color: '#1E293B',
-                  mb: 0.75,
-                }}
-              >
-                Default Attendance Policy
-              </Typography>
-              <TextField
-                select
-                fullWidth
-                value={selectedPolicy}
-                onChange={(e) => setValue('defaultPolicy', e.target.value)}
-                disabled={isSubmitting}
-                sx={{
-                  mb: 3.5,
-                  '& .MuiOutlinedInput-root': {
-                    borderRadius: '10px',
-                    bgcolor: '#FFFFFF',
-                    fontSize: '0.9rem',
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    transition: 'all 0.2s ease-in-out',
-                    '& fieldset': {
-                      borderColor: '#E2E8F0',
-                      transition: 'border-color 0.2s ease-in-out',
-                    },
-                    '&:hover fieldset': {
-                      borderColor: '#CBD5E1',
-                    },
-                    '&.Mui-focused': {
-                      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.12)',
-                    },
-                    '&.Mui-focused fieldset': {
-                      borderColor: '#2563EB',
-                    },
-                  },
-                }}
-              >
-                {policyOptions.map((opt) => (
-                  <MenuItem
-                    key={opt}
-                    value={opt}
-                    sx={{
-                      fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                      fontSize: '0.9rem',
-                    }}
+                {/* Card Footer (Exact match to LoginPage) */}
+                <div className="rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-7 py-4 text-center text-xs text-slate-500 sm:px-9">
+                  Already have an account?{' '}
+                  <span
+                    onClick={() => navigate('/login')}
+                    className="font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer hover:underline transition"
                   >
-                    {opt}
-                  </MenuItem>
-                ))}
-              </TextField>
+                    Sign In
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
 
-              {/* Submit Button with smooth hover lift and arrow glide */}
-              <Button
-                fullWidth
-                size="large"
-                type="submit"
-                variant="contained"
-                disabled={isSubmitting}
-                sx={{
-                  py: { xs: 1.35, sm: 1.5 },
-                  px: 2,
-                  borderRadius: '12px',
-                  bgcolor: '#2563EB',
-                  color: '#FFFFFF',
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  fontSize: { xs: '0.88rem', sm: '0.95rem' },
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  boxShadow: '0 4px 14px 0 rgba(37, 99, 235, 0.25)',
-                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  '&:hover': {
-                    bgcolor: '#1D4ED8',
-                    transform: 'translateY(-1.5px)',
-                    boxShadow: '0 8px 20px 0 rgba(37, 99, 235, 0.38)',
-                    '& .button-arrow-icon': {
-                      transform: 'translateX(4px)',
-                    },
-                  },
-                  '&:active': {
-                    transform: 'translateY(0.5px) scale(0.99)',
-                  },
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 1,
-                  '& .button-arrow-icon': {
-                    transition: 'transform 0.2s ease',
-                    flexShrink: 0,
-                  },
-                }}
-              >
-                {isSubmitting ? (
-                  <CircularProgress size={22} color="inherit" />
-                ) : (
-                  <>
-                    <Box component="span" sx={{ textAlign: 'center', lineHeight: 1.3 }}>
-                      Create Workspace & Launch Clock-In Clock-Out
-                    </Box>
-                    <ArrowForwardIcon className="button-arrow-icon" sx={{ fontSize: 18 }} />
-                  </>
-                )}
-              </Button>
-            </form>
+          {/* Bottom Compliance Disclaimer (Exact match to LoginPage) */}
+          <footer className="py-2 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <ShieldIcon sx={{ fontSize: 14, color: '#94A3B8' }} />
+              256-bit encrypted. Geofence locations, timestamps, and biometric records are tamper-proof and audit-ready.
+            </span>
+          </footer>
+        </section>
 
-            {/* Footer Back to Login */}
-            <Box
-              sx={{
-                textAlign: 'center',
-                mt: { xs: 2.5, sm: 3.5 },
-                pt: { xs: 2, sm: 2.5 },
-                borderTop: '1px solid #F1F5F9',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                  color: '#64748B',
-                  fontSize: { xs: '0.72rem', sm: '0.75rem' },
-                }}
-              >
-                Already have an existing workspace?{' '}
-                <Typography
-                  component="span"
-                  onClick={() => navigate('/login')}
-                  sx={{
-                    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                    color: '#2563EB',
-                    fontSize: { xs: '0.72rem', sm: '0.75rem' },
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    '&:hover': {
-                      color: '#1D4ED8',
-                      textDecoration: 'underline',
-                    },
-                  }}
-                >
-                  Sign In to Dashboard
-                </Typography>
-              </Typography>
-            </Box>
-          </CardContent>
-        </Card>
-      </Box>
+        {/* =================================================================== */}
+        {/* COLUMN 2: REAL-TIME WORKSPACE SHOWCASE (Right Side)                 */}
+        {/* =================================================================== */}
+        <WorkspaceShowcase
+          companyName={watchedCompanyName}
+          adminName={watchedFullName}
+          startTime={startTime}
+          endTime={endTime}
+        />
 
-      {/* Bottom Footer Bar matching remix-smartbusinesssolutions */}
-      <Box
-        component="footer"
-        sx={{
-          py: { xs: 1.5, sm: 2 },
-          px: { xs: 2, sm: 3 },
-          textAlign: 'center',
-          borderTop: '1px solid #E2E8F0',
-          bgcolor: '#FFFFFF',
-        }}
-      >
-        <Typography
-          sx={{
-            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-            fontSize: { xs: '0.7rem', sm: '0.75rem' },
-            color: '#94A3B8',
-            fontWeight: 500,
-          }}
-        >
-          SmartBusiness Clock-In Clock-Out SaaS · Production Suite
-        </Typography>
-      </Box>
+      </main>
     </Box>
   );
 };

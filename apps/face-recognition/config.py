@@ -3,43 +3,70 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     # ── Recognition ──────────────────────────────────────────────────────
-    RECOGNITION_MODEL: str = "ArcFace"
+    # Single InsightFace model handles both detection + embedding.
+    RECOGNITION_MODEL: str = "buffalo_sc"
     DISTANCE_METRIC: str = "cosine"
 
-    # ── Verification Thresholds — SELFIE-ONLY MODE ─────────────────────
-    # No reference photo anymore. We only check the 4 selfies are
-    # mutually consistent (same person captured in one live session).
-    SELFIE_MATCH_THRESHOLD: float = 0.60   # cosine distance below this = "same person" for a pair
-    MIN_SELFIE_MATCH_RATIO: float = 0.66   # fraction of the 6 pairs that must match to approve (4/6)
+    # Cosine distance cutoff. Lower = stricter. 0.55 is a reasonable
+    # working default for buffalo_sc; tune against your own dataset.
+    MATCH_THRESHOLD: float = 0.55
 
-    # ── SLOT 0 — FRONT (relaxed, advisory only — see service.py _check_frontal) ──
-    FRONT_YAW_MAX: float   = 25.0  # was 18
-    FRONT_PITCH_MAX: float = 45.0  # was 35 — phone selfies naturally tilt pitch
-    FRONT_ROLL_MAX: float  = 25.0  # was 20
+    # ── Liveness / Anti-Spoof ────────────────────────────────────────────
+    # Overall score (0-1, higher = more likely real) required to pass.
+    LIVENESS_THRESHOLD: float = 0.65
+    MIN_FACE_SIZE_PX: int = 80  # reject tiny/far-away faces
 
-    # ── SLOT 1 — LEFT (relaxed, advisory only) ──────────────
-    LEFT_YAW_MIN: float  = 12.0  # was 15
-    LEFT_YAW_MAX: float  = 75.0  # was 70
-    LEFT_ROLL_MAX: float = 28.0  # was 25
+    # ── Burst / Active Liveness (production path) ───────────────────────
+    # Default flow = blink only (fast for employees): 2 camera-facing frames,
+    # then ONE blink (closed-eye frame, open-eye frame) = 4 frames.
+    # Frames per submission are EXACT:
+    #   PRE_FRONTAL_FRAMES + 2*CHALLENGE_STEPS + (2 if BLINK_STEP).
+    # Optional random head turns (CHALLENGE_STEPS > 0) are kept in the code
+    # for high-security use but OFF by default.
+    # Blink step: after the camera-facing frames (and any turns) the user
+    # blinks once. Judged RELATIVE to the user's own open-eye EAR
+    # (median of their frontal frames): closed <= CLOSED_RATIO*open,
+    # then reopened >= OPEN_RATIO*open. Hard requirement when True.
+    BLINK_STEP: bool = True
+    BLINK_CLOSED_RATIO: float = 0.75
+    BLINK_OPEN_RATIO: float = 0.80
+    # Smaller detector input for burst frames = faster per-frame detection.
+    BURST_DET_SIZE: tuple[int, int] = (320, 320)
 
-    # ── SLOT 2 — RIGHT (relaxed, advisory only) ─────────────
-    RIGHT_YAW_MIN: float  = 12.0
-    RIGHT_YAW_MAX: float  = 75.0
-    RIGHT_ROLL_MAX: float = 28.0
+    # ── Server-issued random challenge (anti pre-recorded-video) ────────
+    # Server picks a random sequence of head turns (left/right) per attempt,
+    # signs it (HMAC), and verifies from the submitted frames that those
+    # turns happened IN ORDER. A pre-recorded video can't know the sequence.
+    # Single-use + short expiry (also blocks re-submitting an old burst).
+    # 2 steps = 4 possible sequences; raise to 3 for 8. Set CHALLENGE_SECRET in .env when running >1 worker/process
+    # (default is random per process).
+    CHALLENGE_STEPS: int = 0   # 0 = blink only. 2 = add random head turns (4 sequences)
+    PRE_FRONTAL_FRAMES: int = 2
+    CHALLENGE_TTL_SECONDS: int = 90
+    CHALLENGE_SECRET: str = ""
+    # Yaw ratio = (nose_x - eye_mid_x) / inter-eye distance, from FaceMesh
+    # landmarks in pixel space, on the RAW (un-mirrored) camera frame.
+    # |yaw| <= FRONTAL_MAX counts as facing camera; yaw*sign >= TURN_MIN
+    # counts as a turn. LEFT_YAW_SIGN: sign of yaw when user turns to THEIR
+    # OWN left. +1 is correct for raw front-camera frames. If left/right
+    # prompts feel swapped on your device, flip to -1 (client reads it from
+    # the server, so this is the only place to change).
+    FRONTAL_MAX: float = 0.18
+    TURN_MIN: float = 0.20
+    LEFT_YAW_SIGN: int = 1
+    # Lenient "same person all the way through" bound for turned frames
+    # (cosine distance vs profile). Only blocks an obviously different face.
+    SAME_PERSON_MAX_DIST: float = 0.80
+    MIN_FRONTAL_FRAMES: int = 2
 
-    # ── SLOT 3 — FRONT-CONFIRM ──────────────────────────────
-    # Second straight-on shot, captured last. Same thresholds as slot 0.
-    # Purpose: catch someone swapping in a different face/photo mid-flow —
-    # this is now the main anti-spoof signal since there's no reference photo.
+    # ── Screen / photo-border (object boundary) detection ───────────────
+    # Detects a rectangular screen/phone/paper outline surrounding the face.
+    # True = hard fail (spoof_suspected). Set False to only log the reason.
+    SCREEN_BORDER_HARD_REJECT: bool = True
 
-    # ── Image Constraints ───────────────────────────────────────────────
-    MAX_FILE_SIZE_MB: int = 10
+    # ── Image Constraints ────────────────────────────────────────────────
+    MAX_FILE_SIZE_MB: int = 8
     ALLOWED_EXTENSIONS: list[str] = ["jpg", "jpeg", "png"]
-    MIN_SELFIE_IMAGES: int = 4
-    MAX_SELFIE_IMAGES: int = 4
-
-    # Order: 0=front, 1=left, 2=right, 3=front-confirm
-    SELFIE_ORDER: list[str] = ["front", "left", "right", "front_confirm"]
 
     class Config:
         env_file = ".env"

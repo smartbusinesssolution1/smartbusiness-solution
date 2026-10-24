@@ -60,10 +60,10 @@ export class AdminEmployeeService {
 
     return {
       id: emp.id,
-      userId: user?.id || "",
+      userId: user?.id || emp.userId || "",
       employeeId: emp.employeeCode,
-      name: user?.fullName || "",
-      email: user?.email || "",
+      name: user?.fullName || emp.fullName || "",
+      email: user?.email || emp.email || "",
       phone: emp.phone || "",
       role: (emp.role === "admin" ? "admin" : "employee") as "admin" | "employee",
       status: (emp.isActive ? "active" : "inactive") as "active" | "inactive",
@@ -75,23 +75,32 @@ export class AdminEmployeeService {
       shiftStartTime: mondayShift?.startTime || "09:00",
       shiftEndTime: mondayShift?.endTime || "18:00",
       weeklySchedule: formattedSchedule,
-      workspaceId: workspace?.id,
-      workspaceName: workspace?.businessName,
+      workspaceId: workspace?.id || emp.workspaceId,
+      workspaceName: workspace?.businessName || emp.workspaceName,
     };
   }
 
   /**
-   * List employees with filtering and pagination
+   * List employees with filtering and pagination (Ultra-fast cached with memoryCache)
    */
   async listEmployees(tenantId: string, query: EmployeeListQueryInput, callerUserId?: string) {
+    const cacheKey = `admin:employees:${tenantId}:${JSON.stringify(query)}:${callerUserId || ""}`;
+    const cached = memoryCache.get<any>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const { items, total, page, limit, totalPages } = await this.employeeRepo.listEmployees(tenantId, query, callerUserId);
-    return {
+    const result = {
       items: items.map((emp) => this.formatEmployeeDto(emp)),
       total,
       page,
       limit,
       totalPages,
     };
+
+    memoryCache.set(cacheKey, result, 60); // 60s TTL
+    return result;
   }
 
   /**
@@ -261,9 +270,11 @@ export class AdminEmployeeService {
 
     // Invalidate cached attendance analytics for tenant
     memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:employees:${tenantId}`);
     memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+    memoryCache.invalidatePattern(`emp:by-user:${tenantId}`);
 
     return this.formatEmployeeDto(newEmployee);
   }
@@ -336,9 +347,11 @@ export class AdminEmployeeService {
 
     // Invalidate cached attendance analytics for tenant
     memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:employees:${tenantId}`);
     memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+    memoryCache.invalidatePattern(`emp:by-user:${tenantId}`);
 
     return this.formatEmployeeDto(updated);
   }
@@ -366,9 +379,11 @@ export class AdminEmployeeService {
 
     // Invalidate cached attendance analytics for tenant
     memoryCache.invalidatePattern(`active_employees:${tenantId}`);
+    memoryCache.invalidatePattern(`admin:employees:${tenantId}`);
     memoryCache.invalidatePattern(`admin:dataset:${tenantId}`);
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
+    memoryCache.invalidatePattern(`emp:by-user:${tenantId}`);
 
     return { success: true, message: "Employee profile removed successfully." };
   }

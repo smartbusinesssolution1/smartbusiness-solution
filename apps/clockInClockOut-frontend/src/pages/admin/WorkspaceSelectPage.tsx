@@ -26,6 +26,7 @@ import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import { useAuth } from '../../context/AuthContext';
 import { Workspace } from '../../types';
+import BrandLoader from '../../components/BrandLoader';
 
 export const WorkspaceSelectPage: React.FC = () => {
   const theme = useTheme();
@@ -39,6 +40,10 @@ export const WorkspaceSelectPage: React.FC = () => {
   }, [workspaces?.length, refreshWorkspaces]);
 
 
+  if (!workspaces) {
+    return <BrandLoader fullScreen message="Loading workspaces..." />;
+  }
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [name, setName] = useState('');
@@ -49,7 +54,7 @@ export const WorkspaceSelectPage: React.FC = () => {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
-  const companyName = currentTenant?.name || 'Green Acres Landscaping LLC';
+  const companyName = currentTenant?.name || 'Organization';
 
   const handleSelectWorkspace = async (ws: Workspace) => {
     try {

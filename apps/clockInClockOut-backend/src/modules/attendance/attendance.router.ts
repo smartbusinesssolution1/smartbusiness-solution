@@ -28,6 +28,12 @@ router.post(
   controller.verifyLocation
 );
 
+// GET /api/v1/attendance/challenge - Step 1.5: Acquire active-liveness signed challenge token
+router.get(
+  "/challenge",
+  controller.getChallenge
+);
+
 // POST /api/v1/attendance/check-in - Step 2: Biometric check-in punch
 router.post(
   "/check-in",
