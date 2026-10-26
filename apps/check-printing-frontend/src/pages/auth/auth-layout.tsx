@@ -17,7 +17,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className="w-full max-w-[25rem]"
           >
-            <div className="rounded-[1.25rem] border border-line bg-panel shadow-[0_1px_2px_rgb(10_10_11/0.04),0_30px_60px_-30px_rgb(37_99_235/0.25)]">
+            <div className="rounded-[1.25rem] border border-line bg-panel shadow-[0_1px_2px_rgb(12_20_39/0.04),0_30px_60px_-30px_rgb(33_86_232/0.3)]">
               <div className="flex flex-col gap-6 p-7 sm:p-8">
                 <div className="flex flex-col gap-1.5">
                   <h1 className="text-[1.375rem] font-semibold tracking-tight">{title}</h1>

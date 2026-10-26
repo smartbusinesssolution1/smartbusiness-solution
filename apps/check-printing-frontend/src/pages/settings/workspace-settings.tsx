@@ -140,7 +140,7 @@ export function ApprovalSettingsPage() {
 
       <Panel className="flex flex-wrap items-center justify-between gap-4 p-5">
         <div className="flex items-center gap-3">
-          <span className={cn("flex size-10 items-center justify-center rounded-xl", enabled ? "bg-ink text-white" : "bg-subtle text-muted")}><ShieldCheck className="size-5" /></span>
+          <span className={cn("flex size-10 items-center justify-center rounded-xl", enabled ? "bg-primary-600 text-white" : "bg-subtle text-muted")}><ShieldCheck className="size-5" /></span>
           <div>
             <p className="font-semibold">Approval workflow {enabled ? "on" : "off"}</p>
             <p className="text-sm text-muted">{enabled ? "Checks matching a rule wait for approval." : "Every check can be printed as soon as it's written."}</p>
@@ -198,7 +198,7 @@ function RuleApprovers({ ruleId }: { ruleId: string }) {
   if (data.length === 0) return <span className="text-xs text-muted">Any approver</span>;
   return (
     <div className="flex -space-x-1.5" title={data.map((a) => a.fullName).join(", ")}>
-      {data.slice(0, 4).map((a) => <span key={a.userId} className="flex size-7 items-center justify-center rounded-full border-2 border-panel bg-ink-soft text-[0.625rem] font-semibold text-white">{initials(a.fullName)}</span>)}
+      {data.slice(0, 4).map((a) => <span key={a.userId} className="flex size-7 items-center justify-center rounded-full border-2 border-panel bg-brand-deep text-[0.625rem] font-semibold text-white">{initials(a.fullName)}</span>)}
       {data.length > 4 && <span className="flex size-7 items-center justify-center rounded-full border-2 border-panel bg-subtle text-[0.625rem]">+{data.length - 4}</span>}
     </div>
   );
@@ -344,13 +344,13 @@ export function TeamSettingsPage() {
           <ul className="divide-y divide-line">
             {members.data.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-600 to-zinc-900 text-xs font-semibold text-white">{initials(m.fullName)}</span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-deep text-xs font-semibold text-white">{initials(m.fullName)}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="truncate font-medium">{m.fullName}{m.userId === session?.user.id && <span className="ml-1.5 text-xs font-normal text-muted">(you)</span>}{!m.isActive && <span className="ml-2 rounded-full bg-danger-50 px-2 py-0.5 text-[0.6875rem] font-medium text-danger-700">Deactivated · can't sign in</span>}<InvitationBadge member={m} />{m.twoFactorEnabled && <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-success-50 px-2 py-0.5 text-[0.6875rem] font-medium text-success-700"><ShieldCheck className="size-3" /> 2FA</span>}</span>
                   <span className="truncate text-xs text-muted">{m.email} · {m.status !== "ACTIVE" ? "hasn't set up their account yet" : m.lastLoginAt ? `last signed in ${ago(m.lastLoginAt)}` : "never signed in"}</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {m.roles.map((r) => <span key={r} className={cn("rounded-full px-2 py-0.5 text-xs font-medium", r === "check-admin" ? "bg-ink text-white" : "bg-subtle text-ink-soft")}>{roleLabel(r)}</span>)}
+                  {m.roles.map((r) => <span key={r} className={cn("rounded-full px-2 py-0.5 text-xs font-medium", r === "check-admin" ? "bg-primary-50 text-primary-700 ring-1 ring-primary-200 ring-inset" : "bg-subtle text-ink-soft")}>{roleLabel(r)}</span>)}
                 </div>
                 {(canManage || ownerCanReset(m)) && (
                   <Menu>
@@ -498,7 +498,7 @@ function MemberDialog({ member, onClose }: { member: Member | null; onClose: () 
                 <fieldset className="flex flex-col gap-1.5">
                   <legend className="mb-1.5 text-[0.8125rem] font-medium text-ink-soft">Roles</legend>
                   {ROLES.map((r) => (
-                    <label key={r.slug} className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-2.5 transition-colors", roles.includes(r.slug) ? "border-ink/60 bg-subtle/60" : "border-line hover:border-line-strong")}>
+                    <label key={r.slug} className={cn("flex cursor-pointer items-start gap-3 rounded-xl border p-2.5 transition-colors", roles.includes(r.slug) ? "border-primary-400 bg-primary-50/60" : "border-line hover:border-line-strong")}>
                       <Checkbox checked={roles.includes(r.slug)} onCheckedChange={(c) => setRoles((cur) => (c ? [...cur, r.slug] : cur.filter((x) => x !== r.slug)))} className="mt-0.5" />
                       <span className="flex flex-col"><span className="text-sm font-medium">{r.label}</span><span className="text-xs text-muted">{r.description}</span></span>
                     </label>

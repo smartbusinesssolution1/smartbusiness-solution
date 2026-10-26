@@ -69,13 +69,13 @@ export function SetupGuidePage() {
                   transition={{ delay: i * 0.05 }}
                   className={cn(
                     "relative flex flex-col gap-4 rounded-[var(--radius-card)] border bg-panel p-4 shadow-card sm:flex-row sm:items-center sm:p-5",
-                    isNext ? "border-ink/80 ring-4 ring-ink/5" : "border-line",
+                    isNext ? "border-primary-300 ring-4 ring-primary-100" : "border-line",
                   )}
                 >
                   <span
                     className={cn(
                       "relative z-10 flex size-[2.2rem] shrink-0 items-center justify-center rounded-xl",
-                      s.done ? "bg-success-600 text-white" : isNext ? "bg-ink text-white" : "bg-subtle text-muted",
+                      s.done ? "bg-success-600 text-white" : isNext ? "bg-primary-600 text-white" : "bg-subtle text-muted",
                     )}
                   >
                     {s.done ? <Check className="size-4" strokeWidth={3} /> : <Icon className="size-4" />}

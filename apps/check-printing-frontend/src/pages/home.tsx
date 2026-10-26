@@ -126,14 +126,14 @@ function QueueTile({ tile, data, index, onOpen }: { tile: (typeof TILES)[number]
       transition={{ delay: index * 0.05, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
         "group flex flex-col gap-3 rounded-[var(--radius-card)] border p-4 text-left shadow-card transition-all hover:-translate-y-0.5",
-        warning ? "border-warning-500/40 bg-warning-50" : "border-line bg-panel hover:border-line-strong",
+        warning ? "border-warning-500/40 bg-warning-50" : "border-line bg-panel hover:border-primary-200 hover:shadow-pop",
       )}
     >
       <div className="flex items-center justify-between">
-        <span className={cn("flex size-8 items-center justify-center rounded-lg", warning ? "bg-warning-500/15 text-warning-700" : "bg-subtle text-ink-soft")}>
+        <span className={cn("flex size-8 items-center justify-center rounded-lg", warning ? "bg-warning-500/15 text-warning-700" : "bg-primary-50 text-primary-600 ring-1 ring-primary-100 ring-inset")}>
           <Icon className="size-4" />
         </span>
-        <ArrowUpRight className={cn("size-4 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5", warning ? "text-warning-700" : "text-faint group-hover:text-ink")} />
+        <ArrowUpRight className={cn("size-4 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5", warning ? "text-warning-700" : "text-faint group-hover:text-primary-600")} />
       </div>
       <div className="flex flex-col gap-0.5">
         <span className={cn("text-[0.8125rem]", warning ? "font-medium text-warning-700" : "text-muted")}>{tile.title}</span>
@@ -162,7 +162,7 @@ function SetupCard() {
           <h2 className="text-lg font-semibold tracking-tight">{setup.next ? `Next: ${setup.next.label.toLowerCase()}` : "Almost there"}</h2>
           <p className="text-sm text-muted">{setup.next?.description ?? "Someone with the right access needs to finish the remaining steps."}</p>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-line">
-            <motion.div className="h-full rounded-full bg-ink" initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} />
+            <motion.div className="h-full rounded-full bg-gradient-to-r from-primary-500 to-primary-700" initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} />
           </div>
         </div>
         <div className="flex flex-col gap-3 lg:items-end">

@@ -147,7 +147,7 @@ function Stepper({ step }: { step: number }) {
         const current = i === step;
         return (
           <li key={s} className="flex flex-1 items-center gap-2" aria-current={current ? "step" : undefined}>
-            <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors", done ? "bg-success-600 text-white" : current ? "bg-ink text-white ring-4 ring-ink/10" : "bg-subtle text-muted")}>
+            <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors", done ? "bg-success-600 text-white" : current ? "bg-primary-600 text-white ring-4 ring-primary-100" : "bg-subtle text-muted")}>
               {done ? <Check className="size-3.5" strokeWidth={3} /> : i + 1}
             </span>
             <span className={cn("hidden text-sm sm:inline", current ? "font-semibold" : "text-muted")}>{s}</span>
@@ -172,12 +172,12 @@ function ChoiceCard({ selected, onClick, children, className }: { selected: bool
       onClick={onClick}
       className={cn(
         "relative flex flex-col gap-2 rounded-2xl border bg-panel p-3 text-left transition-all",
-        selected ? "border-ink shadow-[0_0_0_3px_rgb(10_10_11/0.07)]" : "border-line hover:border-line-strong",
+        selected ? "border-primary-500 bg-primary-50/40 shadow-[0_0_0_3px_rgb(33_86_232/0.12)]" : "border-line hover:border-line-strong",
         className,
       )}
     >
       {selected && (
-        <motion.span layoutId={undefined} initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-2.5 right-2.5 flex size-5 items-center justify-center rounded-full bg-ink text-white">
+        <motion.span layoutId={undefined} initial={{ scale: 0 }} animate={{ scale: 1 }} className="absolute top-2.5 right-2.5 flex size-5 items-center justify-center rounded-full bg-primary-600 text-white">
           <Check className="size-3" strokeWidth={3} />
         </motion.span>
       )}
@@ -789,7 +789,7 @@ function VerificationPanel({ profile, startOpen }: { profile: PrinterProfile; st
       />
       <div className="flex gap-1 border-b border-line px-5 py-2.5 text-xs">
         {(["print", "measure", "result"] as const).map((s, i) => (
-          <span key={s} className={cn("rounded-full px-2.5 py-1 font-medium", stage === s ? "bg-ink text-white" : "text-muted")}>
+          <span key={s} className={cn("rounded-full px-2.5 py-1 font-medium", stage === s ? "bg-primary-600 text-white" : "text-muted")}>
             {i + 1}. {s === "print" ? "Print" : s === "measure" ? "Measure" : "Result"}
           </span>
         ))}

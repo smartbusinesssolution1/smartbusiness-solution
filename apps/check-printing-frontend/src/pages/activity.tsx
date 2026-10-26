@@ -251,7 +251,7 @@ function Entry({ item, wid }: { item: ActivityItem; wid: string }) {
       <span
         className={cn(
           "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-semibold text-white",
-          failed ? "bg-danger-600" : "bg-gradient-to-br from-zinc-600 to-zinc-900",
+          failed ? "bg-danger-600" : "bg-brand-deep",
         )}
         aria-hidden
       >

@@ -9,7 +9,8 @@ const STATUS: Record<CheckStatus, { label: string; tone: string; icon: typeof Cl
   APPROVED: { label: "Approved", tone: "bg-success-50 text-success-700 ring-success-500/25", icon: ThumbsUp },
   REJECTED: { label: "Rejected", tone: "bg-danger-50 text-danger-700 ring-danger-500/20", icon: Undo2 },
   PRINTED: { label: "Printed", tone: "bg-primary-50 text-primary-700 ring-primary-500/20", icon: Printer },
-  CLEARED: { label: "Cleared", tone: "bg-ink text-white ring-ink", icon: CheckCheck },
+  // Settled: the deep end of the blue lifecycle (Printed is the light end).
+  CLEARED: { label: "Cleared", tone: "bg-primary-900 text-white ring-primary-900", icon: CheckCheck },
   VOID: { label: "Void", tone: "bg-danger-50 text-danger-700 ring-danger-500/20", icon: Ban },
 };
 

@@ -208,7 +208,7 @@ function CreateWorkspaceForm() {
           <div className="grid grid-cols-3 gap-2 text-xs text-muted">
             {["Business", "Bank account", "Printer"].map((s, i) => (
               <div key={s} className="flex items-center gap-2 rounded-xl border border-line bg-panel/70 px-3 py-2">
-                <span className={i === 0 ? "flex size-5 items-center justify-center rounded-md bg-ink text-[0.625rem] text-white" : "flex size-5 items-center justify-center rounded-md bg-subtle text-[0.625rem]"}>{i + 1}</span>
+                <span className={i === 0 ? "flex size-5 items-center justify-center rounded-md bg-primary-600 text-[0.625rem] text-white" : "flex size-5 items-center justify-center rounded-md bg-subtle text-[0.625rem]"}>{i + 1}</span>
                 {s}
               </div>
             ))}

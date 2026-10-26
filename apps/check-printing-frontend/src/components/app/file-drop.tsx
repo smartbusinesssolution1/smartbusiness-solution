@@ -51,7 +51,7 @@ export function FileDrop({
         className={cn(
           "dot-grid flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed text-center transition-colors disabled:cursor-not-allowed disabled:opacity-50",
           compact ? "px-4 py-5" : "px-6 py-10",
-          over ? "border-accent bg-primary-50/60" : "border-line-strong bg-subtle/40 hover:border-ink/30 hover:bg-subtle/70",
+          over ? "border-accent bg-primary-50/60" : "border-line-strong bg-subtle/40 hover:border-primary-300 hover:bg-primary-50/40",
           className,
         )}
       >

@@ -81,7 +81,7 @@ export function EmptyState({
 }) {
   return (
     <div className={cn("dot-grid flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line-strong px-6 py-12 text-center", className)}>
-      <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-panel text-ink-soft shadow-card [&_svg]:size-5">{icon}</div>
+      <div className="flex size-11 items-center justify-center rounded-xl border border-primary-100 bg-panel text-primary-600 shadow-card [&_svg]:size-5">{icon}</div>
       <div className="flex max-w-sm flex-col gap-1">
         <p className="font-semibold">{title}</p>
         {description && <p className="text-sm leading-relaxed text-muted">{description}</p>}

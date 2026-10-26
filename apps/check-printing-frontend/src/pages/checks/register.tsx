@@ -262,7 +262,7 @@ function FilterPopover({ filters, banks, activeCount, onApply }: {
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <Button variant="secondary" size="sm" className="h-9">
-          <Filter /> Filters {activeCount > 0 && <span className="rounded-md bg-ink px-1.5 font-mono text-[0.6875rem] text-white">{activeCount}</span>} <ChevronDown className="opacity-50" />
+          <Filter /> Filters {activeCount > 0 && <span className="rounded-md bg-primary-600 px-1.5 font-mono text-[0.6875rem] text-white">{activeCount}</span>} <ChevronDown className="opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[22rem] p-4">

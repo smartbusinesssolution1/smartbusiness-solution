@@ -9,8 +9,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        primary: "bg-ink text-white shadow-button hover:bg-ink-soft",
-        secondary: "bg-panel text-ink border border-line shadow-[0_1px_2px_rgb(10_10_11/0.04)] hover:bg-subtle hover:border-line-strong",
+        primary: "bg-brand text-white shadow-button hover:brightness-[1.07] active:brightness-95",
+        secondary: "bg-panel text-ink border border-line shadow-[0_1px_2px_rgb(12_20_39/0.04)] hover:border-primary-200 hover:bg-primary-50/40 hover:text-primary-800",
         ghost: "text-ink-soft hover:bg-subtle hover:text-ink",
         danger: "bg-danger-600 text-white shadow-[0_1px_2px_rgb(185_28_28/0.3)] hover:bg-danger-700",
         "danger-soft": "bg-danger-50 text-danger-700 hover:bg-danger-50/70 border border-danger-500/20",

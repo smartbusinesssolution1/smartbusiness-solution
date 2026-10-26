@@ -127,7 +127,7 @@ export const SignaturePad = React.forwardRef<SignaturePadHandle, { onChange?: (h
           type="button"
           onClick={clear}
           disabled={!hasInk}
-          className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-xs font-medium text-white shadow-button transition-opacity disabled:opacity-0"
+          className="absolute right-3 bottom-3 inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-xs font-medium text-white shadow-pop transition-opacity disabled:opacity-0"
         >
           <Eraser className="size-3.5" /> Clear
         </button>

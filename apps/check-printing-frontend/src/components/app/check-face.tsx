@@ -42,7 +42,7 @@ export function CheckFace(p: CheckFaceProps) {
   const words = p.amountInWords ? `${p.amountInWords} ` : "";
 
   return (
-    <div className={cn("relative w-full overflow-hidden rounded-[0.625rem] shadow-[0_1px_2px_rgb(10_10_11/0.06),0_18px_40px_-20px_rgb(10_10_11/0.35)] ring-1 ring-ink/10", p.className)}>
+    <div className={cn("relative w-full overflow-hidden rounded-[0.625rem] shadow-[0_1px_2px_rgb(12_20_39/0.06),0_18px_40px_-20px_rgb(16_36_94/0.35)] ring-1 ring-ink/10", p.className)}>
       <svg viewBox={`0 0 ${W} ${H}`} className="safety-paper block h-auto w-full" role="img" aria-label={`Check ${p.checkNumber ?? ""} to ${p.payeeName || "payee"} for ${p.amount ? `$${p.amount}` : "an amount"}`}>
         <defs>
           <linearGradient id={`band${uid}`} x1="0" x2="1">
