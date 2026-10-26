@@ -53,7 +53,7 @@ export function ApprovalsPage() {
                     aria-current={c.id === current?.id}
                     className={cn("relative flex w-full flex-col gap-1 px-5 py-3 text-left transition-colors", c.id === current?.id ? "bg-subtle" : "hover:bg-subtle/60")}
                   >
-                    {c.id === current?.id && <motion.span layoutId="queue-active" className="absolute inset-y-0 left-0 w-0.5 bg-ink" />}
+                    {c.id === current?.id && <motion.span layoutId="queue-active" className="absolute inset-y-0 left-0 w-[3px] rounded-r-full bg-primary-600" />}
                     <div className="flex items-center justify-between gap-3">
                       <span className="truncate font-medium">{c.payeeName}</span>
                       <span className="font-mono text-sm num">{money(c.amount)}</span>

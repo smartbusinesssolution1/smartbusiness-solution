@@ -17,7 +17,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
             transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
             className="w-full max-w-[25rem]"
           >
-            <div className="rounded-[1.25rem] border border-line bg-panel shadow-[0_1px_2px_rgb(10_10_11/0.04),0_30px_60px_-30px_rgb(37_99_235/0.25)]">
+            <div className="rounded-[1.25rem] border border-line bg-panel shadow-[0_1px_2px_rgb(12_20_39/0.04),0_30px_60px_-30px_rgb(33_86_232/0.3)]">
               <div className="flex flex-col gap-6 p-7 sm:p-8">
                 <div className="flex flex-col gap-1.5">
                   <h1 className="text-[1.375rem] font-semibold tracking-tight">{title}</h1>
@@ -52,10 +52,15 @@ function Showcase() {
   }, []);
   const done = Math.min(step, STEPS.length);
 
+  // The brand's one bold moment: a deep navy-to-cobalt stage, soft light from above, and
+  // the white check floating on it.
   return (
-    <div className="relative hidden overflow-hidden border-l border-line bg-subtle lg:flex lg:flex-col lg:justify-center">
-      <div className="dot-grid absolute inset-0 opacity-70 [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]" />
-      <svg className="absolute inset-0 h-full w-full text-line-strong/60" aria-hidden="true">
+    <div className="bg-brand-deep relative hidden overflow-hidden text-white lg:flex lg:flex-col lg:justify-center">
+      {/* Light: a cobalt bloom behind the check, a cool glow from the top corner. */}
+      <div className="absolute top-[38%] left-1/2 size-[42rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary-500/30 blur-[120px]" />
+      <div className="absolute -top-40 -right-32 size-[30rem] rounded-full bg-primary-300/20 blur-[100px]" />
+      <div className="absolute inset-0 [background-image:radial-gradient(circle_at_1px_1px,rgb(255_255_255/0.09)_1px,transparent_0)] [background-size:16px_16px] [mask-image:radial-gradient(ellipse_at_center,black_25%,transparent_75%)]" />
+      <svg className="absolute inset-0 h-full w-full text-white/10" aria-hidden="true">
         {[140, 240, 340, 440].map((r) => (
           <circle key={r} cx="50%" cy="46%" r={r} fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="2 6" />
         ))}
@@ -63,7 +68,7 @@ function Showcase() {
 
       <div className="relative mx-auto flex w-full max-w-xl flex-col gap-8 px-10">
         <div className="flex flex-col gap-2">
-          <span className="eyebrow">Print checks on plain paper</span>
+          <span className="font-mono text-[0.6875rem] font-medium tracking-[0.12em] text-primary-200 uppercase">Print checks on plain paper</span>
           <p className="text-[1.65rem] leading-snug font-semibold tracking-tight text-balance">
             From the bookkeeper's draft to a bank-ready check, with every approval on record.
           </p>
@@ -73,6 +78,7 @@ function Showcase() {
           <motion.div
             animate={{ y: done >= 3 ? 0 : 10, rotate: done >= 3 ? -1.2 : 0 }}
             transition={{ type: "spring", stiffness: 120, damping: 18 }}
+            className="rounded-[0.625rem] shadow-[0_30px_80px_-24px_rgb(4_10_40/0.7)]"
           >
             <CheckFace
               companyName="Green Acres Landscaping LLC"
@@ -108,12 +114,18 @@ function Showcase() {
             const reached = i < done;
             const Icon = s.icon;
             return (
-              <li key={s.label} className={cn("flex flex-col gap-2 rounded-xl border bg-panel/80 p-3 backdrop-blur transition-all duration-300", reached ? "border-line-strong shadow-card" : "border-line opacity-60")}>
-                <span className={cn("flex size-7 items-center justify-center rounded-lg transition-colors duration-300", reached ? "bg-ink text-white" : "bg-subtle text-faint")}>
+              <li
+                key={s.label}
+                className={cn(
+                  "flex flex-col gap-2 rounded-xl border p-3 backdrop-blur-md transition-all duration-300",
+                  reached ? "border-white/30 bg-white/[0.14] shadow-[0_12px_30px_-14px_rgb(4_10_40/0.6)]" : "border-white/12 bg-white/[0.06]",
+                )}
+              >
+                <span className={cn("flex size-7 items-center justify-center rounded-lg transition-colors duration-300", reached ? "bg-white text-primary-700" : "bg-white/12 text-white/75")}>
                   <Icon className="size-3.5" />
                 </span>
-                <span className="text-[0.8125rem] font-semibold">{s.label}</span>
-                <span className="text-[0.6875rem] leading-tight text-muted">{s.detail}</span>
+                <span className={cn("text-[0.8125rem] font-semibold transition-colors", reached ? "text-white" : "text-white/85")}>{s.label}</span>
+                <span className={cn("text-[0.6875rem] leading-tight transition-colors", reached ? "text-primary-100" : "text-primary-100/75")}>{s.detail}</span>
               </li>
             );
           })}

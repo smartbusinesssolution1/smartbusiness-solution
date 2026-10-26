@@ -74,14 +74,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-dvh">
-      <aside className="sticky top-0 hidden h-dvh w-[15.5rem] shrink-0 border-r border-line bg-[#fafafa] lg:block">
+      <aside className="sticky top-0 hidden h-dvh w-[15.5rem] shrink-0 border-r border-line bg-sidebar lg:block">
         <SidebarContent />
       </aside>
 
       <D.Root open={mobileOpen} onOpenChange={setMobileOpen}>
         <D.Portal>
           <D.Overlay className="fixed inset-0 z-40 bg-ink/25 backdrop-blur-[2px] data-[state=open]:animate-overlay-in lg:hidden" />
-          <D.Content className="fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[85vw] border-r border-line bg-[#fafafa] shadow-pop outline-none data-[state=open]:animate-sheet-in lg:hidden">
+          <D.Content className="fixed inset-y-0 left-0 z-50 w-[17rem] max-w-[85vw] border-r border-line bg-sidebar shadow-pop outline-none data-[state=open]:animate-sheet-in lg:hidden">
             <D.Title className="sr-only">Navigation</D.Title>
             <D.Description className="sr-only">Pages in this workspace</D.Description>
             <D.Close className="absolute top-4 right-3 rounded-lg p-1.5 text-muted hover:bg-subtle" aria-label="Close menu">
@@ -135,7 +135,7 @@ function SidebarContent() {
       {can("check:create") && (
         <NavLink
           to={`/w/${wid}/checks/new`}
-          className="group flex h-9 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-ink text-sm font-medium text-white shadow-button transition-colors hover:bg-ink-soft"
+          className="group flex h-9 items-center justify-center gap-2 rounded-[var(--radius-control)] bg-brand text-sm font-medium text-white shadow-button transition-[filter] hover:brightness-[1.07]"
         >
           <PenLine className="size-4 transition-transform group-hover:-rotate-6" /> Write check
         </NavLink>
@@ -173,16 +173,20 @@ function NavItem({ entry, wid, count, alert }: { entry: NavEntry; wid: string; c
       className={({ isActive }) =>
         cn(
           "relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
-          isActive ? "font-medium text-white" : "text-ink-soft hover:bg-subtle hover:text-ink",
+          isActive ? "font-medium text-primary-700" : "text-ink-soft hover:bg-subtle hover:text-ink",
         )
       }
     >
       {({ isActive }) => (
         <>
           {isActive && (
-            <motion.span layoutId="nav-active" className="absolute inset-0 rounded-lg bg-ink shadow-button" transition={{ type: "spring", stiffness: 520, damping: 40 }} />
+            // Where you are: a soft cobalt tint with a slim accent bar, so the solid "Write check"
+            // button stays the one loud thing in the sidebar.
+            <motion.span layoutId="nav-active" className="absolute inset-0 rounded-lg bg-primary-100/60 ring-1 ring-primary-200/60 ring-inset" transition={{ type: "spring", stiffness: 520, damping: 40 }}>
+              <span className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-primary-600" />
+            </motion.span>
           )}
-          <Icon className="relative size-4" />
+          <Icon className={cn("relative size-4", isActive && "text-primary-600")} />
           <span className="relative flex-1">{entry.label}</span>
           {alert !== undefined && alert > 0 && (
             <span className="relative flex size-2 rounded-full bg-warning-500" title={`${alert} printed check${alert === 1 ? "" : "s"} not confirmed`}>
@@ -190,7 +194,7 @@ function NavItem({ entry, wid, count, alert }: { entry: NavEntry; wid: string; c
             </span>
           )}
           {count !== undefined && count > 0 && (
-            <span className={cn("relative rounded-md px-1.5 font-mono text-[0.6875rem] num", isActive ? "bg-white/15 text-white" : "bg-line/80 text-ink-soft")}>{count}</span>
+            <span className={cn("relative rounded-md px-1.5 font-mono text-[0.6875rem] num", isActive ? "bg-primary-100 text-primary-700" : "bg-line/80 text-ink-soft")}>{count}</span>
           )}
         </>
       )}
@@ -295,7 +299,7 @@ function UserMenu() {
   return (
     <Menu>
       <MenuTrigger className="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition-colors hover:bg-subtle">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-zinc-700 to-zinc-950 text-xs font-semibold text-white">{initials(session.user.fullName)}</span>
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-deep text-xs font-semibold text-white">{initials(session.user.fullName)}</span>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[0.8125rem] font-medium">{session.user.fullName}</span>
           <span className="truncate text-[0.6875rem] text-muted capitalize">{roles}</span>

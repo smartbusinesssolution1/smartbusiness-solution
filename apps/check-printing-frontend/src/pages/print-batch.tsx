@@ -168,7 +168,7 @@ export function BatchSetupPage() {
                     role="radio"
                     aria-checked={printer?.id === p.id}
                     onClick={() => { setPrinterId(p.id); setStartChoice(null); }}
-                    className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition-all", printer?.id === p.id ? "border-ink shadow-[0_0_0_3px_rgb(10_10_11/0.07)]" : "border-line hover:border-line-strong")}
+                    className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition-all", printer?.id === p.id ? "border-primary-500 bg-primary-50/40 shadow-[0_0_0_3px_rgb(33_86_232/0.12)]" : "border-line hover:border-line-strong")}
                   >
                     <div className="w-9 shrink-0"><PaperDiagram layout={p.layout} paper={p.paperSize} /></div>
                     <div className="flex min-w-0 flex-1 flex-col">
@@ -186,7 +186,7 @@ export function BatchSetupPage() {
                 <span className="text-[0.8125rem] font-medium text-ink-soft">First blank slot on the sheet in the tray</span>
                 <div role="radiogroup" aria-label="First blank slot" className="grid grid-cols-3 gap-2">
                   {([1, 2, 3] as const).map((n) => (
-                    <button key={n} type="button" role="radio" aria-checked={start === n} onClick={() => setStartChoice(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", start === n ? "border-ink bg-subtle" : "border-line hover:border-line-strong")}>
+                    <button key={n} type="button" role="radio" aria-checked={start === n} onClick={() => setStartChoice(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", start === n ? "border-primary-500 bg-primary-50 text-primary-800" : "border-line hover:border-line-strong")}>
                       <div className="w-8"><PaperDiagram layout="THREE_PER_PAGE" paper={printer.paperSize} slot={n} /></div>
                       {n === 1 ? "Top" : n === 2 ? "Middle" : "Bottom"}
                     </button>
@@ -340,7 +340,7 @@ function BatchJob({ job, refetch }: { job: PrintBatch; refetch: () => Promise<un
         <ol className="flex items-center gap-2" aria-label="Printing steps">
           {steps.map((label, i) => (
             <li key={label} className="flex flex-1 items-center gap-2" aria-current={i === stepIndex ? "step" : undefined}>
-              <span className={cn("flex size-7 items-center justify-center rounded-full text-xs font-semibold", i < stepIndex ? "bg-success-600 text-white" : i === stepIndex ? "bg-ink text-white ring-4 ring-ink/10" : "bg-subtle text-muted")}>
+              <span className={cn("flex size-7 items-center justify-center rounded-full text-xs font-semibold", i < stepIndex ? "bg-success-600 text-white" : i === stepIndex ? "bg-primary-600 text-white ring-4 ring-primary-100" : "bg-subtle text-muted")}>
                 {i < stepIndex ? <CheckIcon className="size-3.5" strokeWidth={3} /> : i + 1}
               </span>
               <span className={cn("text-sm", i === stepIndex ? "font-semibold" : "text-muted")}>{label}</span>

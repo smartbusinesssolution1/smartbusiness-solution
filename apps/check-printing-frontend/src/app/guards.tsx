@@ -18,7 +18,7 @@ export function Splash() {
       <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.3 }} className="flex flex-col items-center gap-4">
         <BrandMark className="size-10" />
         <div className="h-1 w-24 overflow-hidden rounded-full bg-line">
-          <motion.div className="h-full w-1/3 rounded-full bg-ink" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
+          <motion.div className="h-full w-1/3 rounded-full bg-primary-600" animate={{ x: ["-100%", "300%"] }} transition={{ duration: 1.1, repeat: Infinity, ease: "easeInOut" }} />
         </div>
       </motion.div>
     </div>

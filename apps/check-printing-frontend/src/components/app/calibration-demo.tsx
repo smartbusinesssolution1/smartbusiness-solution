@@ -126,7 +126,7 @@ export function CalibrationDemo({ paper, autoPlay = true, className }: { paper: 
             {SCENES.map((s, i) => (
               <button key={i} type="button" aria-label={`Scene ${i + 1}: ${s.caption}`} onClick={() => goTo(i)} className="group flex h-6 flex-1 items-center">
                 <span className="relative h-1.5 w-full overflow-hidden rounded-full bg-line transition-[height] group-hover:h-2">
-                  {i < index || (ended && i === index) ? <span className="absolute inset-0 bg-ink" /> : i === index ? <Fill progress={progress} /> : null}
+                  {i < index || (ended && i === index) ? <span className="absolute inset-0 bg-primary-600" /> : i === index ? <Fill progress={progress} /> : null}
                 </span>
               </button>
             ))}
@@ -140,7 +140,7 @@ export function CalibrationDemo({ paper, autoPlay = true, className }: { paper: 
 
 function Fill({ progress }: { progress: MotionValue<number> }) {
   const width = useTransform(progress, (v) => `${v * 100}%`);
-  return <motion.span className="absolute inset-y-0 left-0 bg-ink" style={{ width }} />;
+  return <motion.span className="absolute inset-y-0 left-0 bg-primary-600" style={{ width }} />;
 }
 
 // Example readings: close to the ideal measurements, as real ones are, never equal to them.
@@ -201,7 +201,7 @@ function GridScene({ mode }: { mode: GridMode }) {
                       {active && (
                         <>
                           {typing.slice(0, typed)}
-                          {!typedAll && <motion.span className="ml-0.5 inline-block h-4 w-0.5 bg-ink" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} />}
+                          {!typedAll && <motion.span className="ml-0.5 inline-block h-4 w-0.5 bg-primary-600" animate={{ opacity: [1, 0, 1] }} transition={{ duration: 0.8, repeat: Infinity }} />}
                         </>
                       )}
                       {firstRowDone && value}

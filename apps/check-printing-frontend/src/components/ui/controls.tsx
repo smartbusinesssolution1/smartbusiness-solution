@@ -11,7 +11,7 @@ export function Switch({ className, ...props }: React.ComponentProps<typeof S.Ro
   return (
     <S.Root
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-line-strong transition-colors data-[state=checked]:bg-ink disabled:cursor-not-allowed disabled:opacity-50",
+        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full bg-line-strong transition-colors data-[state=checked]:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}
@@ -27,7 +27,7 @@ export function Checkbox({ className, ...props }: React.ComponentProps<typeof C.
   return (
     <C.Root
       className={cn(
-        "flex size-[1.125rem] shrink-0 items-center justify-center rounded-[0.3rem] border border-line-strong bg-panel transition-colors data-[state=checked]:border-ink data-[state=checked]:bg-ink disabled:opacity-50",
+        "flex size-[1.125rem] shrink-0 items-center justify-center rounded-[0.3rem] border border-line-strong bg-panel transition-colors data-[state=checked]:border-primary-600 data-[state=checked]:bg-primary-600 disabled:opacity-50",
         className,
       )}
       {...props}

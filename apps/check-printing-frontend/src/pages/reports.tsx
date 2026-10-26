@@ -104,7 +104,7 @@ function AgingReport() {
                   <span className={cn(stale ? "font-medium text-warning-700" : "text-muted")}>{b.label}</span>
                   <span className="h-6 overflow-hidden rounded-md bg-subtle">
                     <motion.span
-                      className={cn("block h-full rounded-md", stale ? "bg-warning-500" : "bg-ink")}
+                      className={cn("block h-full rounded-md", stale ? "bg-warning-500" : "bg-primary-600")}
                       initial={{ width: 0 }}
                       animate={{ width: `${Math.max(pct, Number(b.amount) > 0 ? 1.5 : 0)}%` }}
                       transition={{ delay: i * 0.08, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
@@ -132,7 +132,7 @@ const STATE_STYLE: Record<string, { label: string; className: string }> = {
   APPROVED: { label: "Approved", className: "bg-success-50 text-success-700" },
   REJECTED: { label: "Rejected", className: "bg-danger-50 text-danger-700" },
   PRINTED: { label: "Printed", className: "bg-primary-50 text-primary-700" },
-  CLEARED: { label: "Cleared", className: "bg-ink text-white" },
+  CLEARED: { label: "Cleared", className: "bg-primary-900 text-white" },
   VOID: { label: "Void", className: "bg-danger-50 text-danger-700 line-through" },
   DELETED_DRAFT: { label: "Deleted draft", className: "bg-subtle text-faint line-through" },
   NOT_ISSUED: { label: "Not issued yet", className: "bg-transparent text-faint ring-1 ring-line ring-dashed" },
