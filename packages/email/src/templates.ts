@@ -1,5 +1,6 @@
 import { escapeHtml, safeLink } from "./escape.js";
 import type { EmailMessage } from "./types.js";
+import { emailAssets } from "./assets.js";
 
 // EMAIL TEMPLATES
 // Every email's wording lives here, in one reviewable place. Each template takes
@@ -42,30 +43,272 @@ function layout(
   );
 }
 
-/** Sent after "Forgot password". */
+/** Sent after "Forgot password" - Branded Clock-In Clock-Out & SmartBusiness Template. */
 export function passwordResetEmail(input: {
   name: string;
   resetUrl: string;
   expiresInMinutes: number;
+  playStoreUrl?: string;
+  appStoreUrl?: string;
 }): EmailTemplate {
-  const href = safeLink(input.resetUrl);
+  const {
+    resetUrl,
+    expiresInMinutes = 15,
+    playStoreUrl = "#",
+    appStoreUrl = "#",
+  } = input;
+
+  const subject = `Reset Your Password - SmartBusiness`;
+  const font = `'Segoe UI', Arial, Helvetica, sans-serif`;
+
+  const html = `
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${subject}</title>
+  
+  <!--[if mso]>
+  <style type="text/css">
+    body, table, td, h1, p, a, div, span {
+      font-family: 'Segoe UI', Arial, sans-serif !important;
+    }
+  </style>
+  <![endif]-->
+
+  <style type="text/css">
+    body, table, td, h1, p, a, div, span {
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    }
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background-color: #ebf3fb !important;
+      -webkit-font-smoothing: antialiased !important;
+    }
+    table {
+      border-collapse: separate !important;
+    }
+    img {
+      border: 0 !important;
+      outline: none !important;
+      text-decoration: none !important;
+      -ms-interpolation-mode: bicubic;
+    }
+    @media only screen and (max-width: 620px) {
+      .card-wrap {
+        padding: 24px 16px !important;
+        border-radius: 18px !important;
+      }
+      .main-title {
+        font-size: 26px !important;
+      }
+      .logo-title {
+        font-size: 16px !important;
+      }
+      .logo-sub {
+        font-size: 13px !important;
+      }
+      .app-button {
+        display: block !important;
+        margin: 6px auto !important;
+      }
+    }
+  </style>
+</head>
+<body bgcolor="#ebf3fb" style="margin: 0; padding: 0; background-color: #ebf3fb; font-family: ${font}; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
+
+  <!-- Background Wrapper -->
+  <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ebf3fb" style="width: 100%; background-color: #ebf3fb !important; margin: 0; padding: 36px 12px; font-family: ${font};">
+    <tr>
+      <td align="center" bgcolor="#ebf3fb" style="background-color: #ebf3fb !important; font-family: ${font};">
+        
+        <!-- Center Main White Card -->
+        <table width="640" class="card-wrap" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="max-width: 640px; width: 100%; background-color: #ffffff !important; border-radius: 26px; border: 1px solid #d2e4f7; box-shadow: 0 12px 40px rgba(37,99,235,0.08); overflow: hidden; margin: 0 auto; font-family: ${font};">
+          <tr>
+            <td bgcolor="#ffffff" style="padding: 38px 44px 44px 44px; background-color: #ffffff !important; font-family: ${font};">
+              
+              <!-- Header Row: Both Logos -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
+                <tr>
+                  <!-- Left: SmartBusiness Solutions -->
+                  <td align="left" valign="middle" style="font-family: ${font}; text-align: left;">
+                    <table border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
+                      <tr>
+                        <td valign="middle" style="width: 44px; font-family: ${font};">
+                          <img src="cid:smart-logo@smartbusiness.com" width="44" height="44" border="0" alt="" style="display: block; border-radius: 10px; border: 0; width: 44px; height: 44px;" />
+                        </td>
+                        <td valign="middle" style="padding-left: 10px; font-family: ${font}; text-align: left;">
+                          <div class="logo-title" style="font-family: ${font}; font-size: 18px; font-weight: 800; color: #000000; line-height: 1.15; letter-spacing: -0.3px;">SmartBusiness</div>
+                          <div class="logo-sub" style="font-family: ${font}; font-size: 15px; font-weight: 700; color: #4338ca; line-height: 1.15;">Solutions</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+
+                  <!-- Right: Clock In Clock Out -->
+                  <td align="right" valign="middle" style="font-family: ${font}; text-align: right;">
+                    <table border="0" cellspacing="0" cellpadding="0" style="margin-left: auto; font-family: ${font};">
+                      <tr>
+                        <td valign="middle" style="width: 44px; font-family: ${font};">
+                          <img src="cid:clockin-logo@smartbusiness.com" width="44" height="44" border="0" alt="" style="display: block; border-radius: 10px; border: 0; width: 44px; height: 44px;" />
+                        </td>
+                        <td valign="middle" style="padding-left: 10px; font-family: ${font}; text-align: left;">
+                          <div class="logo-title" style="font-family: ${font}; font-size: 18px; font-weight: 800; color: #000000; line-height: 1.15; letter-spacing: -0.3px;">Clock In</div>
+                          <div class="logo-sub" style="font-family: ${font}; font-size: 15px; font-weight: 700; color: #6366f1; line-height: 1.15;">Clock Out</div>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Main Title & Subtitle -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 42px; font-family: ${font};">
+                <tr>
+                  <td align="center" style="font-family: ${font}; text-align: center;">
+                    <h1 class="main-title" style="margin: 0; font-family: ${font}; font-size: 34px; font-weight: 800; color: #000000; letter-spacing: -0.8px; line-height: 1.2;">
+                      Reset Your <span style="color: #0066ff;">Password</span>
+                    </h1>
+                    <p style="margin: 12px auto 34px auto; font-family: ${font}; font-size: 14px; color: #556476; line-height: 1.6; max-width: 480px; font-weight: 400;">
+                      We received a request to reset your password. Please find your secure reset link below to choose a new password for your account. This link will expire in ${expiresInMinutes} minutes.
+                    </p>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Primary Action Button -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 24px; font-family: ${font};">
+                <tr>
+                  <td align="center" style="font-family: ${font}; text-align: center;">
+                    <a href="${resetUrl}" target="_blank" style="display: inline-block; background-color: #0066ff; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 102, 255, 0.35);">
+                      Reset Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Link Row Card (Only link row, username & password removed as requested) -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
+                <tr>
+                  <td style="padding-bottom: 34px; font-family: ${font};">
+                    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#edf5fd" style="background-color: #edf5fd !important; border-radius: 12px; border: 1px solid #d9eaf9; padding: 14px 18px; font-family: ${font};">
+                      <tr>
+                        <td width="34" valign="middle" bgcolor="#edf5fd" style="width: 34px; background-color: #edf5fd !important; font-family: ${font};">
+                          <img src="cid:link-icon@smartbusiness.com" width="34" height="34" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 34px; height: 34px;" />
+                        </td>
+                        <td width="110" valign="middle" bgcolor="#edf5fd" style="width: 110px; background-color: #edf5fd !important; padding-left: 14px; font-family: ${font}; font-size: 14px; font-weight: 700; color: #0f172a;">
+                          Reset URL
+                        </td>
+                        <td valign="middle" bgcolor="#edf5fd" style="background-color: #edf5fd !important; font-family: ${font};">
+                          <a href="${resetUrl}" target="_blank" style="font-family: ${font}; font-size: 14px; color: #0066ff; text-decoration: none; font-weight: 600; word-break: break-all;">
+                            ${resetUrl}
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+              <!-- Download Mobile App Section -->
+              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
+                <tr>
+                  <td align="center" style="padding-bottom: 14px; font-family: ${font}; text-align: center;">
+                    <div style="font-family: ${font}; font-size: 11px; font-weight: 800; color: #556476; letter-spacing: 0.8px; text-transform: uppercase;">
+                      DOWNLOAD THESE MOBILE APP
+                    </div>
+                  </td>
+                </tr>
+                <tr>
+                  <td align="center" style="font-family: ${font}; text-align: center;">
+                    <table border="0" cellspacing="0" cellpadding="0" align="center" style="margin: 0 auto; font-family: ${font};">
+                      <tr>
+                        <td style="padding: 0 6px;">
+                          <a href="${playStoreUrl}" class="app-button" style="text-decoration: none; display: inline-block;">
+                            <img src="cid:google-play@smartbusiness.com" width="148" height="44" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 148px; height: 44px;" />
+                          </a>
+                        </td>
+                        <td style="padding: 0 6px;">
+                          <a href="${appStoreUrl}" class="app-button" style="text-decoration: none; display: inline-block;">
+                            <img src="cid:app-store@smartbusiness.com" width="148" height="44" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 148px; height: 44px;" />
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  const text = `
+Reset Your Password - SmartBusiness
+
+We received a request to reset your password. Please find your secure reset link below to choose a new password for your account:
+
+- Reset Link: ${resetUrl}
+
+This link works once and expires in ${expiresInMinutes} minutes.
+If you didn't ask for this, you can safely ignore this email.
+
+Download our mobile app on Google Play or App Store.
+  `.trim();
+
+  const attachments = [
+    {
+      filename: "smart-logo.png",
+      content: emailAssets.smartLogo,
+      cid: "smart-logo@smartbusiness.com",
+      contentType: "image/png",
+      contentDisposition: "inline" as const,
+    },
+    {
+      filename: "clockin-logo.png",
+      content: emailAssets.clockinLogo,
+      cid: "clockin-logo@smartbusiness.com",
+      contentType: "image/png",
+      contentDisposition: "inline" as const,
+    },
+    {
+      filename: "link-icon.png",
+      content: emailAssets.linkIcon,
+      cid: "link-icon@smartbusiness.com",
+      contentType: "image/png",
+      contentDisposition: "inline" as const,
+    },
+    {
+      filename: "google-play.png",
+      content: emailAssets.googlePlay,
+      cid: "google-play@smartbusiness.com",
+      contentType: "image/png",
+      contentDisposition: "inline" as const,
+    },
+    {
+      filename: "app-store.png",
+      content: emailAssets.appStore,
+      cid: "app-store@smartbusiness.com",
+      contentType: "image/png",
+      contentDisposition: "inline" as const,
+    },
+  ];
+
   return {
     tag: "password-reset",
-    subject: `Reset your ${PRODUCT} password`,
-    html: layout(
-      "Reset your password",
-      [
-        `Hi ${escapeHtml(input.name)},`,
-        `We received a request to reset your password. The link below works once and expires in ${input.expiresInMinutes} minutes.`,
-        `If you didn't ask for this, you can ignore this email: your password stays the same.`,
-      ],
-      { label: "Choose a new password", href },
-    ),
-    text:
-      `Hi ${input.name},\n\n` +
-      `We received a request to reset your ${PRODUCT} password. This link works once and expires in ${input.expiresInMinutes} minutes:\n\n` +
-      `${input.resetUrl}\n\n` +
-      `If you didn't ask for this, you can ignore this email: your password stays the same.\n`,
+    subject,
+    html,
+    text,
+    attachments,
   };
 }
 

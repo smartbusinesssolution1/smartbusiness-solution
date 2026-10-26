@@ -69,7 +69,20 @@ export const envSchema = z
 
   // How emails are delivered: "file" writes them to EMAIL_FILE_DIRECTORY (development),
   // "memory" keeps them in a list (tests). A real provider is added once chosen.
-  EMAIL_TRANSPORT: z.enum(["file", "memory"]).default("file"),
+  EMAIL_TRANSPORT: z.enum(["file", "memory", "smtp"]).default("smtp"),
+  SMTP_HOST: z.string().optional(),
+  SMTP_PORT: z
+    .string()
+    .default("587")
+    .transform((val) => parseInt(val, 10))
+    .pipe(z.number().int().positive()),
+  SMTP_SECURE: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((val) => val === "true"),
+  SMTP_USER: z.string().optional(),
+  SMTP_PASS: z.string().optional(),
+  SMTP_FROM: z.string().optional(),
   EMAIL_FROM: z.string().min(3).default("SmartBusiness <no-reply@smartbusiness.local>"),
   EMAIL_FILE_DIRECTORY: z.string().default("./tmp/emails"),
 
@@ -97,7 +110,7 @@ export const envSchema = z
   })
   // Emails written to a folder or kept in memory on a production server would never
   // reach anyone. Refuse to start rather than fail silently.
-  .refine((env) => env.NODE_ENV !== "production" || !["file", "memory"].includes(env.EMAIL_TRANSPORT), {
+  .refine((env) => env.NODE_ENV !== "production" || env.EMAIL_TRANSPORT === "smtp", {
     path: ["EMAIL_TRANSPORT"],
     message: "Production needs a real email provider; 'file' and 'memory' only work for development and tests",
   });

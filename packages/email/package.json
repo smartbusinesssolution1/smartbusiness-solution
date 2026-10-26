@@ -20,6 +20,10 @@
   "devDependencies": {
     "@smartbusiness/typescript-config": "workspace:*",
     "@types/node": "^22.20.2",
+    "@types/nodemailer": "^8.0.2",
     "vitest": "4.1.11"
+  },
+  "dependencies": {
+    "nodemailer": "^10.1.1"
   }
 }

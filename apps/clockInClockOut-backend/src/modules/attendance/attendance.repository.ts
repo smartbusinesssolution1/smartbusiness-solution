@@ -5,44 +5,82 @@ export class AttendanceRepository {
   /**
    * Find employee profile with workspace and attendance settings by User ID and Tenant ID
    */
-  async findEmployeeByUserId(userId: string, tenantId: string) {
-    const cacheKey = `emp:by-user:${tenantId}:${userId}`;
+  async findEmployeeByUserId(userId: string, tenantId: string, workspaceId?: string) {
+    const cacheKey = `emp:by-user:${tenantId}:${userId}:${workspaceId || "default"}`;
     const cached = memoryCache.get<any>(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const employee = await prisma.attendanceEmployeeDetails.findFirst({
-      where: {
-        deletedAt: null,
-        workspaceMember: {
-          userId,
+    let employee = null;
+    if (workspaceId) {
+      employee = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
           deletedAt: null,
-          workspace: {
-            tenantId,
+          workspaceMember: {
+            userId,
+            workspaceId,
             deletedAt: null,
-          },
-        },
-      },
-      include: {
-        workspaceMember: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-              },
-            },
             workspace: {
-              include: {
-                attendanceSettings: true,
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              workspace: {
+                include: {
+                  attendanceSettings: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    }
+
+    if (!employee) {
+      employee = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
+          deletedAt: null,
+          workspaceMember: {
+            userId,
+            deletedAt: null,
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              workspace: {
+                include: {
+                  attendanceSettings: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    }
 
     if (employee) {
       memoryCache.set(cacheKey, employee, 60);

@@ -66,6 +66,16 @@ export function isSignedIn(): boolean {
   }
 }
 
+export function isPublicAuthRoute(url: string): boolean {
+  return (
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/refresh') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password')
+  );
+}
+
 // Central Axios instance for ClockInClockOut backend (Port 3000)
 export const clockInApi = axios.create({
   baseURL: CLOCKIN_API_URL,
@@ -87,10 +97,7 @@ export const platformAuthApi = axios.create({
 // Request interceptor: attach X-Tenant-Id and X-Workspace-Id headers (the session cookie goes by itself)
 clockInApi.interceptors.request.use((config) => {
   const url = config.url || '';
-  const isAuthRoute =
-    url.includes('/auth/login') ||
-    url.includes('/auth/register') ||
-    url.includes('/auth/refresh');
+  const isAuthRoute = isPublicAuthRoute(url);
 
   // Do not hit network for protected routes when signed out
   if (!isSignedIn() && !isAuthRoute) {
@@ -116,10 +123,7 @@ clockInApi.interceptors.request.use((config) => {
 // Request interceptor for platformAuthApi: attach the X-Tenant-Id header (the session cookie goes by itself)
 platformAuthApi.interceptors.request.use((config) => {
   const url = config.url || '';
-  const isAuthRoute =
-    url.includes('/auth/login') ||
-    url.includes('/auth/register') ||
-    url.includes('/auth/refresh');
+  const isAuthRoute = isPublicAuthRoute(url);
 
   // Do not hit network for protected routes when signed out
   if (!isSignedIn() && !isAuthRoute) {
@@ -172,10 +176,7 @@ clockInApi.interceptors.response.use(
     }
 
     // Never intercept auth endpoints (login, register, refresh)
-    const isAuthRoute =
-      url.includes('/auth/login') ||
-      url.includes('/auth/register') ||
-      url.includes('/auth/refresh');
+    const isAuthRoute = isPublicAuthRoute(url);
 
     // BUG-08: Check if 401 was due to missing tenant header rather than expired JWT session
     const errorData = error.response?.data as any;

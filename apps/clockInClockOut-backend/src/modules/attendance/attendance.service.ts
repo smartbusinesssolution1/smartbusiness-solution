@@ -63,14 +63,14 @@ export class AttendanceService {
   /**
    * Helper: Resolve employee and throw if not found (with 60s in-memory cache)
    */
-  private async getEmployee(userId: string, tenantId: string, employeeIdParam?: string) {
-    const cacheKey = `${tenantId}:${userId}:${employeeIdParam || ""}`;
+  private async getEmployee(userId: string, tenantId: string, employeeIdParam?: string, workspaceId?: string) {
+    const cacheKey = `${tenantId}:${userId}:${employeeIdParam || ""}:${workspaceId || ""}`;
     const cached = this.employeeCache.get(cacheKey);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.data;
     }
 
-    let employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+    let employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, workspaceId);
     if (!employee && employeeIdParam) {
       employee = await prisma.attendanceEmployeeDetails.findFirst({
         where: {
@@ -416,8 +416,9 @@ export class AttendanceService {
   /**
    * Clock out of active shift and compute elapsed working hours
    */
-  async checkOut(userId: string, tenantId: string, input: CheckOutInput) {
-    const employee = await this.getEmployee(userId, tenantId, input.employeeId);
+  async checkOut(userId: string, tenantId: string, input: CheckOutInput, headerWorkspaceId?: string) {
+    const targetWorkspaceId = headerWorkspaceId || (input as any).workspaceId;
+    const employee = await this.getEmployee(userId, tenantId, input.employeeId, targetWorkspaceId);
 
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -546,8 +547,8 @@ export class AttendanceService {
   /**
    * Get active shift status for today, supporting multiple sessions
    */
-  async getTodayShift(userId: string, tenantId: string) {
-    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+  async getTodayShift(userId: string, tenantId: string, headerWorkspaceId?: string) {
+    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, headerWorkspaceId);
 
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -677,11 +678,12 @@ export class AttendanceService {
   /**
    * Paginated history of attendance records
    */
-  async getHistory(userId: string, tenantId: string, query: AttendanceHistoryQueryInput) {
+  async getHistory(userId: string, tenantId: string, query: AttendanceHistoryQueryInput, headerWorkspaceId?: string) {
     const page = Math.max(1, Number(query.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(query.limit) || 31));
+    const targetWorkspaceId = headerWorkspaceId || query.workspaceId;
 
-    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, targetWorkspaceId);
     if (!employee) {
       return {
         items: [],
@@ -797,7 +799,7 @@ export class AttendanceService {
   /**
    * Monthly summary metrics for employee
    */
-  async getMonthlyMetrics(userId: string, tenantId: string, monthStr?: string) {
+  async getMonthlyMetrics(userId: string, tenantId: string, monthStr?: string, headerWorkspaceId?: string) {
     const now = new Date();
     let year = now.getFullYear();
     let month = now.getMonth() + 1;
@@ -810,7 +812,7 @@ export class AttendanceService {
       }
     }
 
-    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId);
+    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, headerWorkspaceId);
     if (!employee) {
       return {
         month: `${year}-${String(month).padStart(2, "0")}`,
@@ -842,8 +844,9 @@ export class AttendanceService {
   /**
    * Export attendance ledger as CSV
    */
-  async exportLedger(userId: string, tenantId: string, input: LedgerExportInput) {
-    const employee = await this.getEmployee(userId, tenantId);
+  async exportLedger(userId: string, tenantId: string, input: LedgerExportInput, headerWorkspaceId?: string) {
+    const targetWorkspaceId = headerWorkspaceId || input.workspaceId;
+    const employee = await this.getEmployee(userId, tenantId, undefined, targetWorkspaceId);
 
     const now = new Date();
     let year = now.getFullYear();

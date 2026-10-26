@@ -22,5 +22,5 @@ export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 export interface EmailJobs {
   // Forgot-password: added for EVERY request (known or unknown email), so adding it
   // takes the same time either way; the worker does the lookup.
-  "password-reset": { email: string; ipAddress?: string };
+  "password-reset": { email: string; ipAddress?: string; appUrl?: string };
 }

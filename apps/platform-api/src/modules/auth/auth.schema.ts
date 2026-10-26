@@ -26,6 +26,7 @@ export const loginSchema = z.object({
 
 export const forgotPasswordSchema = z.object({
   email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" })),
+  redirectUrl: z.string().url().optional(),
 });
 
 export const resetPasswordSchema = z.object({

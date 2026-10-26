@@ -41,8 +41,15 @@ export const app = {
 
 export const email = {
   transport: config.EMAIL_TRANSPORT,
-  from: config.EMAIL_FROM,
+  from: config.SMTP_FROM || config.EMAIL_FROM,
   fileDirectory: config.EMAIL_FILE_DIRECTORY,
+  smtp: {
+    host: config.SMTP_HOST || "smtp.gmail.com",
+    port: config.SMTP_PORT,
+    secure: config.SMTP_SECURE,
+    user: config.SMTP_USER || "",
+    pass: config.SMTP_PASS || "",
+  },
 } as const;
 
 export const passwordReset = {

@@ -408,6 +408,43 @@ export const authService = {
   },
 
   /**
+   * Request password reset link (dispatched via platform-api)
+   */
+  async forgotPassword(email: string): Promise<string> {
+    try {
+      const res = await platformAuthApi.post('/api/v1/auth/forgot-password', {
+        email,
+        redirectUrl: window.location.origin,
+      });
+      return res.data?.data?.message || res.data?.message || 'If an account exists, instructions have been sent.';
+    } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to request password reset.';
+      throw new Error(errorMsg);
+    }
+  },
+
+  /**
+   * Complete password reset using secure token (via platform-api)
+   */
+  async resetPassword(token: string, password: string): Promise<string> {
+    try {
+      const res = await platformAuthApi.post('/api/v1/auth/reset-password', { token, password });
+      return res.data?.data?.message || res.data?.message || 'Your password has been changed successfully.';
+    } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to reset password. The link may have expired or is invalid.';
+      throw new Error(errorMsg);
+    }
+  },
+
+  /**
    * Log out and clear session
    */
   async logout(): Promise<void> {

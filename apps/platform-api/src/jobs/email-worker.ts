@@ -18,6 +18,7 @@ export function startEmailWorker(): { worker: Worker; close: () => Promise<void>
           // cooldown that its own first attempt started.
           isRetry: job.attemptsMade > 0,
           ipAddress: data.ipAddress,
+          appUrl: data.appUrl,
         }),
     },
     connection,

@@ -1,4 +1,4 @@
-import {
+﻿import {
   AuthRepository,
   type TenantInfo,
   type UserWithTenants,
@@ -79,7 +79,7 @@ export class AuthService {
   // again: a retry issues a fresh link, which revokes any earlier unsent one.
   // ═════════════════════════════════════════════════════════════
 
-  async processPasswordResetJob(email: string, opts: { isRetry: boolean; ipAddress?: string }): Promise<void> {
+  async processPasswordResetJob(email: string, opts: { isRetry: boolean; ipAddress?: string; appUrl?: string }): Promise<void> {
     const user = await this.authRepository.findUserByEmail(email);
     if (!user || !user.isActive) return;
 
@@ -106,7 +106,10 @@ export class AuthService {
     }
 
     // Built from configuration only: never from the request's Host header.
-    const resetUrl = `${this.resetSettings.appUrl}/reset-password?token=${token}`;
+    const baseUrl = opts.appUrl || this.resetSettings.appUrl;
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+    logger.info({ resetUrl, email: user.email }, `Generated password reset URL: ${resetUrl}`);
+    console.log(`\n========================================\n🔑 PASSWORD RESET LINK FOR ${user.email}:\n${resetUrl}\n========================================\n`);
     // If sending fails, this throws and the queue retries the whole job later.
     await this.emailSender.send({
       to: user.email,
