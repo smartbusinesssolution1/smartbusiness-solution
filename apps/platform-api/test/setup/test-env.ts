@@ -38,16 +38,19 @@ export function applyTestEnv(): void {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
   process.env.ACCESS_TOKEN_EXPIRES_IN = "15m";
   process.env.REFRESH_TOKEN_EXPIRES_DAYS = "7";
-  process.env.CORS_ORIGIN = "http://localhost:5173";
+  // Both frontends, like the default: Check Printing (5173) and Clock-In (5174).
+  process.env.CORS_ORIGIN = "http://localhost:5173,http://localhost:5174";
   // High limits so the suite is not throttled; rate-limiter.test.ts proves the limiter itself.
   process.env.RATE_LIMIT_MAX = "1000000";
   process.env.AUTH_RATE_LIMIT_MAX = "1000000";
+  process.env.MFA_RATE_LIMIT_MAX = "1000000";
   delete process.env.COOKIE_DOMAIN;
   // Emails are kept in memory; tests read them (and the links in them) from there.
   process.env.EMAIL_TRANSPORT = "memory";
   process.env.EMAIL_FROM = "SmartBusiness <no-reply@smartbusiness.test>";
   process.env.APP_URL = "https://app.smartbusiness.test";
   process.env.PASSWORD_RESET_TTL_MINUTES = "60";
+  process.env.MFA_ENCRYPTION_KEY = "7a".repeat(32);
   // Job queue: the test Redis, database 1 (emptied by global setup); short retry waits.
   process.env.REDIS_URL = process.env.PLATFORM_TEST_REDIS_URL ?? "redis://127.0.0.1:63790/1";
   process.env.JOB_RETRY_BACKOFF_MS = "50";

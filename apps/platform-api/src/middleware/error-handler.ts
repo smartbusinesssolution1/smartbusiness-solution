@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { Prisma } from "@smartbusiness/database";
 import { AppError } from "@smartbusiness/auth";
-import { ValidationError } from "../shared/errors/index.js";
+import { LockedOutError, ValidationError } from "../shared/errors/index.js";
 import { server } from "../config/index.js";
 import { logger } from "../shared/services/logger.js";
 
@@ -33,6 +33,9 @@ const DATABASE_UNAVAILABLE: MappedError = {
 const BODY_PARSER_ERRORS: Record<string, MappedError> = {
   "entity.parse.failed": { status: 400, code: "INVALID_JSON", message: "The request body is not valid JSON." },
   "entity.too.large": { status: 413, code: "PAYLOAD_TOO_LARGE", message: "The request body is too large." },
+  // A compressed body (we accept none) or an unknown charset.
+  "encoding.unsupported": { status: 415, code: "UNSUPPORTED_ENCODING", message: "The request body encoding is not supported." },
+  "charset.unsupported": { status: 415, code: "UNSUPPORTED_ENCODING", message: "The request body charset is not supported." },
 };
 
 function mapKnownError(err: unknown): MappedError | null {
@@ -55,6 +58,10 @@ export function errorHandler(
   if (err instanceof AppError && err.isOperational) {
     const error: Record<string, unknown> = { code: err.code, message: err.message };
     if (err instanceof ValidationError) error.details = err.details;
+    if (err instanceof LockedOutError) {
+      res.setHeader("Retry-After", String(err.retryAfterSeconds));
+      error.lockedUntil = err.lockedUntil.toISOString();
+    }
     if (server.isDev) error.stack = err.stack;
 
     res.status(err.statusCode).json({ success: false, error });

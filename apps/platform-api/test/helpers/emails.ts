@@ -20,10 +20,10 @@ export async function settle(ms = 400): Promise<void> {
   await new Promise((r) => setTimeout(r, ms));
 }
 
-// Pulls the token out of the link in an email's plain-text body.
+// Pulls the token out of the link in an email's plain-text body. Only the "#token=" form
+// counts: a token in the query (?token=) would reach server logs.
 export function tokenFrom(email: SentEmail, path: string): string {
-  // "\\?" in a template string reaches the regex as "\?": a literal question mark.
-  const match = email.text.match(new RegExp(`${path}\\?token=([A-Za-z0-9_-]+)`));
+  const match = email.text.match(new RegExp(`${path}#token=([A-Za-z0-9_-]+)`));
   if (!match) throw new Error(`No ${path} link in the "${email.tag}" email`);
   return match[1]!;
 }

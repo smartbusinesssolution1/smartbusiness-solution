@@ -3,6 +3,8 @@ declare namespace Express {
     user?: {
       userId: string;
       email: string;
+      // "pwd" = signed in with a password; "otp" = also entered a two-factor code.
+      amr: string[];
     };
 
     tenant?: {

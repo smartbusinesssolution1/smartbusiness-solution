@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_CHECK_AMOUNT } from "../check/check.helpers.js";
 
 // ═══════════════════════════════════════════════════════════════
 // APPROVAL RULE SCHEMAS
@@ -25,15 +26,15 @@ import { z } from "zod";
 //    systems, the smallest unit is a cent ($0.01). A threshold of
 //    $1,000.005 is not meaningful.
 //
-// 5. max(9,999,999.99) matches the Check schema's amount cap.
-//    A threshold higher than the maximum check amount would
-//    never trigger.
+// 5. The cap is the Check schema's own (MAX_CHECK_AMOUNT, $999,999.99).
+//    A threshold higher than the largest possible check would never
+//    trigger. (It used to allow $9,999,999.99.)
 // ═══════════════════════════════════════════════════════════════
 
 const amountField = z
   .number()
   .positive("Amount must be greater than zero")
-  .max(9_999_999.99, "Amount cannot exceed $9,999,999.99")
+  .max(MAX_CHECK_AMOUNT, "Amount cannot exceed $999,999.99, the largest amount a check can have")
   .multipleOf(0.01, "Amount cannot have more than 2 decimal places");
 
 export const createApprovalRuleSchema = z.object({

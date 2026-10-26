@@ -1,6 +1,6 @@
 # Local development services.
-#   docker compose -f docker-compose.dev.yml up -d     start Redis on 127.0.0.1:6379
-#   docker compose -f docker-compose.dev.yml down      stop it (data is kept in the volume)
+#   docker compose -f docker-compose.dev.yml up -d     start Redis (127.0.0.1:6379) and Mailpit
+#   docker compose -f docker-compose.dev.yml down      stop them (Redis data is kept in the volume)
 services:
   redis:
     image: redis:7.4-alpine
@@ -16,6 +16,16 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # A fake mail server: the apps send real SMTP to it (EMAIL_TRANSPORT=smtp, port 1025) and
+  # every email lands in a web inbox at http://localhost:8025 instead of anyone's mailbox.
+  # Production sends the same SMTP to AWS SES.
+  mailpit:
+    image: axllent/mailpit:v1.27.10
+    container_name: smartbusiness-dev-mailpit
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
 volumes:
   redis-dev-data:

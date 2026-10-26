@@ -395,3 +395,93 @@ export function addedToWorkspaceEmail(input: {
       `If you don't recognise this, tell your administrator.\n`,
   };
 }
+
+// ─── Check approvals ───────────────────────────────────────
+// The check is named by number, amount and payee so it can be recognised from the inbox.
+// Never a bank or account number, and the link only opens the check: it does not sign in.
+
+interface CheckSummary {
+  checkNumber: string;
+  amount: string; // "$9,000.00"
+  payeeName: string;
+  workspaceName: string;
+  checkUrl: string;
+}
+
+const checkLabel = (c: CheckSummary) => `check #${c.checkNumber} · ${c.amount} to ${c.payeeName}`;
+
+/** Sent to each person who can approve a check that is waiting for approval. */
+export function approvalRequestEmail(input: CheckSummary & {
+  approverName: string;
+  writerName: string;
+  memo: string | null;
+  approvalsNeeded: number;
+}): EmailTemplate {
+  const href = safeLink(input.checkUrl);
+  const needs = input.approvalsNeeded > 1 ? ` It needs ${input.approvalsNeeded} approvals.` : "";
+  const memo = input.memo ? ` Memo: "${input.memo}".` : "";
+  return {
+    tag: "approval-request",
+    subject: oneLine(`Approval needed: ${checkLabel(input)}`),
+    html: layout(
+      `A check needs your approval`,
+      [
+        `Hi ${escapeHtml(input.approverName)},`,
+        `${escapeHtml(input.writerName)} wrote <strong>check #${escapeHtml(input.checkNumber)}</strong> for <strong>${escapeHtml(input.amount)}</strong> to <strong>${escapeHtml(input.payeeName)}</strong> in ${escapeHtml(input.workspaceName)}.${escapeHtml(memo)}`,
+        `Review it and approve or reject it.${escapeHtml(needs)}`,
+      ],
+      { label: "Review the check", href },
+    ),
+    text:
+      `Hi ${input.approverName},\n\n` +
+      `${input.writerName} wrote check #${input.checkNumber} for ${input.amount} to ${input.payeeName} in ${input.workspaceName}.${memo}\n\n` +
+      `Review it and approve or reject it.${needs}\n\n` +
+      `${input.checkUrl}\n`,
+  };
+}
+
+/** Sent to the writer when their check has every approval it needs. */
+export function checkApprovedEmail(input: CheckSummary & { writerName: string }): EmailTemplate {
+  const href = safeLink(input.checkUrl);
+  return {
+    tag: "check-approved",
+    subject: oneLine(`Approved: ${checkLabel(input)}`),
+    html: layout(
+      `Check #${input.checkNumber} was approved`,
+      [
+        `Hi ${escapeHtml(input.writerName)},`,
+        `Your <strong>check #${escapeHtml(input.checkNumber)}</strong> for <strong>${escapeHtml(input.amount)}</strong> to <strong>${escapeHtml(input.payeeName)}</strong> in ${escapeHtml(input.workspaceName)} has every approval it needs. It is ready to print.`,
+      ],
+      { label: "Open the check", href },
+    ),
+    text:
+      `Hi ${input.writerName},\n\n` +
+      `Your check #${input.checkNumber} for ${input.amount} to ${input.payeeName} in ${input.workspaceName} has every approval it needs. It is ready to print.\n\n` +
+      `${input.checkUrl}\n`,
+  };
+}
+
+/** Sent to the writer when an approver rejects their check, with the reason. */
+export function checkRejectedEmail(input: CheckSummary & { writerName: string; rejectedBy: string; reason: string }): EmailTemplate {
+  const href = safeLink(input.checkUrl);
+  return {
+    tag: "check-rejected",
+    subject: oneLine(`Rejected: ${checkLabel(input)}`),
+    html: layout(
+      `Check #${input.checkNumber} was rejected`,
+      [
+        `Hi ${escapeHtml(input.writerName)},`,
+        `${escapeHtml(input.rejectedBy)} rejected your <strong>check #${escapeHtml(input.checkNumber)}</strong> for <strong>${escapeHtml(input.amount)}</strong> to <strong>${escapeHtml(input.payeeName)}</strong> in ${escapeHtml(input.workspaceName)}.`,
+        `Reason: ${escapeHtml(input.reason)}`,
+        `Fix the check and send it for approval again, or close it if it's no longer needed.`,
+      ],
+      { label: "Fix the check", href },
+    ),
+    text:
+      `Hi ${input.writerName},\n\n` +
+      `${input.rejectedBy} rejected your check #${input.checkNumber} for ${input.amount} to ${input.payeeName} in ${input.workspaceName}.\n\n` +
+      `Reason: ${input.reason}\n\n` +
+      `Fix the check and send it for approval again, or close it if it's no longer needed:\n\n` +
+      `${input.checkUrl}\n`,
+  };
+}

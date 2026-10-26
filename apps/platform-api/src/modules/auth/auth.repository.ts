@@ -6,6 +6,7 @@ import {
   type TenantMember,
   type Session,
 } from "@smartbusiness/database";
+import { clearAttempts, lockedUntil, reserveAttempt, type Attempt } from "./attempts.js";
 
 interface CreateUserWithTenantData {
   email: string;
@@ -65,6 +66,45 @@ export class AuthRepository {
     await tx.$queryRaw`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`;
   }
 
+  // Everything an invitation email or the invitation page needs, read fresh: the invited
+  // person, the workspace and its company, who invited them, and whether the access
+  // still exists (an invitation cancelled after it was queued must send nothing).
+  async findInvitationContext(userId: string, workspaceId: string, invitedById: string | null) {
+    const [user, workspace, inviter, membership] = await Promise.all([
+      prisma.user.findFirst({
+        where: { id: userId, deletedAt: null, isActive: true },
+        select: { id: true, email: true, fullName: true, passwordHash: true },
+      }),
+      prisma.workspace.findFirst({
+        where: { id: workspaceId, deletedAt: null },
+        select: { id: true, businessName: true, tenantId: true, tenant: { select: { name: true, status: true } } },
+      }),
+      invitedById ? prisma.user.findUnique({ where: { id: invitedById }, select: { fullName: true } }) : null,
+      prisma.workspaceMember.findFirst({ where: { workspaceId, userId, deletedAt: null }, select: { id: true } }),
+    ]);
+    return {
+      user: user ? { id: user.id, email: user.email, fullName: user.fullName, hasPassword: user.passwordHash !== null } : null,
+      workspace,
+      inviterName: inviter?.fullName ?? null,
+      membershipActive: membership !== null,
+    };
+  }
+
+  async isActiveWorkspaceMember(workspaceId: string, userId: string, tx: Tx): Promise<boolean> {
+    return (await tx.workspaceMember.count({ where: { workspaceId, userId, deletedAt: null } })) > 0;
+  }
+
+  // Accepting an invitation: the invited person chooses their password (and may correct
+  // their name). Conditional on the account still having no password, so two accepts at
+  // once cannot both set one. Opening the emailed link also confirms the email address.
+  async setInvitedUserPassword(userId: string, passwordHash: string, fullName: string, tx: Tx): Promise<boolean> {
+    const { count } = await tx.user.updateMany({
+      where: { id: userId, passwordHash: null },
+      data: { passwordHash, fullName, emailVerifiedAt: new Date(), failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null },
+    });
+    return count === 1;
+  }
+
   async findActiveUserById(userId: string, tx: Tx) {
     return tx.user.findFirst({ where: { id: userId, deletedAt: null, isActive: true } });
   }
@@ -74,7 +114,8 @@ export class AuthRepository {
   // ended, and any other reset link or pending invitation cancelled.
   async completePasswordReset(userId: string, passwordHash: string, tx: Tx): Promise<void> {
     const now = new Date();
-    await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+    // Resetting proves control of the inbox, so it also ends any lockout.
+    await tx.user.update({ where: { id: userId }, data: { passwordHash, failedLoginCount: 0, lastFailedLoginAt: null, lockedUntil: null } });
     await tx.user.updateMany({ where: { id: userId, emailVerifiedAt: null }, data: { emailVerifiedAt: now } });
     await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: now } });
     await tx.userToken.updateMany({
@@ -169,6 +210,19 @@ export class AuthRepository {
         },
       }) as Promise<UserWithTenants>;
     });
+  }
+
+  // Account lockout lives in attempts.ts (shared with two-factor codes): see there.
+  async reserveLoginAttempt(userId: string): Promise<Attempt> {
+    return reserveAttempt(userId, "password");
+  }
+
+  async findLockedUntil(userId: string): Promise<Date | null> {
+    return lockedUntil(userId, "password");
+  }
+
+  async clearLoginFailures(userId: string): Promise<void> {
+    await clearAttempts(userId, "password");
   }
 
   async updateLastLogin(userId: string): Promise<void> {

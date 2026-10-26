@@ -223,8 +223,11 @@ export async function createPrinterProfile(world: TestWorld): Promise<string> {
 }
 
 /** Request headers that authenticate as `user` in its tenant. */
-export function authHeaders(user: TestUser): Record<string, string> {
-  const token = jwt.sign({ userId: user.id, email: user.email }, TEST_JWT_SECRET, { expiresIn: "15m" });
+// A signed-in session. By default it has also entered a two-factor code (amr "otp"), so it
+// passes Check Printing's door whether or not the user turned two-factor on; pass
+// { amr: ["pwd"] } for a password-only session.
+export function authHeaders(user: TestUser, options: { amr?: string[] } = {}): Record<string, string> {
+  const token = jwt.sign({ userId: user.id, email: user.email, amr: options.amr ?? ["pwd", "otp"] }, TEST_JWT_SECRET, { expiresIn: "15m" });
   return {
     Cookie: `access_token=${token}`,
     "X-Tenant-Id": user.tenantId,

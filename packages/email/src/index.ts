@@ -1,6 +1,6 @@
 import { FileEmailSender } from "./senders/file.js";
 import { MemoryEmailSender } from "./senders/memory.js";
-import { SmtpEmailSender, type SmtpConfig } from "./senders/smtp.js";
+import { SmtpEmailSender, type SmtpSettings } from "./senders/smtp.js";
 import type { EmailSender } from "./types.js";
 
 export * from "./types.js";
@@ -8,7 +8,7 @@ export * from "./templates.js";
 export { escapeHtml, safeLink } from "./escape.js";
 export { FileEmailSender } from "./senders/file.js";
 export { MemoryEmailSender } from "./senders/memory.js";
-export { SmtpEmailSender, type SmtpConfig } from "./senders/smtp.js";
+export { SmtpEmailSender, type SmtpSettings } from "./senders/smtp.js";
 
 export type EmailTransport = "file" | "memory" | "smtp";
 
@@ -18,6 +18,8 @@ export interface EmailConfig {
   from: string;
   // Required for the "file" transport: where emails are written.
   fileDirectory?: string;
+  // Required for the "smtp" transport (Mailpit locally, AWS SES in production).
+  // smtp?: SmtpSettings;
   log?: (line: string) => void;
   smtp?: {
     host: string;
@@ -43,20 +45,10 @@ export function createEmailSender(config: EmailConfig): EmailSender {
     case "memory":
       return new MemoryEmailSender(config.from);
     case "smtp":
-      if (!config.smtp || !config.smtp.host || !config.smtp.user || !config.smtp.pass) {
-        throw new Error(
-          'EMAIL_TRANSPORT "smtp" requires SMTP configuration (host, user, pass)',
-        );
+      if (!config.smtp) {
+        throw new Error('EMAIL_TRANSPORT "smtp" needs SMTP settings (SMTP_HOST, SMTP_PORT…)');
       }
-      return new SmtpEmailSender({
-        host: config.smtp.host,
-        port: config.smtp.port,
-        secure: config.smtp.secure,
-        user: config.smtp.user,
-        pass: config.smtp.pass,
-        from: config.from,
-        log: config.log,
-      });
+      return new SmtpEmailSender(config.from, config.smtp, config.log);
     default:
       throw new Error(`Unknown email transport "${String(config.transport)}"`);
   }

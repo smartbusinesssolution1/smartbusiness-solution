@@ -9,6 +9,7 @@ import { requestIdMiddleware } from "./middleware/request-id.js";
 import { notFoundHandler } from "./middleware/not-found.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { prisma } from "@smartbusiness/database";
+import { createOriginGuard } from "@smartbusiness/auth";
 import { logger } from "./shared/services/logger.js";
 import apiRouter from "./routes/index.js";
 
@@ -42,13 +43,25 @@ export function createApp(): Express {
     }),
   );
 
+  // CSRF: a change requested by a page on a website we don't serve is refused before
+  // anything is read (and before it can use up the visitor's rate limit). Same list as CORS.
+  app.use(createOriginGuard({ isAllowedOrigin: (origin) => corsConfig.origin.includes(origin) }));
+
   app.use(globalRateLimiter);
 
   // The largest legitimate JSON body (a check with 50 invoice lines) is well under
   // 100 KB. File uploads, when added, get their own multipart limit per route.
-  app.use(express.json({ limit: "100kb" }));
+  // inflate: false refuses compressed request bodies (Content-Encoding: gzip, ...) with a
+  // 415 before any decompression starts. Browsers never compress what they send, and
+  // body-parser before 2.4.0 crashes the whole process on a crafted compressed body
+  // (GHSA-27r3-jxmh-p828).
+  //
+  // JSON only: no form-encoded parser. An HTML form on another site can post form data
+  // without the browser asking first; JSON can't be sent cross-site without that question
+  // (a preflight), which CORS refuses. Our app only ever sends JSON (and file uploads,
+  // which their own routes read).
+  app.use(express.json({ limit: "100kb", inflate: false }));
   app.use(cookieParser());
-  app.use(express.urlencoded({ extended: false, limit: "100kb" }));
 
   // Structured request logging (pino-http) — generates reqId + auto-logs completion
   app.use(requestLoggerMiddleware);
@@ -56,32 +69,23 @@ export function createApp(): Express {
   // Bridge pino-http's req.id to req.requestId + X-Request-Id response header
   app.use(requestIdMiddleware);
 
-  app.get("/api/v1/health", async (req: Request, res: Response) => {
-    let dbLatencyMs: number | null = null;
+  // Public, for load balancers and uptime checks: healthy (200) or degraded (503), nothing
+  // more. How long the server has run and how fast the database answers help an attacker
+  // time an attack, and no health check needs them.
+  app.get("/api/v1/health", async (_req: Request, res: Response) => {
     let isDatabaseOk = false;
-
     try {
-      const dbStart = Date.now();
       await prisma.$executeRawUnsafe("SELECT 1");
-      dbLatencyMs = Date.now() - dbStart;
       isDatabaseOk = true;
     } catch {
       isDatabaseOk = false;
     }
 
-    const status = isDatabaseOk ? "healthy" : "degraded";
-    const httpStatus = isDatabaseOk ? 200 : 503;
-
-    res.status(httpStatus).json({
+    res.status(isDatabaseOk ? 200 : 503).json({
       success: isDatabaseOk,
       data: {
-        status,
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        database: {
-          connected: isDatabaseOk,
-          latencyMs: dbLatencyMs,
-        },
+        status: isDatabaseOk ? "healthy" : "degraded",
+        database: { connected: isDatabaseOk },
       },
     });
   });

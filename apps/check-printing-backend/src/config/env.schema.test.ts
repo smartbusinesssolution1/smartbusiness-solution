@@ -6,13 +6,73 @@ import { envSchema } from "./env.schema.js";
 // value that is not an exact origin stops the server at startup.
 
 const REQUIRED = {
+  NODE_ENV: "development",
   DATABASE_URL: "postgresql://u:p@localhost:5432/db",
   JWT_SECRET: "x".repeat(32),
   ENCRYPTION_KEY: "0f".repeat(32),
   STORAGE_ENCRYPTION_KEY: "0e".repeat(32),
 };
 
+const PRODUCTION = {
+  ...REQUIRED,
+  NODE_ENV: "production",
+  DATABASE_URL: "postgresql://u:p@db.example.com:5432/app?sslmode=verify-full",
+  STORAGE_DRIVER: "s3",
+  S3_BUCKET: "checks",
+  APP_URL: "https://checks.example.com",
+  REDIS_URL: "rediss://cache.example.com:6379",
+};
+
 const parseOrigins = (value: string | undefined) => envSchema.safeParse({ ...REQUIRED, CORS_ORIGIN: value });
+
+// S2: a server started without NODE_ENV used to run as "development" without a word.
+// Development has to be asked for: no value, no start.
+describe("NODE_ENV", () => {
+  const parseEnv = (value: string | undefined) => envSchema.safeParse({ ...REQUIRED, NODE_ENV: value });
+
+  it("is required: a missing value stops the server with a message saying so", () => {
+    const result = parseEnv(undefined);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toMatch(/NODE_ENV is required/);
+  });
+
+  it.each(["development", "test", "staging"])("accepts %s", (value) => {
+    expect(parseEnv(value).success).toBe(true);
+  });
+
+  it("accepts production (which also needs S3, APP_URL, REDIS_URL and a verify-full database URL)", () => {
+    expect(envSchema.safeParse(PRODUCTION).success).toBe(true);
+  });
+
+  it.each(["", "prod", "Production", "dev"])("refuses %j", (value) => {
+    expect(parseEnv(value).success).toBe(false);
+  });
+});
+
+// S9: production reaches the database over TLS with the certificate checked, said outright
+// (the driver's next major version weakens "require" to "encrypt, don't verify").
+describe("DATABASE_URL in production", () => {
+  const withDatabase = (url: string, NODE_ENV = "production") => envSchema.safeParse({ ...PRODUCTION, NODE_ENV, DATABASE_URL: url });
+
+  it.each([
+    ["postgresql://u:p@db.example.com/app", "no sslmode"],
+    ["postgresql://u:p@db.example.com/app?sslmode=require", "require"],
+    ["postgresql://u:p@db.example.com/app?sslmode=prefer", "prefer"],
+    ["postgresql://u:p@db.example.com/app?sslmode=disable", "disable"],
+  ])("refuses %s (%s)", (url) => {
+    const result = withDatabase(url);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.message).join(" ")).toMatch(/sslmode=verify-full/);
+  });
+
+  it("accepts sslmode=verify-full", () => {
+    expect(withDatabase("postgresql://u:p@db.example.com/app?sslmode=verify-full").success).toBe(true);
+  });
+
+  it("leaves development alone (a local database has no TLS)", () => {
+    expect(withDatabase("postgresql://u:p@localhost:5432/app", "development").success).toBe(true);
+  });
+});
 
 // R-10: ENCRYPTION_KEY decrypts every stored bank account number. Only exactly 64 hex characters
 // make a valid AES-256 key; anything else used to pass startup and fail on the first bank operation.

@@ -62,6 +62,9 @@ export default defineConfig(() => {
       chunkSizeWarningLimit: 1200,
     },
     server: {
+      // Fixed port: the Check Printing portal uses 5173, and both start with `pnpm dev`.
+      port: 5174,
+      strictPort: true,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       port: 5174,

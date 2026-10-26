@@ -29,14 +29,14 @@ export type SortOrder = "asc" | "desc";
 export type RegisterView = (typeof VIEWS)[number];
 
 // Each item is validated from a string, so the pipe input is string[].
-const list = <T extends z.ZodType<unknown, string>>(item: T, max = 20) =>
+export const list = <T extends z.ZodType<unknown, string>>(item: T, max = 20) =>
   z
     .string()
     .transform((s) => s.split(",").map((part) => part.trim()).filter(Boolean))
     .pipe(z.array(item).min(1).max(max));
 
 // Calendar day "YYYY-MM-DD" as UTC midnight (check and cleared dates are stored that way).
-const day = z
+export const day = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-31")
   .transform((s) => new Date(`${s}T00:00:00.000Z`))
@@ -192,3 +192,22 @@ export const numberIntegrityQuerySchema = z
 
 export const agingQuerySchema = z.strictObject({ bankAccountId: z.uuid().optional() });
 export const viewsQuerySchema = z.strictObject({});
+
+// Positive Pay: the checks issued (printed) between two days, both included.
+export const POSITIVE_PAY_MAX_DAYS = 366;
+export const positivePayQuerySchema = z
+  .strictObject({
+    bankAccountId: z.uuid(),
+    from: day,
+    to: day,
+    // csv: the file for the bank. xlsx: a copy for people to review.
+    format: z.enum(["csv", "xlsx"]).default("csv"),
+  })
+  .superRefine((q, ctx) => {
+    // Runs even when a day failed its own check (then it is still the raw string).
+    if (!(q.from instanceof Date) || !(q.to instanceof Date)) return;
+    if (q.to < q.from) ctx.addIssue({ code: "custom", path: ["to"], message: "The end is before the start" });
+    else if ((q.to.getTime() - q.from.getTime()) / 86_400_000 >= POSITIVE_PAY_MAX_DAYS) {
+      ctx.addIssue({ code: "custom", path: ["to"], message: `At most ${POSITIVE_PAY_MAX_DAYS} days per file` });
+    }
+  });

@@ -39,8 +39,24 @@ export const updateProfileSchema = z.object({
   fullName: z.string().min(1, "Full Name is required").max(255).trim().optional(),
 });
 
+// The link from an invitation email. Sent in the body, never the URL path, so it does
+// not end up in access logs.
+export const invitationTokenSchema = z.object({
+  token: z.string().min(1, "The invitation link is missing its token").max(200),
+});
+
+// Accepting: the invited person confirms their name and chooses a password (same
+// strength rules as sign-up). Email and roles come from the invitation.
+export const acceptInvitationSchema = z.object({
+  token: z.string().min(1, "The invitation link is missing its token").max(200),
+  fullName: z.string().trim().min(1, "Enter your name").max(255),
+  password: passwordSchema,
+});
+
 export type RegisterInputType = z.infer<typeof registerSchema>;
 export type LoginInputType = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type UpdateProfileInputType = z.infer<typeof updateProfileSchema>;
+export type InvitationTokenInput = z.infer<typeof invitationTokenSchema>;
+export type AcceptInvitationInput = z.infer<typeof acceptInvitationSchema>;

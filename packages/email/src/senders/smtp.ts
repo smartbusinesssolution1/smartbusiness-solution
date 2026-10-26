@@ -1,35 +1,41 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { assertSendable, type EmailMessage, type EmailSender } from "../types.js";
 
-export interface SmtpConfig {
+// Real delivery over SMTP. Locally this points at Mailpit (a fake inbox in Docker);
+// in production at AWS SES, whose SMTP endpoint takes the same settings
+// (host email-smtp.<region>.amazonaws.com, port 587, SES SMTP credentials).
+
+export interface SmtpSettings {
   host: string;
   port: number;
-  secure?: boolean;
-  user: string;
-  pass: string;
-  from: string;
-  log?: (line: string) => void;
+  // true: TLS from the first byte (port 465). false: plain connection upgraded with
+  // STARTTLS when the server offers it (port 587, or Mailpit's 1025).
+  secure: boolean;
+  // Refuse to send unless the connection was upgraded to TLS (set for real providers).
+  requireTls: boolean;
+  user?: string;
+  pass?: string;
 }
 
 export class SmtpEmailSender implements EmailSender {
-  private transporter: Transporter;
-  private from: string;
-  private log?: (line: string) => void;
+  private readonly transporter: Transporter;
 
-  constructor(config: SmtpConfig) {
-    this.from = config.from;
-    this.log = config.log;
+  constructor(
+    private readonly from: string,
+    settings: SmtpSettings,
+    private readonly log: (line: string) => void = () => { },
+  ) {
     this.transporter = nodemailer.createTransport({
-      host: config.host,
-      port: config.port,
-      secure: config.secure ?? config.port === 465,
-      auth: {
-        user: config.user,
-        pass: config.pass,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
+      host: settings.host,
+      port: settings.port,
+      secure: settings.secure,
+      requireTLS: settings.requireTls,
+      auth: settings.user ? { user: settings.user, pass: settings.pass ?? "" } : undefined,
+      // Fail fast instead of holding a queue worker for minutes on a dead server;
+      // the job is retried later.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
+      socketTimeout: 20_000,
     });
   }
 

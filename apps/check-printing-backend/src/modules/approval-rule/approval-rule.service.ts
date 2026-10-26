@@ -19,6 +19,7 @@ import type {
   EligibleApproverResponse,
   AuditContext,
 } from "./approval-rule.types.js";
+import { auditChanges } from "../../shared/utils/audit-changes.js";
 
 // ═══════════════════════════════════════════════════════════════
 // APPROVAL RULE SERVICE
@@ -227,11 +228,7 @@ export class ApprovalRuleService {
       action: "APPROVAL_RULE_UPDATED",
       entityType: "ApprovalRule",
       entityId: ruleId,
-      details: {
-        changes: input,
-        previousMinAmount: existing.minAmount?.toString(),
-        previousMaxAmount: existing.maxAmount?.toString() ?? null,
-      },
+      details: { changes: auditChanges(existing, updateData, { money: ["minAmount", "maxAmount"] }) },
       ipAddress: ctx.ipAddress,
     });
 

@@ -13,7 +13,7 @@ let world: TestWorld;
 function appAs(userId: string) {
   const app = express();
   app.use((req, _res, next) => {
-    req.user = { userId, email: "x@example.com" };
+    req.user = { userId, email: "x@example.com", amr: ["pwd"] };
     next();
   });
   app.get("/whoami", tenantMiddleware, (req, res) => {

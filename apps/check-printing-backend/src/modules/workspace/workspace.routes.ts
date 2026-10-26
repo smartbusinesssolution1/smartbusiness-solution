@@ -3,13 +3,16 @@ import { validate } from "../../middleware/validate.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
 import { workspaceMiddleware } from "../../middleware/workspace.middleware.js";
+import { requireTwoFactor } from "../../middleware/two-factor.middleware.js";
+import { requireCompanyOwner } from "../../middleware/company-owner.js";
 import { requirePermission } from "../../middleware/permission.guard.js";
 import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
 import { WorkspaceRepository } from "./workspace.repository.js";
 import { WorkspaceService } from "./workspace.service.js";
 import { WorkspaceController } from "./workspace.controller.js";
 import { AuditService } from "../../shared/services/audit.service.js";
-import { PasswordService } from "@smartbusiness/auth";
+import { UserTokenService } from "@smartbusiness/auth";
+import { emailQueue } from "../../jobs/queues.js";
 import {
   createWorkspaceSchema,
   updateWorkspaceSchema,
@@ -20,6 +23,7 @@ import { bankAccountRouter } from "../bank-account/bank-account-route.js";
 import { payeeRouter } from "../payee/payee.route.js";
 import { checkRouter } from "../check/check.routes.js";
 import { approvalRuleRouter } from "../approval-rule/approval-rule.routes.js";
+import { activityRouter } from "../activity/activity.routes.js";
 import { calibrationRouter } from "../calibration/calibration.routes.js";
 import { checkPrintingSettingsRouter } from "../check-printing-settings/check-printing-settings.routes.js";
 
@@ -27,11 +31,11 @@ import { checkPrintingSettingsRouter } from "../check-printing-settings/check-pr
 
 const workspaceRepository = new WorkspaceRepository();
 const auditService = new AuditService();
-const passwordService = new PasswordService();
 const workspaceService = new WorkspaceService(
   workspaceRepository,
   auditService,
-  passwordService,
+  emailQueue,
+  new UserTokenService(),
 );
 const workspaceController = new WorkspaceController(workspaceService);
 
@@ -43,10 +47,15 @@ const router: Router = Router();
 router.use(authMiddleware);
 router.use(tenantMiddleware);
 router.use(requireProduct("check-printing"));
+// Anyone who turned two-factor sign-in on must have entered a code this session.
+router.use(requireTwoFactor);
 
 // Workspace CRUD
+// Only the company owner opens a workspace: its creator becomes its admin, so anyone else
+// (a viewer, say) could otherwise give themselves bank accounts and printing in a new one.
 router.post(
   "/",
+  requireCompanyOwner,
   validate(createWorkspaceSchema),
   workspaceController.create,
 );
@@ -94,6 +103,25 @@ router.put(
   workspaceController.updateMember,
 );
 
+// Email a new invitation link to someone who has not set up their account yet.
+router.post(
+  "/:wid/members/:mid/invitation",
+  workspaceMiddleware,
+  requirePermission(P.MEMBER_MANAGE),
+  workspaceController.resendInvitation,
+);
+
+// Someone lost their phone and their backup codes: only the company owner can reset their
+// two-factor sign-in (audited); it stays off until they turn it on again.
+router.post(
+  "/:wid/members/:mid/two-factor/reset",
+  workspaceMiddleware,
+  requireCompanyOwner,
+  workspaceController.resetTwoFactor,
+);
+
+// Removing someone who was invited but never accepted is how an invitation is cancelled:
+// the access goes, and so does the link.
 router.delete(
   "/:wid/members/:mid",
   workspaceMiddleware,
@@ -114,5 +142,8 @@ router.use("/:wid/approval-rules", workspaceMiddleware, approvalRuleRouter);
 router.use("/:wid/calibration", workspaceMiddleware, calibrationRouter);
 
 router.use("/:wid/check-printing-settings", workspaceMiddleware, checkPrintingSettingsRouter);
+
+// Admins read the workspace's activity; the company owner also reads sign-ins (checked inside).
+router.use("/:wid/activity", workspaceMiddleware, activityRouter);
 
 export default router;

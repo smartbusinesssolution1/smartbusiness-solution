@@ -78,6 +78,10 @@ export class AttachmentRepository {
     }, TX_OPTIONS);
   }
 
+  async checkExists(checkId: string, workspaceId: string): Promise<boolean> {
+    return (await prisma.check.count({ where: { id: checkId, workspaceId, deletedAt: null } })) > 0;
+  }
+
   async list(checkId: string, workspaceId: string) {
     return prisma.checkAttachment.findMany({
       where: { checkId, check: { workspaceId, deletedAt: null } },

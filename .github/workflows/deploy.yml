@@ -1,0 +1,139 @@
+name: Build, Push to ECR & Deploy to EC2
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  build-and-push:
+    name: Build & Push Images to ECR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build and push microservices
+      - name: Build and push platform-api
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/platform-api/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/platform-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push check-printing-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/check-printing-backend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/check-printing-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push clockin-backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/clockInClockOut-backend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/clockin-backend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push face-recognition
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/clockInClockout-face-recognition
+          file: apps/clockInClockout-face-recognition/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/face-recognition:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push rag-chatbot
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/chatbot-backend
+          file: apps/chatbot-backend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/rag-chatbot:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push check-printing-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/check-printing-frontend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/check-printing-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push clockin-frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/clockInClockOut-frontend/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/clockin-frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push platform-web
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: apps/platform-web/Dockerfile
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/platform-web:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push gateway
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.gateway
+          push: true
+          tags: ${{ steps.login-ecr.outputs.registry }}/smartbusiness/gateway:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH to EC2 and Trigger Deployment
+        uses: appleboy/ssh-action@v1.0.3
+        if: ${{ secrets.EC2_HOST != '' && secrets.EC2_SSH_KEY != '' }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/smartbusiness
+            ./scripts/ec2-deploy.sh

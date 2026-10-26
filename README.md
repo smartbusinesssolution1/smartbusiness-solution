@@ -27,7 +27,7 @@ Navigate all architectural documentation, engineering standards, application spe
 | ↳ _Attendance API Specs_       | -                                      | [`apps/clockInClockOut-backend/ATTENDANCE_API_ENDPOINTS.md`](./apps/clockInClockOut-backend/ATTENDANCE_API_ENDPOINTS.md)   | REST API specification for admin attendance reporting, rosters, and analytics                 |
 | ↳ _Architecture Review_        | -                                      | [`apps/clockInClockOut-backend/CHECKPOINT_BACKEND_REVIEW.md`](./apps/clockInClockOut-backend/CHECKPOINT_BACKEND_REVIEW.md) | Deep architectural review and migration plan from legacy Checkpoint to SmartBusiness standard |
 | **`clockInClockOut-frontend`** | `Vite` · React 19 + MUI + Tailwind     | [`apps/clockInClockOut-frontend/README.md`](./apps/clockInClockOut-frontend/README.md)                                     | Employee attendance web application with webcam selfie capture and admin portal               |
-| **`portal-website`**           | `5173` · React 19 + Vite + Tailwind v4 | [`apps/portal-website/README.md`](./apps/portal-website/README.md)                                                         | Client customer-facing portal consuming platform design tokens                                |
+| **`check-printing-frontend`**  | `5173` · React 19 + Vite + Tailwind v4 | [`apps/check-printing-frontend/README.md`](./apps/check-printing-frontend/README.md)                                                         | Client customer-facing portal consuming platform design tokens                                |
 | **`face-recognition`**         | `8000` · Python FastAPI + DeepFace     | [`apps/face-recognition/README.MD`](./apps/face-recognition/README.MD)                                                     | Biometric facial recognition, liveness verification, and 2-image cosine similarity service    |
 | **`rag-chatbot`**              | `FastAPI` + pgvector + Redis           | [`apps/rag-chatbot/README.md`](./apps/rag-chatbot/README.md) · [`PROJECT.md`](./apps/rag-chatbot/PROJECT.md)               | Retrieval-augmented support chatbot backend with embeddable vanilla JS widget                 |
 | **`web-portal`**               | `Vite` · React 19 + Gemini API         | [`apps/web-portal/README.md`](./apps/web-portal/README.md)                                                                 | AI Studio prototype portal interface                                                          |
@@ -64,7 +64,7 @@ smartbusiness-solution/
 │   ├── check-printing-backend/    # Check Printing & Financial Microservice (Port 3005)
 │   ├── clockInClockOut-backend/   # Time & Attendance Microservice (Port 3000)
 │   ├── clockInClockOut-frontend/  # Attendance Web Client (Vite + React 19)
-│   ├── portal-website/            # Customer Portal (Vite + React 19 + Tailwind v4)
+│   ├── check-printing-frontend/   # Customer Portal (Vite + React 19 + Tailwind v4)
 │   ├── face-recognition/          # Facial Verification Service (Python FastAPI)
 │   ├── rag-chatbot/               # RAG AI Chatbot (FastAPI + pgvector + Redis)
 │   └── web-portal/                # AI Studio Prototype Portal
@@ -90,7 +90,7 @@ graph TD
     CHECK["apps/check-printing-backend"]
     CLOCK["apps/clockInClockOut-backend"]
     CLOCK_FE["apps/clockInClockOut-frontend"]
-    PORTAL["apps/portal-website"]
+    PORTAL["apps/check-printing-frontend"]
 
     AUTH --> DB
     PLATFORM --> AUTH
@@ -154,7 +154,7 @@ pnpm dev
 pnpm --filter @smartbusiness/platform-api dev
 pnpm --filter @smartbusiness/check-printing-backend dev
 pnpm --filter @smartbusiness/clockInClockOut-backend dev
-pnpm --filter @smartbusiness/portal-website dev
+pnpm --filter @smartbusiness/check-printing-frontend dev
 ```
 
 ### 5. Type Checking & Code Quality

@@ -10,9 +10,15 @@ export { generateOpaqueToken, hashOpaqueToken, looksLikeOpaqueToken } from "./ut
 export { createAuthMiddleware } from "./middleware/auth.middleware.js";
 export { tenantMiddleware } from "./middleware/tenant.middleware.js";
 export { requireProduct } from "./middleware/product.middleware.js";
+export { createOriginGuard } from "./middleware/origin.middleware.js";
+export type { OriginGuardOptions } from "./middleware/origin.middleware.js";
 
 // Errors
 export { AppError, AuthError, ForbiddenError } from "./errors/index.js";
+
+// Rate-limit counters shared by every server (Redis)
+export { RedisRateLimitStore } from "./utils/rate-limit-store.js";
+export type { RateLimitRedis, RedisRateLimitStoreOptions } from "./utils/rate-limit-store.js";
 
 // Cookie utilities
 export {

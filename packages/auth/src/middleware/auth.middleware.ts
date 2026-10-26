@@ -21,6 +21,8 @@ export function createAuthMiddleware(tokenService: TokenService) {
     req.user = {
       userId: payload.userId,
       email: payload.email,
+      // Tokens issued before two-factor existed carry no amr: they proved a password only.
+      amr: Array.isArray(payload.amr) ? payload.amr : ["pwd"],
     };
 
     next();

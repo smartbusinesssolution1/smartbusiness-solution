@@ -59,9 +59,12 @@ export const server = {
   isTest: config.NODE_ENV === "test",
 } as const
 
+// In development every request comes from the one developer's machine, and each page
+// makes several API calls, so the production budget runs out while clicking around.
+// Production and staging keep the strict default; a value set in the environment wins.
 export const rateLimit = {
   windowMs: config.RATE_LIMIT_WINDOW_MS,
-  max: config.RATE_LIMIT_MAX
+  max: config.RATE_LIMIT_MAX ?? (config.NODE_ENV === "development" ? 2000 : 100),
 } as const
 
 export const storage = {
@@ -79,6 +82,16 @@ export const storage = {
     currentKey: { id: config.STORAGE_ENCRYPTION_KEY_ID, hex: config.STORAGE_ENCRYPTION_KEY },
     previousKeys: config.STORAGE_PREVIOUS_KEYS,
   },
+} as const;
+
+export const app = {
+  url: (config.APP_URL ?? "http://localhost:5173").replace(/\/+$/, ""),
+} as const;
+
+export const jobs = {
+  redisUrl: config.REDIS_URL ?? "redis://127.0.0.1:6379",
+  // Same policy as platform-api, which runs the worker: 5 tries, backing off from 10 s.
+  retry: { attempts: 5, backoffMs: 10_000 },
 } as const;
 
 export const cors = {

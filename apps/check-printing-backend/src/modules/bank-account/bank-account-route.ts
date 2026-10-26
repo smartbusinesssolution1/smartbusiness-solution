@@ -5,8 +5,10 @@ import { BankAccountController } from "./bank-account.controller.js";
 import { validate } from "../../middleware/validate.js";
 import { createBankAccountSchema, updateBankAccountSchema, validateRoutingNumberSchema } from "./bank-account.schema.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import { tenantMiddleware, requireProduct } from "@smartbusiness/auth";
+import { requireTwoFactor } from "../../middleware/two-factor.middleware.js";
 import { requireAnyPermission, requirePermission } from "../../middleware/permission.guard.js";
-import { PERMISSIONS as P } from "../../shared/constants/rbac.js";
+import { PERMISSIONS as P, PRODUCT_SLUG } from "../../shared/constants/rbac.js";
 import { AuditService } from "../../shared/services/audit.service.js";
 import { fileStorage } from "../../shared/storage/instance.js";
 import { signatureUpload } from "./signature-upload.js";
@@ -55,7 +57,17 @@ export { router as bankAccountRouter };
 
 const validationRouter: Router = Router();
 
-validationRouter.post("/", authMiddleware, validate(validateRoutingNumberSchema), bankAccountController.validateRouting);
+// The same door as every other Check Printing route: a member of the company, with Check
+// Printing, past the two-factor check. It used to need only a sign-in from any product.
+validationRouter.post(
+  "/",
+  authMiddleware,
+  tenantMiddleware,
+  requireProduct(PRODUCT_SLUG),
+  requireTwoFactor,
+  validate(validateRoutingNumberSchema),
+  bankAccountController.validateRouting,
+);
 
 export { validationRouter as routingValidationRouter };
 
