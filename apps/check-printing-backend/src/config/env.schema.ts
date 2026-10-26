@@ -168,6 +168,13 @@ export const envSchema = z.object({
         path: ["S3_BUCKET"],
         message: "S3_BUCKET is required when STORAGE_DRIVER=s3",
     })
+    // A production database is reached over TLS with its certificate checked. The driver
+    // treats "require" as verify-full today, but its next major version gives "require" the
+    // weaker standard meaning (encrypt, don't verify), so production says verify-full outright.
+    .refine((env) => env.NODE_ENV !== "production" || new URL(env.DATABASE_URL).searchParams.get("sslmode") === "verify-full", {
+        path: ["DATABASE_URL"],
+        message: "Production DATABASE_URL must end with ?sslmode=verify-full (TLS with the server's certificate checked)",
+    })
     // Local disk is wiped on redeploys and not shared between servers.
     .refine((env) => env.NODE_ENV !== "production" || env.STORAGE_DRIVER === "s3", {
         path: ["STORAGE_DRIVER"],

@@ -71,8 +71,7 @@ const W = "/api/v1/workspaces/:wid";
 
 const RULES: Record<string, Rule> = {
   "GET /api/v1/health": { who: "public" },
-  // S9 in the security audit: only needs a sign-in (and skips the two-factor door).
-  "POST /api/v1/validate-routing-number": { who: "signed-in", twoFactor: false },
+  "POST /api/v1/validate-routing-number": { who: "company" },
 
   "POST /api/v1/workspaces": { who: "owner" },
   "GET /api/v1/workspaces": { who: "company" },

@@ -13,6 +13,16 @@ const REQUIRED = {
   STORAGE_ENCRYPTION_KEY: "0e".repeat(32),
 };
 
+const PRODUCTION = {
+  ...REQUIRED,
+  NODE_ENV: "production",
+  DATABASE_URL: "postgresql://u:p@db.example.com:5432/app?sslmode=verify-full",
+  STORAGE_DRIVER: "s3",
+  S3_BUCKET: "checks",
+  APP_URL: "https://checks.example.com",
+  REDIS_URL: "rediss://cache.example.com:6379",
+};
+
 const parseOrigins = (value: string | undefined) => envSchema.safeParse({ ...REQUIRED, CORS_ORIGIN: value });
 
 // S2: a server started without NODE_ENV used to run as "development" without a word.
@@ -30,13 +40,37 @@ describe("NODE_ENV", () => {
     expect(parseEnv(value).success).toBe(true);
   });
 
-  it("accepts production (which also needs S3, APP_URL and REDIS_URL)", () => {
-    const production = { ...REQUIRED, NODE_ENV: "production", STORAGE_DRIVER: "s3", S3_BUCKET: "checks", APP_URL: "https://checks.example.com", REDIS_URL: "rediss://cache.example.com:6379" };
-    expect(envSchema.safeParse(production).success).toBe(true);
+  it("accepts production (which also needs S3, APP_URL, REDIS_URL and a verify-full database URL)", () => {
+    expect(envSchema.safeParse(PRODUCTION).success).toBe(true);
   });
 
   it.each(["", "prod", "Production", "dev"])("refuses %j", (value) => {
     expect(parseEnv(value).success).toBe(false);
+  });
+});
+
+// S9: production reaches the database over TLS with the certificate checked, said outright
+// (the driver's next major version weakens "require" to "encrypt, don't verify").
+describe("DATABASE_URL in production", () => {
+  const withDatabase = (url: string, NODE_ENV = "production") => envSchema.safeParse({ ...PRODUCTION, NODE_ENV, DATABASE_URL: url });
+
+  it.each([
+    ["postgresql://u:p@db.example.com/app", "no sslmode"],
+    ["postgresql://u:p@db.example.com/app?sslmode=require", "require"],
+    ["postgresql://u:p@db.example.com/app?sslmode=prefer", "prefer"],
+    ["postgresql://u:p@db.example.com/app?sslmode=disable", "disable"],
+  ])("refuses %s (%s)", (url) => {
+    const result = withDatabase(url);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.message).join(" ")).toMatch(/sslmode=verify-full/);
+  });
+
+  it("accepts sslmode=verify-full", () => {
+    expect(withDatabase("postgresql://u:p@db.example.com/app?sslmode=verify-full").success).toBe(true);
+  });
+
+  it("leaves development alone (a local database has no TLS)", () => {
+    expect(withDatabase("postgresql://u:p@localhost:5432/app", "development").success).toBe(true);
   });
 });
 

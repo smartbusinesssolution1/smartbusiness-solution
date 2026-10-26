@@ -250,7 +250,7 @@ function CheckForm({ check }: { check?: Check }) {
               name="bankAccountId"
               rules={{ required: "Choose a bank account" }}
               render={({ field }) => (
-                <Select id="bankAccountId" aria-invalid={errors.bankAccountId ? true : undefined} value={field.value || undefined} onValueChange={field.onChange} disabled={editing} placeholder="Choose an account">
+                <Select id="bankAccountId" aria-invalid={errors.bankAccountId ? true : undefined} value={field.value ?? ""} onValueChange={field.onChange} disabled={editing} placeholder="Choose an account">
                   {activeBanks.map((b) => (
                     <SelectItem key={b.id} value={b.id} description={`Next check #${checkNo(b.nextCheckNumber, b.checkNumberPadding)}`}>
                       {b.bankName} {b.accountNumber}

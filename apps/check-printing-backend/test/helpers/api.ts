@@ -1,13 +1,16 @@
+import type { Server } from "http";
 import request from "supertest";
-import type { Express } from "express";
 import { createApp } from "../../src/app.js";
 import { authHeaders, today, type TestUser, type TestWorld } from "./fixtures.js";
 
-let app: Express | null = null;
+let server: Server | null = null;
 
-export function getApp(): Express {
-  app ??= createApp();
-  return app;
+// The app, running on one server for the whole test file. Given the bare app, supertest
+// starts and stops a server for every request; with the shared connection from
+// setup/keep-alive.ts, requests now reuse one connection to one server.
+export function getApp(): Server {
+  server ??= createApp().listen(0);
+  return server;
 }
 
 /** A thin client for the checks API, acting as one user. */

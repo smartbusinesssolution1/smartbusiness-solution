@@ -69,32 +69,23 @@ export function createApp(): Express {
   // Bridge pino-http's req.id to req.requestId + X-Request-Id response header
   app.use(requestIdMiddleware);
 
-  app.get("/api/v1/health", async (req: Request, res: Response) => {
-    let dbLatencyMs: number | null = null;
+  // Public, for load balancers and uptime checks: healthy (200) or degraded (503), nothing
+  // more. How long the server has run and how fast the database answers help an attacker
+  // time an attack, and no health check needs them.
+  app.get("/api/v1/health", async (_req: Request, res: Response) => {
     let isDatabaseOk = false;
-
     try {
-      const dbStart = Date.now();
       await prisma.$executeRawUnsafe("SELECT 1");
-      dbLatencyMs = Date.now() - dbStart;
       isDatabaseOk = true;
     } catch {
       isDatabaseOk = false;
     }
 
-    const status = isDatabaseOk ? "healthy" : "degraded";
-    const httpStatus = isDatabaseOk ? 200 : 503;
-
-    res.status(httpStatus).json({
+    res.status(isDatabaseOk ? 200 : 503).json({
       success: isDatabaseOk,
       data: {
-        status,
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime(),
-        database: {
-          connected: isDatabaseOk,
-          latencyMs: dbLatencyMs,
-        },
+        status: isDatabaseOk ? "healthy" : "degraded",
+        database: { connected: isDatabaseOk },
       },
     });
   });

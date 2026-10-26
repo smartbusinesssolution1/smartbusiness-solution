@@ -130,6 +130,13 @@ export const envSchema = z
     .string({ error: "MFA_ENCRYPTION_KEY is required" })
     .regex(/^[0-9a-fA-F]{64}$/, "MFA_ENCRYPTION_KEY must be exactly 64 hex characters (generate with: openssl rand -hex 32)"),
   })
+  // A production database is reached over TLS with its certificate checked. The driver
+  // treats "require" as verify-full today, but its next major version gives "require" the
+  // weaker standard meaning (encrypt, don't verify), so production says verify-full outright.
+  .refine((env) => env.NODE_ENV !== "production" || new URL(env.DATABASE_URL).searchParams.get("sslmode") === "verify-full", {
+    path: ["DATABASE_URL"],
+    message: "Production DATABASE_URL must end with ?sslmode=verify-full (TLS with the server's certificate checked)",
+  })
   // Emails written to a folder or kept in memory on a production server would never
   // reach anyone. Refuse to start rather than fail silently.
   .refine((env) => env.NODE_ENV !== "production" || !["file", "memory"].includes(env.EMAIL_TRANSPORT), {

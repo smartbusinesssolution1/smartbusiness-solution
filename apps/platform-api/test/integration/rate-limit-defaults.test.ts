@@ -21,7 +21,14 @@ afterEach(() => {
 
 describe("rate limit defaults", () => {
   it("production keeps the strict limits", async () => {
-    const limits = await limitsFor({ NODE_ENV: "production", EMAIL_TRANSPORT: "smtp", SMTP_HOST: "email-smtp.us-east-1.amazonaws.com", SMTP_USER: "u", SMTP_PASS: "p" });
+    const limits = await limitsFor({
+      NODE_ENV: "production",
+      DATABASE_URL: "postgresql://u:p@db.example.com:5432/app?sslmode=verify-full",
+      EMAIL_TRANSPORT: "smtp",
+      SMTP_HOST: "email-smtp.us-east-1.amazonaws.com",
+      SMTP_USER: "u",
+      SMTP_PASS: "p",
+    });
 
     expect(limits).toEqual({ globalPerMinute: 100, authPer15Minutes: 10, refreshPer15Minutes: 300, invitationPer15Minutes: 60, mfaPer15Minutes: 60 });
   });

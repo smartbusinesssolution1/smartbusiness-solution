@@ -170,7 +170,9 @@ function CreateWorkspaceForm() {
               <Input autoComplete="address-level2" placeholder="Austin" {...register("city", { required: "Enter the city" })} />
             </Field>
             <Field label="State" htmlFor="state" error={errors.state?.message}>
-              <Select value={v.state || undefined} onValueChange={(s) => setValue("state", s, { shouldValidate: true })} placeholder="TX">
+              {/* Always a string ("" shows the placeholder): undefined would make the dropdown
+                  switch from uncontrolled to controlled on the first pick, and React warns. */}
+              <Select value={v.state ?? ""} onValueChange={(s) => setValue("state", s, { shouldValidate: true })} placeholder="TX">
                 {US_STATES.map((s) => (
                   <SelectItem key={s} value={s}>{s}</SelectItem>
                 ))}

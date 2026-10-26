@@ -32,6 +32,22 @@ describe("NODE_ENV", () => {
   });
 });
 
+// S9: production reaches the database over TLS with the certificate checked, said outright.
+describe("DATABASE_URL in production", () => {
+  const PRODUCTION = { ...REQUIRED, NODE_ENV: "production", EMAIL_TRANSPORT: "smtp", SMTP_HOST: "email-smtp.us-east-1.amazonaws.com", SMTP_USER: "u", SMTP_PASS: "p" };
+  const withDatabase = (url: string) => envSchema.safeParse({ ...PRODUCTION, DATABASE_URL: url });
+
+  it.each(["postgresql://u:p@db.example.com/app", "postgresql://u:p@db.example.com/app?sslmode=require"])("refuses %s", (url) => {
+    const result = withDatabase(url);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((i) => i.message).join(" ")).toMatch(/sslmode=verify-full/);
+  });
+
+  it("accepts sslmode=verify-full", () => {
+    expect(withDatabase("postgresql://u:p@db.example.com/app?sslmode=verify-full").success).toBe(true);
+  });
+});
+
 // Development lets phones and other computers on the developer's network call the API.
 // Only real private addresses count.
 describe("local-network origins (development only)", () => {

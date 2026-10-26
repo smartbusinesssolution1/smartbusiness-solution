@@ -5,6 +5,7 @@ const US_STATE_REGEX = /^[A-Za-z]{2}$/;
 const ZIP_CODE_REGEX = /^\d{5}(-\d{4})?$/;
 const PHONE_REGEX = /^[\d\s\-\(\)\+\.]{7,20}$/;
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_ROLES = 10;
 
 // ─── Reusable Field Builders ────────────────────────────
 const businessNameField = z.string().min(1, "Business name is required").max(255).trim();
@@ -68,14 +69,18 @@ export const addMemberSchema = z.object({
   fullName: z.string().min(1, "Name is required").max(255).trim(),
   roleSlugs: z
     .array(z.string().min(1).max(50))
-    .min(1, "At least one role is required"),
+    .min(1, "At least one role is required")
+    // A bound on every list from a request (there are 5 roles; unbounded lists cost memory).
+    .max(MAX_ROLES, `At most ${MAX_ROLES} roles`),
 });
 
 // ─── Update Member Roles ────────────────────────────────
 export const updateMemberSchema = z.object({
   roleSlugs: z
     .array(z.string().min(1).max(50))
-    .min(1, "At least one role is required"),
+    .min(1, "At least one role is required")
+    // A bound on every list from a request (there are 5 roles; unbounded lists cost memory).
+    .max(MAX_ROLES, `At most ${MAX_ROLES} roles`),
 });
 
 // ─── TypeScript Types ───────────────────────────────────

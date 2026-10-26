@@ -1,6 +1,5 @@
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 
-// ═══════════════════════════════════════════════════════════════
 // TOTP: TIME-BASED ONE-TIME CODES (RFC 6238), THE CODES IN AUTHENTICATOR APPS
 //
 // Setup shares one random secret between the server and the phone (via a QR code).
@@ -12,7 +11,6 @@ import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 //
 // Same secret + same clock = same code. Phones' clocks drift a little, so the previous
 // and next step are accepted too (a 90-second window).
-// ═══════════════════════════════════════════════════════════════
 
 export const TOTP = {
   stepSeconds: 30,
@@ -73,7 +71,11 @@ export function stepAt(unixMs: number): number {
   return Math.floor(unixMs / 1000 / TOTP.stepSeconds);
 }
 
-export function codeAt(secret: string, step: number, digits: number = TOTP.digits): string {
+export function codeAt(
+  secret: string,
+  step: number,
+  digits: number = TOTP.digits,
+): string {
   const counter = Buffer.alloc(8);
   counter.writeBigUInt64BE(BigInt(step));
   const mac = createHmac("sha1", base32Decode(secret)).update(counter).digest();
@@ -85,11 +87,16 @@ export function codeAt(secret: string, step: number, digits: number = TOTP.digit
 
 // The step a code belongs to (now, or one step either side), or null if it matches none.
 // Compared in constant time, so response timing reveals nothing about a near-miss.
-export function matchingStep(secret: string, code: string, unixMs: number): number | null {
+export function matchingStep(
+  secret: string,
+  code: string,
+  unixMs: number,
+): number | null {
   if (!/^\d{6}$/.test(code)) return null;
   const now = stepAt(unixMs);
   for (const step of [now, now - TOTP.window, now + TOTP.window]) {
-    if (timingSafeEqual(Buffer.from(codeAt(secret, step)), Buffer.from(code))) return step;
+    if (timingSafeEqual(Buffer.from(codeAt(secret, step)), Buffer.from(code)))
+      return step;
   }
   return null;
 }

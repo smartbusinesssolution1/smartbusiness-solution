@@ -11,6 +11,9 @@ export interface AccessTokenPayload {
   amr?: string[];
 }
 
+// Every login token is signed with HMAC-SHA256 and the shared JWT_SECRET.
+const ALGORITHM = "HS256";
+
 export class TokenService {
   constructor(
     private readonly secret: string,
@@ -19,13 +22,16 @@ export class TokenService {
 
   generateAccessToken(payload: AccessTokenPayload): string {
     return jwt.sign(payload, this.secret, {
+      algorithm: ALGORITHM,
       expiresIn: this.expiresIn as SignOptions["expiresIn"],
     });
   }
 
+  // Only the algorithm we sign with is accepted. Left open, the library takes any HMAC
+  // variant the token names in its own header; pinned, a token can't choose how it is checked.
   verifyAccessToken(token: string): AccessTokenPayload {
     try {
-      return jwt.verify(token, this.secret) as AccessTokenPayload;
+      return jwt.verify(token, this.secret, { algorithms: [ALGORITHM] }) as AccessTokenPayload;
     } catch (err) {
       if (err instanceof jwt.TokenExpiredError) {
         throw new AuthError("Token expired. Please login again.");
