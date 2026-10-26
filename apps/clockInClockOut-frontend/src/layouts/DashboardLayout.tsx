@@ -1,4 +1,4 @@
-import React, { useState, Suspense } from 'react';
+﻿import React, { useState, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -356,8 +356,8 @@ export const DashboardLayout: React.FC = () => {
               alt="Clock In Clock Out"
               sx={{ height: 32, width: 32, objectFit: 'contain', display: { xs: 'none', sm: 'block', md: 'none' } }}
             />
-            {/* Workspace / Tenant Switcher - Strictly restricted to Super Admin / Organization Owner */}
-            {isSuperAdmin && <WorkspaceSwitcher />}
+            {/* Workspace / Branch Switcher (Self-gated: Owner or Multi-branch Admin) */}
+            <WorkspaceSwitcher />
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>

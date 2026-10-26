@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'employee' | 'super_admin';
+﻿export type UserRole = 'admin' | 'employee' | 'super_admin';
 
 export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
@@ -21,6 +21,8 @@ export interface Workspace {
   phone?: string;
   isDefault?: boolean;
   employeeCount?: number;
+  role?: string;
+  userRole?: string;
   createdAt?: string;
 }
 

@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from "express";
+﻿import type { Request, Response, NextFunction } from "express";
 import { WorkspaceService } from "./workspace.service.js";
 
 export class WorkspaceController {
@@ -10,12 +10,13 @@ export class WorkspaceController {
    */
   list = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const { tenantId } = req.tenant!;
+      const { tenantId, role: tenantRole } = req.tenant!;
       const { userId } = req.user!; // from the decoded access token
 
       const workspaces = await this.workspaceService.listAccessibleWorkspaces(
         tenantId,
         userId,
+        tenantRole,
       );
 
       console.log(

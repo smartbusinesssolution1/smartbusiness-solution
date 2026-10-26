@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 
 import {
   Box,
@@ -24,9 +24,45 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import { useAuth } from '../../context/AuthContext';
 import { Workspace } from '../../types';
 import BrandLoader from '../../components/BrandLoader';
+
+// ── Role badge helpers ──────────────────────────────────────────────────────
+type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
+const ROLE_CONFIG: Record<WorkspaceRole, { label: string; lightBg: string; lightColor: string; darkBg: string; darkColor: string }> = {
+  OWNER: { label: 'Owner', lightBg: '#FFF7ED', lightColor: '#C2410C', darkBg: 'rgba(251,146,60,0.18)', darkColor: '#FDBA74' },
+  ADMIN: { label: 'Admin', lightBg: '#EEF2FF', lightColor: '#3730A3', darkBg: 'rgba(129,140,248,0.18)', darkColor: '#C7D2FE' },
+  MEMBER: { label: 'Member', lightBg: '#F1F5F9', lightColor: '#475569', darkBg: 'rgba(255,255,255,0.08)', darkColor: '#94A3B8' },
+};
+
+const WorkspaceRoleBadge: React.FC<{ role: WorkspaceRole; isDark: boolean }> = ({ role, isDark }) => {
+  const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.MEMBER;
+  return (
+    <Box
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 0.4,
+        px: 0.9,
+        py: 0.3,
+        borderRadius: 1.5,
+        bgcolor: isDark ? cfg.darkBg : cfg.lightBg,
+        color: isDark ? cfg.darkColor : cfg.lightColor,
+        fontSize: '0.68rem',
+        fontWeight: 700,
+        letterSpacing: '0.01em',
+        lineHeight: 1.2,
+        flexShrink: 0,
+      }}
+    >
+      {cfg.label}
+    </Box>
+  );
+};
 
 export const WorkspaceSelectPage: React.FC = () => {
   const theme = useTheme();
@@ -55,6 +91,21 @@ export const WorkspaceSelectPage: React.FC = () => {
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
   const companyName = currentTenant?.name || 'Organization';
+  const isDark = theme.palette.mode === 'dark';
+
+  // Helper to determine user role for a specific workspace
+  const getWorkspaceRole = (ws: Workspace): WorkspaceRole => {
+    const raw = (ws.role || ws.userRole || currentTenant?.role || 'ADMIN').toUpperCase();
+    if (raw === 'OWNER') return 'OWNER';
+    if (raw === 'ADMIN') return 'ADMIN';
+    return 'MEMBER';
+  };
+
+  // Only show workspaces where the logged-in user is Owner or Admin for that specific workspace
+  const visibleWorkspaces = workspaces.filter((ws) => {
+    const role = getWorkspaceRole(ws);
+    return role === 'OWNER' || role === 'ADMIN';
+  });
 
   const handleSelectWorkspace = async (ws: Workspace) => {
     try {
@@ -165,7 +216,7 @@ export const WorkspaceSelectPage: React.FC = () => {
                 fontWeight: 700,
               }}
             >
-              {workspaces.length} Branches
+              {visibleWorkspaces.length} Branches
             </Box>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mt: 0.5 }}>
@@ -218,8 +269,27 @@ export const WorkspaceSelectPage: React.FC = () => {
       </Box>
 
         {/* 3-Column Responsive Cards Grid */}
-        <Grid container spacing={2.5}>
-          {workspaces.map((ws) => {
+        {visibleWorkspaces.length === 0 ? (
+          <Box
+            sx={{
+              p: 4,
+              textAlign: 'center',
+              bgcolor: 'background.paper',
+              borderRadius: 3,
+              border: '1px solid', borderColor: 'divider',
+            }}
+          >
+            <StorefrontRoundedIcon sx={{ fontSize: 36, color: 'text.secondary', opacity: 0.4, mb: 1 }} />
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+              No administrative workspaces available
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, fontSize: '0.85rem' }}>
+              Only workspaces where you are assigned as an Administrator or Owner are visible in this console.
+            </Typography>
+          </Box>
+        ) : (
+          <Grid container spacing={2.5}>
+          {visibleWorkspaces.map((ws) => {
             const isSelected = ws.id === currentWorkspace?.id;
             return (
               <Grid size={{ xs: 12, sm: 6, md: 4 }} key={ws.id}>
@@ -311,6 +381,11 @@ export const WorkspaceSelectPage: React.FC = () => {
                       )}
                     </Box>
 
+                    {/* Role Badge */}
+                    <Box sx={{ mt: 1.25, mb: 0.25 }}>
+                      <WorkspaceRoleBadge role={getWorkspaceRole(ws)} isDark={isDark} />
+                    </Box>
+
                     {/* Workspace Title */}
                     <Typography
                       variant="subtitle1"
@@ -378,6 +453,7 @@ export const WorkspaceSelectPage: React.FC = () => {
             );
           })}
         </Grid>
+        )}
 
       {/* Modal: "Add Workspace & Branch" */}
       <Dialog

@@ -1,4 +1,4 @@
-import { WorkspaceRepository } from "./workspace.repository.js";
+﻿import { WorkspaceRepository } from "./workspace.repository.js";
 import { NotFoundError } from "../../shared/errors/index.js";
 import { CreateWorkspaceInput } from "./workspace.schema.js";
 
@@ -17,6 +17,8 @@ export interface WorkspaceResponseDTO {
   isDefault: boolean;
   employeeCount: number;
   geofenceConfigured: boolean;
+  role?: string;
+  userRole?: string;
   settings?: {
     latitude: number;
     longitude: number;
@@ -76,18 +78,60 @@ export class WorkspaceService {
     return this.formatWorkspace(record, 0);
   }
 
-  async listAccessibleWorkspaces(tenantId: string, userId: string): Promise<WorkspaceResponseDTO[]> {
-    const workspaces = await this.workspaceRepository.listByTenantAndUser(tenantId, userId);
+  async listAccessibleWorkspaces(
+    tenantId: string,
+    userId: string,
+    tenantRole = "",
+  ): Promise<WorkspaceResponseDTO[]> {
+    const isOwner = (tenantRole || "").toUpperCase() === "OWNER";
+    const workspaces = await this.workspaceRepository.listByTenantAndUser(tenantId, userId, isOwner);
 
-    return workspaces.map(({ _count, attendanceSettings, ...w }, index) => ({
-      ...w,
-      name: w.businessName,
-      isDefault: index === 0,
-      employeeCount: _count.members,
-      geofenceConfigured: attendanceSettings !== null,
-      createdAt: w.createdAt.toISOString(),
-      updatedAt: w.updatedAt.toISOString(),
-    }));
+    return workspaces.map(({ _count, attendanceSettings, members, ...w }: any, index: number) => {
+      const member = members && members.length > 0 ? members[0] : null;
+      const empRole = member?.employeeProfiles?.[0]?.role?.toLowerCase();
+      const hasAdminAssignedRole = member?.assignedRoles?.some(
+        (ar: any) =>
+          ar.role?.slug?.toLowerCase().includes("admin") ||
+          ar.role?.name?.toLowerCase().includes("admin"),
+      );
+
+      let role = "EMPLOYEE";
+
+      // Priority 1: Exact role defined in the employee table for this workspace
+      if (empRole) {
+        role = empRole === "admin" ? "ADMIN" : "EMPLOYEE";
+      } else if (hasAdminAssignedRole) {
+        role = "ADMIN";
+      } else if (isOwner) {
+        role = "OWNER";
+      } else if ((tenantRole || "").toUpperCase() === "ADMIN") {
+        role = "ADMIN";
+      } else {
+        role = "EMPLOYEE";
+      }
+
+      console.log("[Workspace Role] Workspace:", w.businessName, "| empRole:", empRole, "| Assigned:", role);
+
+      return {
+        ...w,
+        name: w.businessName,
+        isDefault: index === 0,
+        employeeCount: _count.members,
+        geofenceConfigured: attendanceSettings !== null,
+        role,
+        userRole: role,
+        settings: attendanceSettings
+          ? {
+              latitude: Number(attendanceSettings.latitude),
+              longitude: Number(attendanceSettings.longitude),
+              radiusMeters: attendanceSettings.radiusMeters,
+              graceMinutes: attendanceSettings.graceMinutes,
+            }
+          : null,
+        createdAt: w.createdAt?.toISOString?.() ?? w.createdAt,
+        updatedAt: w.updatedAt?.toISOString?.() ?? w.updatedAt,
+      };
+    });
   }
 
   /**
