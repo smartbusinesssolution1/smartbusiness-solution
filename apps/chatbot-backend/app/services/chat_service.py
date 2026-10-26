@@ -5,14 +5,14 @@ from collections.abc import Iterator
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.core import cache, guardrails, llm, nemo_guard, tracing
+from app.core import brand, cache, guardrails, llm, nemo_guard, pricing, tracing
 from app.core.embeddings import embed_query
 from app.core.retrieval import search
-from app.db.models import ConversationMessage
+from app.db.models import ChatEvent, ConversationMessage
 
 logger = logging.getLogger("chat_service")
 
-REFUSAL_MESSAGE = f"I can't help with that request. Please ask me something about {settings.bot_company_name}."
+REFUSAL_MESSAGE = f"I can't help with that request. Please ask me something about {brand.COMPANY_NAME}."
 GENERIC_ERROR_MESSAGE = "Sorry, something went wrong on my end. Please try again in a moment."
 UPSTREAM_BUSY_MESSAGE = (
     "I'm getting rate-limited by an upstream service right now - please wait a few seconds and try again."
@@ -43,7 +43,9 @@ def handle_chat(
             yield delta
     finally:
         # also runs if the client disconnects mid-stream
-        trace.finish("".join(out), trace.meta.get("outcome", "unknown"))
+        answer = "".join(out)
+        trace.finish(answer, trace.meta.get("outcome", "unknown"))
+        _record_event(db, session_id, message, answer, trace)
 
 
 def _handle_chat(
@@ -178,8 +180,6 @@ def _handle_chat(
     # 9. stream from the LLM
     full_answer = ""
     model = settings.groq_fast_model if tier == "fast" else settings.groq_complex_model
-    if (settings.llm_fast_provider if tier == "fast" else settings.llm_complex_provider) == "claude":
-        model = settings.claude_fast_model if tier == "fast" else settings.claude_complex_model
     trace.generation(model, tier, estimated_in)
     trace.mark("llm_start")
     try:
@@ -208,6 +208,47 @@ def _handle_chat(
     cache.append_history(session_id, "user", message)
     cache.append_history(session_id, "assistant", full_answer)
     _persist(db, session_id, message, full_answer, retrieval_score=confidence)
+
+
+# outcomes where the LLM was actually called (so tokens / cost apply)
+_COSTED_OUTCOMES = {"answered", "error_llm", "error_empty_answer"}
+
+
+def _record_event(db: Session, session_id: str, question: str, answer: str, trace) -> None:
+    """One analytics row per message for the admin dashboard. Never breaks a chat."""
+    try:
+        outcome = trace.meta.get("outcome", "unknown")
+        model = tier = None
+        in_tokens = out_tokens = 0
+        cost = 0.0
+        if trace.llm:
+            model, tier = trace.llm["model"], trace.llm["tier"]
+            if outcome in _COSTED_OUTCOMES:
+                in_tokens = trace.llm["input_tokens"]
+                out_tokens = llm.estimate_tokens(answer) if answer else 0
+                cost = pricing.estimate_cost(model, in_tokens, out_tokens)
+        db.add(
+            ChatEvent(
+                session_id=session_id,
+                outcome=outcome,
+                question=question[:2000],
+                answer=answer[:4000] if answer else None,
+                confidence=trace.meta.get("confidence"),
+                tier=tier,
+                model=model,
+                input_tokens=in_tokens,
+                output_tokens=out_tokens,
+                cost_usd=cost,
+                latency_ms=trace.elapsed_ms(),
+            )
+        )
+        db.commit()
+    except Exception:
+        logger.exception("failed to record chat event for session=%s", session_id)
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 def _persist(db: Session, session_id: str, question: str, answer: str, retrieval_score: float | None) -> None:

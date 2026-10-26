@@ -5,13 +5,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 logger = logging.getLogger("config")
 
 DEV_SESSION_SECRET = "dev-only-insecure-session-secret-change-me"
+DEFAULT_DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5432/dbname"  # placeholder: set DATABASE_URL in .env
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # DB
-    database_url: str = "postgresql+psycopg2://raguser:ragpass@localhost:5432/ragchat"
+    database_url: str = DEFAULT_DATABASE_URL
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"
@@ -21,12 +22,6 @@ class Settings(BaseSettings):
     groq_fast_model: str = "openai/gpt-oss-20b"
     groq_complex_model: str = "openai/gpt-oss-120b"
 
-    anthropic_api_key: str = ""
-    claude_fast_model: str = "claude-haiku-4-5-20251001"
-    claude_complex_model: str = "claude-sonnet-4-6"
-
-    llm_fast_provider: str = "groq"
-    llm_complex_provider: str = "groq"
     llm_timeout_seconds: float = 25.0
 
     # Embeddings
@@ -55,23 +50,9 @@ class Settings(BaseSettings):
     # (regex already passed), "closed" = block it.
     guard_fail_mode: str = "open"
 
-    # Branding - the only place a deployment's identity lives. Used in the
-    # refusal message, greeting, system prompt and NeMo guard policy.
-    bot_company_name: str = "SmartBusiness Solutions"
-    bot_topics: str = "Check Printing and Time & Attendance"
-    bot_company_summary: str = (
-        "a business software company whose products are Check Printing "
-        "(prepare, approve and print business checks) and Time and Attendance "
-        "(employee clock-in/out, geofencing, attendance reports)"
-    )
-
-    # Observability
-    langfuse_enabled: bool = False
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
-    langfuse_host: str = "https://cloud.langfuse.com"
-    # false -> send only metadata (no visitor question / bot answer text)
-    langfuse_capture_content: bool = True
+    # Optional JSON to add/override model prices (USD per 1M tokens), used only
+    # for the admin cost estimate: {"model-name": [input_price, output_price]}
+    model_prices_json: str = ""
 
     # App / security
     app_env: str = "development"
@@ -109,6 +90,8 @@ class Settings(BaseSettings):
     def production_problems(self) -> list[str]:
         """Config mistakes that must block startup when APP_ENV=production."""
         problems = []
+        if self.database_url == DEFAULT_DATABASE_URL:
+            problems.append("DATABASE_URL must be set (postgresql+psycopg2://...)")
         if not self.admin_api_key or len(self.admin_api_key) < 24:
             problems.append("ADMIN_API_KEY must be set (24+ chars)")
         if not self.session_secret or len(self.session_secret) < 32:

@@ -6,9 +6,9 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.api import chat, health, ingest
+from app.api import admin, chat, health, ingest
 from app.config import DEV_SESSION_SECRET, settings
-from app.core import nemo_guard, tracing
+from app.core import nemo_guard
 from app.db import models  # noqa: F401  (registers tables on Base.metadata)
 from app.db.session import Base, engine
 
@@ -68,17 +68,16 @@ async def lifespan(app: FastAPI):
         "started env=%s guardrails=%s llm_fast=%s llm_complex=%s embeddings=%s",
         settings.app_env,
         settings.guardrails_mode,
-        settings.llm_fast_provider,
-        settings.llm_complex_provider,
+        settings.groq_fast_model,
+        settings.groq_complex_model,
         settings.embedding_provider,
     )
     yield
-    tracing.flush()
 
 
 app = FastAPI(
     title="RAG Chat Assistant",
-    version="0.2.0",
+    version="0.3.0",
     lifespan=lifespan,
     # interactive API docs help in dev, but shouldn't be public in production
     docs_url=None if settings.is_production else "/docs",
@@ -106,3 +105,4 @@ async def security_headers(request: Request, call_next):
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(ingest.router)
+app.include_router(admin.router)
