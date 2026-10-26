@@ -20,6 +20,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-api:latest
     container_name: smartbusiness-platform-api
     restart: always
+    ports:
+      - "3001:3001"
     env_file: .env.production
     environment:
       - PORT=3001
@@ -35,6 +37,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-backend:latest
     container_name: smartbusiness-check-backend
     restart: always
+    ports:
+      - "3005:3005"
     env_file: .env.production
     environment:
       - PORT=3005
@@ -52,6 +56,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-backend:latest
     container_name: smartbusiness-clockin-backend
     restart: always
+    ports:
+      - "3000:3000"
     env_file: .env.production
     environment:
       - PORT=3000
@@ -65,6 +71,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/face-recognition:latest
     container_name: smartbusiness-face-recognition
     restart: always
+    ports:
+      - "8000:8000"
     env_file: .env.production
     networks:
       - smartbusiness-net
@@ -88,6 +96,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-frontend:latest
     container_name: smartbusiness-check-frontend
     restart: always
+    ports:
+      - "5173:80"
     networks:
       - smartbusiness-net
 
@@ -95,6 +105,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-frontend:latest
     container_name: smartbusiness-clockin-web
     restart: always
+    ports:
+      - "5174:80"
     networks:
       - smartbusiness-net
 
@@ -103,6 +115,8 @@ services:
     image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-web:latest
     container_name: smartbusiness-platform-web
     restart: always
+    ports:
+      - "3003:80"
     networks:
       - smartbusiness-net
 
