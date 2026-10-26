@@ -1,0 +1,134 @@
+services:
+  # ── In-Memory Queue & Cache for BullMQ / Chatbot ──
+  redis:
+    image: redis:7-alpine
+    container_name: smartbusiness-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - smartbusiness-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Identity & Core Auth Service ──
+  platform-api:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-api:latest
+    container_name: smartbusiness-platform-api
+    restart: always
+    env_file: .env.production
+    environment:
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── Check Printing & Bank Encryption Service ──
+  check-printing-backend:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-backend:latest
+    container_name: smartbusiness-check-backend
+    restart: always
+    env_file: .env.production
+    environment:
+      - PORT=3005
+      - REDIS_URL=redis://redis:6379
+      - STORAGE_DRIVER=s3
+      - S3_BUCKET=check-printing-bucket
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── ClockIn / Attendance Microservice ──
+  clockin-backend:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-backend:latest
+    container_name: smartbusiness-clockin-backend
+    restart: always
+    env_file: .env.production
+    environment:
+      - PORT=3000
+      - AWS_S3_BUCKET_NAME=clockin-clockout-bucket
+    networks:
+      - smartbusiness-net
+
+  # ── Biometric Face Recognition Microservice ──
+  face-recognition:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/face-recognition:latest
+    container_name: smartbusiness-face-recognition
+    restart: always
+    env_file: .env.production
+    networks:
+      - smartbusiness-net
+
+  # ── RAG Chatbot Service (Disabled for now) ──
+  # rag-chatbot:
+  #   image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/chatbot-backend:latest
+  #   container_name: smartbusiness-rag-chatbot
+  #   restart: always
+  #   env_file: .env.production
+  #   environment:
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - smartbusiness-net
+
+  # ── Frontends (Served via Nginx containers) ──
+  check-printing-frontend:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-frontend:latest
+    container_name: smartbusiness-check-frontend
+    restart: always
+    networks:
+      - smartbusiness-net
+
+  clockin-frontend:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-frontend:latest
+    container_name: smartbusiness-clockin-web
+    restart: always
+    networks:
+      - smartbusiness-net
+
+  # ── Platform Marketing Website (Nginx container) ──
+  platform-web:
+    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-web:latest
+    container_name: smartbusiness-platform-web
+    restart: always
+    networks:
+      - smartbusiness-net
+
+  # ── Main Reverse Proxy Gateway ──
+  gateway:
+    image: nginx:1.27-alpine
+    container_name: smartbusiness-gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - platform-api
+      - check-printing-backend
+      - clockin-backend
+      - face-recognition
+      - check-printing-frontend
+      - clockin-frontend
+      - platform-web
+    networks:
+      - smartbusiness-net
+
+networks:
+  smartbusiness-net:
+    driver: bridge
+
+volumes:
+  redis_data:

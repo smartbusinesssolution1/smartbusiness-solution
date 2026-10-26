@@ -1,0 +1,169 @@
+services:
+  # ── In-Memory Queue & Cache for BullMQ / Chatbot ──
+  redis:
+    image: redis:7-alpine
+    container_name: smartbusiness-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - smartbusiness-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ── Identity & Core Auth Service ──
+  platform-api:
+    build:
+      context: .
+      dockerfile: apps/platform-api/Dockerfile
+    container_name: smartbusiness-platform-api
+    restart: always
+    ports:
+      - "3001:3001"
+    env_file: .env.production
+    environment:
+      - PORT=3001
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── Check Printing & Bank Encryption Service ──
+  check-printing-backend:
+    build:
+      context: .
+      dockerfile: apps/check-printing-backend/Dockerfile
+    container_name: smartbusiness-check-backend
+    restart: always
+    ports:
+      - "3005:3005"
+    env_file: .env.production
+    environment:
+      - PORT=3005
+      - REDIS_URL=redis://redis:6379
+      - STORAGE_DRIVER=s3
+      - S3_BUCKET=check-printing-bucket
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── ClockIn / Attendance Microservice ──
+  clockin-backend:
+    build:
+      context: .
+      dockerfile: apps/clockInClockOut-backend/Dockerfile
+    container_name: smartbusiness-clockin-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file: .env.production
+    environment:
+      - PORT=3000
+      - AWS_S3_BUCKET_NAME=clockin-clockout-bucket
+    networks:
+      - smartbusiness-net
+
+  # ── Biometric Face Recognition Microservice ──
+  face-recognition:
+    build:
+      context: apps/clockInClockout-face-recognition
+      dockerfile: Dockerfile
+    container_name: smartbusiness-face-recognition
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file: .env.production
+    networks:
+      - smartbusiness-net
+
+  # ── RAG Chatbot Service ──
+  rag-chatbot:
+    build:
+      context: apps/chatbot-backend
+      dockerfile: Dockerfile
+    container_name: smartbusiness-rag-chatbot
+    restart: always
+    ports:
+      - "8001:8000"
+    env_file: .env.production
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── Check Printing Frontend (Nginx Alpine) ──
+  check-printing-frontend:
+    build:
+      context: .
+      dockerfile: apps/check-printing-frontend/Dockerfile
+    container_name: smartbusiness-check-frontend
+    restart: always
+    ports:
+      - "5173:80"
+    networks:
+      - smartbusiness-net
+
+  # ── Attendance Frontend (Nginx Alpine) ──
+  clockin-frontend:
+    build:
+      context: .
+      dockerfile: apps/clockInClockOut-frontend/Dockerfile
+    container_name: smartbusiness-clockin-web
+    restart: always
+    ports:
+      - "5174:80"
+    networks:
+      - smartbusiness-net
+
+  # ── Platform Marketing Website (Nginx Alpine) ──
+  platform-web:
+    build:
+      context: .
+      dockerfile: apps/platform-web/Dockerfile
+    container_name: smartbusiness-platform-web
+    restart: always
+    ports:
+      - "3003:80"
+    networks:
+      - smartbusiness-net
+
+  # ── Main Reverse Proxy Gateway ──
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: smartbusiness-gateway
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - platform-api
+      - check-printing-backend
+      - clockin-backend
+      - face-recognition
+      - check-printing-frontend
+      - clockin-frontend
+      - platform-web
+    networks:
+      - smartbusiness-net
+
+networks:
+  smartbusiness-net:
+    driver: bridge
+
+volumes:
+  redis_data:
