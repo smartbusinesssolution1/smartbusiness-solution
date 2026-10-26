@@ -129,9 +129,16 @@ export class CheckRegisterService {
 
   // Every number in the range with its fate. MISSING (a number between the first issued and
   // the next to issue, with no record at all) should never happen: it is an alarm.
-  async numberIntegrity(workspaceId: string, bankAccountId: string, from: number, to: number) {
+  // A bank account of this workspace (deleted ones too: auditing them is legitimate).
+  // Another workspace's account is "not found", never an empty report about it.
+  async accountOrThrow(workspaceId: string, bankAccountId: string) {
     const account = await this.repository.findAccountForAudit(bankAccountId, workspaceId);
     if (!account) throw new NotFoundError("Bank account");
+    return account;
+  }
+
+  async numberIntegrity(workspaceId: string, bankAccountId: string, from: number, to: number) {
+    const account = await this.accountOrThrow(workspaceId, bankAccountId);
 
     const [firstIssued, checks] = await Promise.all([
       this.repository.firstIssuedNumber(account.id),
@@ -174,6 +181,7 @@ export class CheckRegisterService {
   // ─── Outstanding aging ────────────────────────────────────
 
   async aging(workspaceId: string, bankAccountId?: string) {
+    if (bankAccountId) await this.accountOrThrow(workspaceId, bankAccountId);
     const now = Date.now();
     const buckets = [
       { label: "0-30 days", minDays: 0, maxDays: 30, count: 0, cents: 0 },

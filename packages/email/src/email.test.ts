@@ -36,6 +36,13 @@ describe("safeLink", () => {
     expect(safeLink("http://localhost:5173/accept-invite?token=abc")).toContain("localhost");
   });
 
+  // Reset and invitation links carry their token after "#" (it never reaches a server).
+  it("keeps the part after # intact", () => {
+    expect(safeLink("https://app.smartbusiness.test/reset-password#token=abc-DEF_123")).toBe(
+      "https://app.smartbusiness.test/reset-password#token=abc-DEF_123",
+    );
+  });
+
   it.each(["javascript:alert(1)", "data:text/html,<script>", "not a url", "ftp://files.test/x"])(
     "refuses %s",
     (url) => {

@@ -34,9 +34,22 @@ describe("forgot password", () => {
 
     const email = await waitForEmail(EMAIL, "password-reset");
     expect(email.text).toMatch(/^Hi Maria Rodriguez,/);
-    expect(email.text).toContain("https://app.smartbusiness.test/reset-password?token=");
+    expect(email.text).toContain("https://app.smartbusiness.test/reset-password#token=");
     expect(email.text).toContain("expires in 60 minutes");
     expect(await prisma.auditLog.count({ where: { action: "PASSWORD_RESET_REQUESTED" } })).toBe(1);
+  });
+
+  // S7: the browser sends everything before "#" to the web server (and its logs, a CDN's
+  // logs, Referer headers); the part after "#" never leaves the browser.
+  it("puts the token only in the part of the link that never leaves the browser", async () => {
+    await forgot(EMAIL);
+    const email = await waitForEmail(EMAIL, "password-reset");
+    const token = tokenFrom(email, "/reset-password");
+    const link = new URL(email.text.match(/https:\/\/\S+/)![0]);
+
+    expect(link.hash).toBe(`#token=${token}`);
+    expect(`${link.origin}${link.pathname}${link.search}`).not.toContain(token);
+    expect(email.html).not.toContain("?token=");
   });
 
   it("gives an unknown email exactly the same answer, and sends nothing", async () => {

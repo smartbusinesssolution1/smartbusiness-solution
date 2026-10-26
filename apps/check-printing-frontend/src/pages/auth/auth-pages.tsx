@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { InlineAlert } from "@/components/app/layout";
 import { ApiError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/forms";
+import { clearLinkToken, useLinkToken } from "@/lib/link-token";
 import { AuthLayout } from "./auth-layout";
 import { PasswordInput, PasswordRules, passwordProblem } from "./password-input";
 
@@ -217,10 +218,9 @@ export function ForgotPasswordPage() {
 }
 
 export function ResetPasswordPage() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
   const reset = useResetPassword();
-  const token = params.get("token") ?? "";
+  const token = useLinkToken("reset");
   const [formError, setFormError] = React.useState<string | null>(token ? null : "This reset link is incomplete. Request a new one.");
   const { register, handleSubmit, watch, setError, formState: { errors } } = useForm<{ password: string; confirm: string }>();
   const password = watch("password") ?? "";
@@ -230,7 +230,10 @@ export function ResetPasswordPage() {
     reset.mutate(
       { token, password },
       {
-        onSuccess: () => navigate("/sign-in?reset=done", { replace: true }),
+        onSuccess: () => {
+          clearLinkToken("reset");
+          navigate("/sign-in?reset=done", { replace: true });
+        },
         onError: (err) => setFormError(applyServerErrors(err, setError, ["password"])),
       },
     );
@@ -267,10 +270,13 @@ export function ResetPasswordPage() {
 // Accepting signs you in and opens the workspace. The email and roles come from the
 // invitation; only the name can be corrected here.
 export function AcceptInvitationPage() {
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const token = params.get("token") ?? "";
+  const token = useLinkToken("invitation");
   const invitation = useInvitation(token);
+  // An expired or replaced invitation won't work later either: don't keep it.
+  React.useEffect(() => {
+    if (invitation.error) clearLinkToken("invitation");
+  }, [invitation.error]);
   const accept = useAcceptInvitation();
   const [formError, setFormError] = React.useState<string | null>(null);
   const view = invitation.data;
@@ -286,7 +292,10 @@ export function AcceptInvitationPage() {
     accept.mutate(
       { token, fullName: fullName.trim(), password },
       {
-        onSuccess: (r) => navigate(`/w/${r.workspaceId}`, { replace: true }),
+        onSuccess: (r) => {
+          clearLinkToken("invitation");
+          navigate(`/w/${r.workspaceId}`, { replace: true });
+        },
         onError: (err) => setFormError(applyServerErrors(err, setError, ["fullName", "password"])),
       },
     );

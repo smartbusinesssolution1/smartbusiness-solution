@@ -162,6 +162,7 @@ export class CheckExportService {
   // ═════════════════════════════════════════════════════════════
 
   async outstandingExport(workspaceId: string, bankAccountId: string | undefined, format: ExportFormat, ctx: ExportContext) {
+    if (bankAccountId) await this.register.accountOrThrow(workspaceId, bankAccountId);
     const rows = await this.repo.outstanding(workspaceId, bankAccountId);
     const now = new Date();
     let cents = 0;

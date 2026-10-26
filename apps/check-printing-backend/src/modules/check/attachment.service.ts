@@ -85,7 +85,9 @@ export class AttachmentService {
     return formatAttachment(attachment);
   }
 
+  // Another workspace's check is "not found", never "a check with no attachments".
   async list(checkId: string, workspaceId: string) {
+    if (!(await this.repository.checkExists(checkId, workspaceId))) throw new NotFoundError("Check");
     return (await this.repository.list(checkId, workspaceId)).map(formatAttachment);
   }
 

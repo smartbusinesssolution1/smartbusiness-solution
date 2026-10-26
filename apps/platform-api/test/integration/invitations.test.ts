@@ -62,8 +62,11 @@ describe("the invitation email (job worker)", () => {
     expect(email.text).toContain("Green Acres Landscaping LLC");
     expect(email.text).toContain("expires in 7 days");
 
+    // S7: after "#", the part of a link the browser never sends to a server (or its logs).
     const token = tokenFrom(email, "/accept-invitation");
-    expect(email.text).toContain(`https://app.smartbusiness.test/accept-invitation?token=${token}`);
+    expect(email.text).toContain(`https://app.smartbusiness.test/accept-invitation#token=${token}`);
+    expect(email.text).not.toContain("?token=");
+    expect(email.html).not.toContain("?token=");
 
     const stored = await prisma.userToken.findFirstOrThrow({ where: { userId: invitee.id, purpose: "INVITATION" } });
     expect(stored).toMatchObject({ workspaceId, tenantId: admin.tenantId, createdById: admin.id, usedAt: null, revokedAt: null });

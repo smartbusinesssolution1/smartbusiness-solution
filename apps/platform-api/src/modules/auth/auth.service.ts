@@ -160,8 +160,10 @@ export class AuthService {
       return;
     }
 
-    // Built from configuration only: never from the request's Host header.
-    const resetUrl = `${this.resetSettings.appUrl}/reset-password?token=${token}`;
+    // Built from configuration only: never from the request's Host header. The token goes
+    // after "#": a browser never sends that part to any server, so it stays out of web
+    // server and CDN logs and out of Referer headers.
+    const resetUrl = `${this.resetSettings.appUrl}/reset-password#token=${token}`;
     // If sending fails, this throws and the queue retries the whole job later.
     await this.emailSender.send({
       to: user.email,
@@ -504,8 +506,9 @@ export class AuthService {
         workspaceId: workspace.id,
         createdById: data.invitedById,
       });
-      // Built from configuration only: never from a request's Host header.
-      const acceptUrl = `${this.resetSettings.appUrl}/accept-invitation?token=${token}`;
+      // Built from configuration only: never from a request's Host header. The token goes
+      // after "#", which a browser never sends to any server (see the reset link).
+      const acceptUrl = `${this.resetSettings.appUrl}/accept-invitation#token=${token}`;
       // If sending fails, this throws and the queue retries the whole job later.
       await this.emailSender.send({
         to: user.email,
