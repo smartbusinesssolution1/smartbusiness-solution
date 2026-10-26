@@ -25,6 +25,7 @@ services:
     env_file: .env.production
     environment:
       - PORT=3001
+      - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
     depends_on:
       redis:
@@ -42,6 +43,7 @@ services:
     env_file: .env.production
     environment:
       - PORT=3005
+      - NODE_ENV=production
       - REDIS_URL=redis://redis:6379
       - STORAGE_DRIVER=s3
       - S3_BUCKET=check-printing-bucket
