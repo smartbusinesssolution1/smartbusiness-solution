@@ -1,8 +1,11 @@
 import axios, { AxiosError } from 'axios';
 import { notify } from '../context/NotificationContext';
 
-export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || 'http://localhost:3001';
-export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const isBrowser = typeof window !== 'undefined';
+const currentHost = isBrowser && window.location.hostname ? window.location.hostname : 'localhost';
+
+export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || `http://${currentHost}:3001`;
+export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || `http://${currentHost}:3000`;
 
 function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
   if (!data) return fallback;
