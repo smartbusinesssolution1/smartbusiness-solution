@@ -6,6 +6,8 @@ ENV PYTHONUNBUFFERED=1
 
 # Install only required system deps (minimal) + curl for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    g++ \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
@@ -20,17 +22,23 @@ WORKDIR /app
 # Install Python dependencies first (better caching)
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+ENV PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org pypi.python.org"
+ENV PYTHONHTTPSVERIFY=0
+
+RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org --no-cache-dir --upgrade pip \
+    && pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org --no-cache-dir -r requirements.txt
 
 # Pre-download InsightFace buffalo_sc model so it does not download on first request
-RUN python -c "from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); app.prepare(ctx_id=-1, det_size=(640, 640))" || true
+RUN python -c "import ssl; ssl._create_default_https_context = ssl._create_unverified_context; from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); app.prepare(ctx_id=-1, det_size=(640, 640))" || true
 
 # Copy project files
 COPY . .
 
 # Run as non-root user
-RUN useradd -m -u 10001 faceapp && chown -R faceapp:faceapp /app /root/.insightface 2>/dev/null || true
+RUN useradd -m -u 10001 faceapp && \
+    mkdir -p /home/faceapp/.insightface && \
+    (cp -r /root/.insightface/* /home/faceapp/.insightface/ 2>/dev/null || true) && \
+    chown -R faceapp:faceapp /app /home/faceapp
 USER faceapp
 
 # Expose port
