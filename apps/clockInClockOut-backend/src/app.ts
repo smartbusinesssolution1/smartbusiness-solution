@@ -51,6 +51,11 @@ export function createApp(): Express {
         requestID // Bridge pino-http's req.id to req.requestId + X-Request-Id response header
     );
 
+    // ─── Root Health Check (Docker & Load Balancers) ──
+    app.get("/health", (_req, res) => {
+        res.status(200).json({ status: "healthy" });
+    });
+
     // ─── Static Uploads ──────────────────────────────
     app.use("/uploads", express.static(UPLOADS_DIR));
 
