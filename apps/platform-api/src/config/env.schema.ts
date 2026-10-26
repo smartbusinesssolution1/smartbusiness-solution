@@ -92,6 +92,7 @@ export const envSchema = z
     SMTP_SECURE: z.enum(["true", "false"]).default("false"),
     SMTP_USER: z.string().optional(),
     SMTP_PASS: z.string().optional(),
+    SMTP_FROM: z.string().optional(),
 
     // Job queue (BullMQ). redis:// locally, rediss:// (TLS) for a hosted Redis.
     REDIS_URL: z

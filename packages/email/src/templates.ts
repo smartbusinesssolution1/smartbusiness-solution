@@ -30,7 +30,7 @@ function layout(
     .join("");
   const action = button
     ? `<p style="margin:22px 0"><a href="${button.href}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;font-weight:600;padding:11px 20px;border-radius:6px">${escapeHtml(button.label)}</a></p>` +
-      `<p style="margin:0 0 14px;font-size:13px;color:#6b7280">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all">${button.href}</span></p>`
+    `<p style="margin:0 0 14px;font-size:13px;color:#6b7280">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all">${button.href}</span></p>`
     : "";
   return (
     `<div style="max-width:560px;margin:0 auto;padding:24px;font-family:Arial,Helvetica,sans-serif">` +
@@ -57,6 +57,7 @@ export function passwordResetEmail(input: {
     playStoreUrl = "#",
     appStoreUrl = "#",
   } = input;
+  const safeResetUrl = safeLink(resetUrl);
 
   const subject = `Reset Your Password - SmartBusiness`;
   const font = `'Segoe UI', Arial, Helvetica, sans-serif`;
@@ -182,7 +183,7 @@ export function passwordResetEmail(input: {
               <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 24px; font-family: ${font};">
                 <tr>
                   <td align="center" style="font-family: ${font}; text-align: center;">
-                    <a href="${resetUrl}" target="_blank" style="display: inline-block; background-color: #0066ff; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 102, 255, 0.35);">
+                    <a href="${safeResetUrl}" target="_blank" style="display: inline-block; background-color: #0066ff; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 102, 255, 0.35);">
                       Reset Password
                     </a>
                   </td>
@@ -202,8 +203,8 @@ export function passwordResetEmail(input: {
                           Reset URL
                         </td>
                         <td valign="middle" bgcolor="#edf5fd" style="background-color: #edf5fd !important; font-family: ${font};">
-                          <a href="${resetUrl}" target="_blank" style="font-family: ${font}; font-size: 14px; color: #0066ff; text-decoration: none; font-weight: 600; word-break: break-all;">
-                            ${resetUrl}
+                          <a href="${safeResetUrl}" target="_blank" style="font-family: ${font}; font-size: 14px; color: #0066ff; text-decoration: none; font-weight: 600; word-break: break-all;">
+                            ${safeResetUrl}
                           </a>
                         </td>
                       </tr>
@@ -257,7 +258,7 @@ Reset Your Password - SmartBusiness
 
 We received a request to reset your password. Please find your secure reset link below to choose a new password for your account:
 
-- Reset Link: ${resetUrl}
+- Reset Link: ${safeResetUrl}
 
 This link works once and expires in ${expiresInMinutes} minutes.
 If you didn't ask for this, you can safely ignore this email.
@@ -396,7 +397,7 @@ export function addedToWorkspaceEmail(input: {
   };
 }
 
-// ─── Check approvals ───────────────────────────────────────
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Check approvals Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // The check is named by number, amount and payee so it can be recognised from the inbox.
 // Never a bank or account number, and the link only opens the check: it does not sign in.
 

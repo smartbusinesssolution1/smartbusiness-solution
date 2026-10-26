@@ -19,15 +19,8 @@ export interface EmailConfig {
   // Required for the "file" transport: where emails are written.
   fileDirectory?: string;
   // Required for the "smtp" transport (Mailpit locally, AWS SES in production).
-  // smtp?: SmtpSettings;
+  smtp?: SmtpSettings;
   log?: (line: string) => void;
-  smtp?: {
-    host: string;
-    port: number;
-    secure?: boolean;
-    user: string;
-    pass: string;
-  };
 }
 
 // Chooses the delivery for this environment. Business code receives the result as
