@@ -299,6 +299,20 @@ export const authService = {
         avatarUrl: employeeProfile?.biometricPhotoUrl || authUser.avatarUrl || '',
       };
 
+      // Clean up any stale session checklist dismissals on new login
+      try {
+        const sessionKeysToRemove: string[] = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          if (key && key.startsWith("checkpoint_onboarding_dismissed")) {
+            sessionKeysToRemove.push(key);
+          }
+        }
+        sessionKeysToRemove.forEach((k) => sessionStorage.removeItem(k));
+      } catch {
+        // Storage unavailable
+      }
+
       setSessionUser(user);
 
       return {
@@ -458,6 +472,23 @@ export const authService = {
       localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
       localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
       localStorage.removeItem(WORKSPACES_STORAGE_KEY);
+
+      // Clean up any onboarding checklist dismissal state so that next login
+      // will always display the checklist until 100% completed
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith("checkpoint_onboarding_dismissed") || key.startsWith("checkpoint_onboarding_session"))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+        sessionStorage.clear();
+      } catch {
+        // Storage unavailable
+      }
+
       setSessionUser(null);
     }
   },
