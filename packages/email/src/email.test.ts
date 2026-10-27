@@ -15,6 +15,7 @@ import {
   MemoryEmailSender,
   passwordChangedEmail,
   passwordResetEmail,
+  welcomeCredentialsEmail,
   safeLink,
   type EmailMessage,
 } from "./index.js";
@@ -255,7 +256,7 @@ describe("FileEmailSender", () => {
 
     const html = fs.readFileSync(path.join(dir, files[0]!), "utf8");
     expect(html).toContain("token=XYZ");
-    expect(html).toContain("Subject: Reset your SmartBusiness password");
+    expect(html).toContain("Subject: Reset Your Password - SmartBusiness");
     const text = fs.readFileSync(path.join(dir, files[1]!), "utf8");
     expect(text).toContain("To: jen@greenacres.test");
     expect(lines[0]).toContain("written to");
@@ -274,5 +275,24 @@ describe("createEmailSender", () => {
 
   it("refuses an unknown transport", () => {
     expect(() => createEmailSender({ transport: "pigeon" as never, from: FROM })).toThrow(/Unknown email transport/);
+  });
+});
+
+describe("welcomeCredentialsEmail", () => {
+  it("renders credentials with username, password, and login url", () => {
+    const email = welcomeCredentialsEmail({
+      to: "owner@acme.com",
+      name: "Alice Owner",
+      password: "SB123456!2026",
+      loginUrl: "https://app.smartbusiness.test/login",
+      companyName: "Acme Corp",
+    });
+
+    expect(email.subject).toContain("Your Login Credentials - Acme Corp");
+    expect(email.html).toContain("owner@acme.com");
+    expect(email.html).toContain("SB123456!2026");
+    expect(email.html).toContain("https://app.smartbusiness.test/login");
+    expect(email.text).toContain("SB123456!2026");
+    expect(email.attachments).toHaveLength(8);
   });
 });

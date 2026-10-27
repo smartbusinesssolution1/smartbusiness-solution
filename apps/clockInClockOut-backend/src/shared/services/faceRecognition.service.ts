@@ -65,9 +65,9 @@ export class FaceRecognitionService {
       return (await response.json()) as ChallengeData;
     } catch (err: any) {
       if (err instanceof AppError) throw err;
-      logger.error({ err: err.message }, "Error fetching Face Recognition challenge token");
+      logger.error({ err: err.message }, "AI Face Recognition challenge service is unavailable");
       throw new AppError(
-        `Face recognition challenge service unavailable: ${err.message}`,
+        "AI Face Recognition microservice is unavailable. Please ensure the AI service is running.",
         503,
         "ERR_AI_SERVICE_UNAVAILABLE"
       );
@@ -85,6 +85,14 @@ export class FaceRecognitionService {
     captureFilenames?: string[];
     challengeToken: string;
   }): Promise<FaceMatchResult> {
+    if (params.challengeToken?.startsWith("srv_fallback_")) {
+      throw new AppError(
+        "Face verification rejected: Fallback challenge tokens are invalid. AI microservice must be running.",
+        503,
+        "ERR_AI_SERVICE_UNAVAILABLE"
+      );
+    }
+
     const formData = new FormData();
 
     // Attach baseline registered portrait

@@ -347,7 +347,6 @@ export const authService = {
         companyName,
         fullName,
         email,
-        password: 'Password1!',
       });
 
       const { user: authUser, tenants: rawTenants } = res.data.data;

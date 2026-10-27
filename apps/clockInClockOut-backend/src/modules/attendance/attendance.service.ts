@@ -278,55 +278,63 @@ export class AttendanceService {
 
     // 5. Face Recognition & Active Liveness Burst
     let faceMatchConfidence = 100.0;
+    let livenessScore = 1.0;
     const allFiles = captureFiles && captureFiles.length > 0 ? captureFiles : file ? [file] : [];
     const hasPhoto = allFiles.length > 0 || Boolean(input.selfieUri);
 
     if (hasPhoto && employee.biometricPhotoUrl) {
-      try {
-        const captureBuffers: Buffer[] = [];
-        for (const f of allFiles) {
-          if (f.buffer) captureBuffers.push(f.buffer);
+      const captureBuffers: Buffer[] = [];
+      for (const f of allFiles) {
+        if (f.buffer) captureBuffers.push(f.buffer);
+      }
+
+      if (captureBuffers.length === 0 && input.selfieUri) {
+        if (input.selfieUri.startsWith("data:image")) {
+          const base64Data = input.selfieUri.split(",")[1];
+          captureBuffers.push(Buffer.from(base64Data, "base64"));
+        } else {
+          captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
+        }
+      }
+
+      if (captureBuffers.length > 0) {
+        const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
+
+        let faceResult;
+        if (input.challengeToken) {
+          faceResult = await faceRecognitionService.verifyFaceBurst({
+            baselineBuffer,
+            baselineFilename: "baseline.jpg",
+            captureBuffers,
+            challengeToken: input.challengeToken,
+          });
+        } else {
+          faceResult = await faceRecognitionService.verifyFace({
+            baselineBuffer,
+            baselineFilename: "baseline.jpg",
+            captureBuffer: captureBuffers[0],
+            captureFilename: file?.originalname || "capture.jpg",
+          });
         }
 
-        if (captureBuffers.length === 0 && input.selfieUri) {
-          if (input.selfieUri.startsWith("data:image")) {
-            const base64Data = input.selfieUri.split(",")[1];
-            captureBuffers.push(Buffer.from(base64Data, "base64"));
-          } else {
-            captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
-          }
+        if (!faceResult.matched) {
+          throw new AppError(
+            faceResult.message || "Face verification failed: Captured face does not match the employee profile.",
+            400,
+            "ERR_FACE_MISMATCH"
+          );
         }
 
-        if (captureBuffers.length > 0) {
-          const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
-
-          let faceResult;
-          if (input.challengeToken) {
-            faceResult = await faceRecognitionService.verifyFaceBurst({
-              baselineBuffer,
-              baselineFilename: "baseline.jpg",
-              captureBuffers,
-              challengeToken: input.challengeToken,
-            });
-          } else {
-            faceResult = await faceRecognitionService.verifyFace({
-              baselineBuffer,
-              baselineFilename: "baseline.jpg",
-              captureBuffer: captureBuffers[0],
-              captureFilename: file?.originalname || "capture.jpg",
-            });
-          }
-
-          if (faceResult?.matched) {
-            faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
-          }
-          if (faceResult?.status === "spoof_suspected") {
-            logger.warn({ employeeId: employee.id, reasons: faceResult.liveness?.reasons }, "Spoof suspected during biometric check-in");
-          }
+        if (!faceResult.livenessPassed || faceResult.status === "spoof_suspected") {
+          throw new AppError(
+            faceResult.message || "Face liveness check failed: Spoofing or invalid motion detected.",
+            400,
+            "ERR_LIVENESS_FAILED"
+          );
         }
-      } catch (err: any) {
-        logger.warn({ err: err.message }, "Face recognition verification failed during check-in, continuing gracefully");
-        // Fallback gracefully without blocking punch
+
+        faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
+        livenessScore = faceResult.liveness?.liveness_score ?? 1.0;
       }
     }
 
@@ -378,7 +386,7 @@ export class AttendanceService {
         similarityConfidence: faceMatchConfidence,
         isWithinGeofence,
         distanceMeters,
-        livenessScore: 0.99,
+        livenessScore,
       },
       // Mobile store models
       shift: {
