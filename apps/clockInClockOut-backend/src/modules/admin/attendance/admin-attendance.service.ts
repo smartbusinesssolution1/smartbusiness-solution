@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import { UPLOADS_DIR } from "../../../shared/utils/uploadDir.js";
 import { AdminAttendanceRepository } from "./admin-attendance.repository.js";
 import { memoryCache } from "../../../shared/services/cache.service.js";
+import { calculateHaversineDistanceMeters } from "../../attendance/attendance.service.js";
 import type {
   AdminAttendanceQueryInput,
   AdminAttendanceExportInput,
@@ -14,6 +15,53 @@ import type {
 
 export class AdminAttendanceService {
   constructor(private readonly repo: AdminAttendanceRepository) { }
+
+  private mapFormattedSessions(sessions: any[], workspace: any) {
+    const wsSettings = workspace?.attendanceSettings;
+    const wsLat = wsSettings?.latitude ? Number(wsSettings.latitude) : null;
+    const wsLng = wsSettings?.longitude ? Number(wsSettings.longitude) : null;
+    const wsRadius = wsSettings?.radiusMeters ? Number(wsSettings.radiusMeters) : 100;
+    const locationName = workspace?.businessName || "Campus Main Office";
+
+    return (sessions || []).map((s: any, idx: number) => {
+      let distanceMeters: number | null = null;
+      if (s.clockInLatitude && s.clockInLongitude && wsLat !== null && wsLng !== null) {
+        distanceMeters = Math.round(
+          calculateHaversineDistanceMeters(
+            Number(s.clockInLatitude),
+            Number(s.clockInLongitude),
+            wsLat,
+            wsLng
+          )
+        );
+      }
+
+      const punchType = distanceMeters !== null
+        ? (distanceMeters <= wsRadius ? "On-Site (Geofenced)" : "Remote / External")
+        : "On-Site (Geofenced)";
+
+      return {
+        id: s.id,
+        sessionNumber: idx + 1,
+        isFirstSession: idx === 0,
+        checkIn: this.formatTimeOnly(s.clockInTime),
+        checkOut: this.formatTimeOnly(s.clockOutTime),
+        status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
+        workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
+        notes: s.notes || null,
+        clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
+        clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
+        clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
+        clockOutFaceMatchConfidence: s.clockOutFaceMatchConfidence ? Number(s.clockOutFaceMatchConfidence) : null,
+        clockOutLatitude: s.clockOutLatitude ? Number(s.clockOutLatitude) : null,
+        clockOutLongitude: s.clockOutLongitude ? Number(s.clockOutLongitude) : null,
+        isAutoClosed: s.isAutoClosed || false,
+        distanceMeters,
+        locationName,
+        punchType,
+      };
+    });
+  }
 
   /**
    * Format a Date into YYYY-MM-DD
@@ -125,7 +173,6 @@ export class AdminAttendanceService {
           status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
-          selfieUrl: s.selfieUrl || null,
           clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
           clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
           clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
@@ -244,7 +291,6 @@ export class AdminAttendanceService {
           status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
-          selfieUrl: s.selfieUrl || null,
           clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
           clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
           clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,

@@ -887,7 +887,6 @@ model AttendanceRecord {
   createdAt  DateTime         @default(now()) @map("created_at")
   updatedAt  DateTime?        @updatedAt @map("updated_at")
   status     AttendanceStatus
-  selfieUrl  String?          @map("selfie_url")
 
   // Clock In
   clockInDate                DateTime @db.Date

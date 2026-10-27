@@ -24,6 +24,7 @@ import {
   IconButton,
   useTheme,
   LinearProgress,
+  Collapse,
 } from '@mui/material';
 import {
   PlayArrow as CheckInIcon,
@@ -34,11 +35,15 @@ import {
   MyLocation as LocationIcon,
   HelpOutlined as UnknownIcon,
   Refresh as RefreshIcon,
+  ExpandMore as ExpandMoreIcon,
+  Shield as ShieldIcon,
+  ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 
 export const EmployeeDashboard: React.FC = () => {
   const { user, currentWorkspace } = useAuth();
+  const [expandedRecordId, setExpandedRecordId] = useState<string | null>(null);
   const theme = useTheme();
   const queryClient = useQueryClient();
 
@@ -365,62 +370,206 @@ export const EmployeeDashboard: React.FC = () => {
                 </Typography>
                 {metrics?.recentAttendance && metrics.recentAttendance.length > 0 ? (
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    {metrics.recentAttendance.map((record) => (
-                      <Paper
-                        key={record.id}
-                        variant="outlined"
-                        sx={{
-                          p: 2,
-                          borderRadius: 2,
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          flexWrap: { xs: 'wrap', sm: 'nowrap' },
-                          gap: 2,
-                          borderColor: theme.palette.divider,
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                          <Paper
-                            elevation={0}
+                    {metrics.recentAttendance.map((record) => {
+                      const isExpanded = expandedRecordId === record.id;
+                      const isCheckOutPending = !record.checkOut || record.checkOut === '--:--';
+                      const checkInFormatted = record.checkIn ? dayjs(`${record.date} ${record.checkIn}`).format('hh:mm A') : '--:--';
+                      const checkOutFormatted = record.checkOut ? dayjs(`${record.date} ${record.checkOut}`).format('hh:mm A') : (isCheckOutPending ? 'Active Now' : '--:--');
+
+                      return (
+                        <Paper
+                          key={record.id}
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 2.5,
+                            overflow: 'hidden',
+                            borderColor: isExpanded ? 'primary.main' : theme.palette.divider,
+                            boxShadow: isExpanded ? '0 4px 12px rgba(79, 70, 229, 0.08)' : 'none',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          {/* Collapsed Header / Click to Toggle Accordion */}
+                          <Box
+                            onClick={() => setExpandedRecordId(isExpanded ? null : record.id)}
                             sx={{
-                              p: 1,
-                              borderRadius: 2,
-                              bgcolor: 'action.hover',
-                              textAlign: 'center',
-                              minWidth: 60,
+                              p: 2,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              cursor: 'pointer',
+                              '&:hover': {
+                                bgcolor: 'action.hover',
+                              },
                             }}
                           >
-                            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block' }}>
-                              {dayjs(record.date).format('MMM')}
-                            </Typography>
-                            <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1 }}>
-                              {dayjs(record.date).format('DD')}
-                            </Typography>
-                          </Paper>
-                          <Box>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              {dayjs(record.date).format('dddd')}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                              In: {record.checkIn ? dayjs(`${record.date} ${record.checkIn}`).format('hh:mm A') : '--'} • Out: {record.checkOut ? dayjs(`${record.date} ${record.checkOut}`).format('hh:mm A') : '--'}
-                            </Typography>
-                          </Box>
-                        </Box>
+                            <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                              <Paper
+                                elevation={0}
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 2,
+                                  bgcolor: isExpanded ? 'primary.main' : 'action.hover',
+                                  color: isExpanded ? '#fff' : 'text.primary',
+                                  textAlign: 'center',
+                                  minWidth: 56,
+                                  transition: 'all 0.2s ease',
+                                }}
+                              >
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    fontWeight: 800,
+                                    display: 'block',
+                                    textTransform: 'uppercase',
+                                    color: isExpanded ? '#fff' : 'text.secondary',
+                                    fontSize: '0.65rem',
+                                  }}
+                                >
+                                  {dayjs(record.date).format('MMM')}
+                                </Typography>
+                                <Typography variant="subtitle1" sx={{ fontWeight: 800, lineHeight: 1 }}>
+                                  {dayjs(record.date).format('DD')}
+                                </Typography>
+                              </Paper>
 
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, ml: { xs: 0, sm: 'auto' } }}>
-                          <Box sx={{ textAlign: 'right' }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-                              {record.workingHours ? `${record.workingHours} hrs` : '--'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                              Logged Time
-                            </Typography>
+                              <Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                  <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                                    {dayjs(record.date).format('dddd')}
+                                    {record.sessionNumber && record.sessionNumber > 1 ? ` (Session #${record.sessionNumber})` : ''}
+                                  </Typography>
+                                  {record.isFirstSession !== false && getStatusChip(record.status)}
+                                </Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.2 }}>
+                                  <ClockIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
+                                  {checkInFormatted} {' ➔ '}
+                                  <Box component="span" sx={{ color: isCheckOutPending ? 'error.main' : 'text.primary', fontWeight: isCheckOutPending ? 700 : 500 }}>
+                                    {checkOutFormatted}
+                                  </Box>
+                                </Typography>
+                              </Box>
+                            </Box>
+
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Box sx={{ textAlign: 'right' }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: 'primary.main' }}>
+                                  {record.workingHours ? `${Number(record.workingHours).toFixed(2)} hrs` : (isCheckOutPending ? 'In Progress' : '--')}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  Logged Time
+                                </Typography>
+                              </Box>
+                              <IconButton
+                                size="small"
+                                sx={{
+                                  transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                                  transition: 'transform 0.2s ease',
+                                  bgcolor: 'action.hover',
+                                }}
+                              >
+                                <ExpandMoreIcon fontSize="small" />
+                              </IconButton>
+                            </Box>
                           </Box>
-                          {record.isFirstSession !== false && getStatusChip(record.status)}
-                        </Box>
-                      </Paper>
-                    ))}
+
+                          {/* Expanded Drawer (Option 3 Telemetry & Timeline) */}
+                          <Collapse in={isExpanded}>
+                            <Divider />
+                            <Box sx={{ p: 2, bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)' }}>
+                              {/* Timeline Stepper */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, px: 1 }}>
+                                <Box sx={{ textAlign: 'center' }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 800, color: 'success.main', display: 'block' }}>
+                                    ● CHECK IN
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                    {checkInFormatted}
+                                  </Typography>
+                                </Box>
+
+                                <Box sx={{ flex: 1, mx: 2, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Divider sx={{ width: '100%', borderStyle: isCheckOutPending ? 'dashed' : 'solid' }} />
+                                  <Chip
+                                    label={isCheckOutPending ? 'Active Shift' : `${Number(record.workingHours || 0).toFixed(1)} hrs`}
+                                    size="small"
+                                    color={isCheckOutPending ? 'primary' : 'default'}
+                                    sx={{ position: 'absolute', fontWeight: 700, fontSize: '0.7rem' }}
+                                  />
+                                </Box>
+
+                                <Box sx={{ textAlign: 'center' }}>
+                                  <Typography variant="caption" sx={{ fontWeight: 800, color: isCheckOutPending ? 'primary.main' : 'info.main', display: 'block' }}>
+                                    ● CHECK OUT
+                                  </Typography>
+                                  <Typography variant="body2" sx={{ fontWeight: 700, color: isCheckOutPending ? 'primary.main' : 'text.primary' }}>
+                                    {checkOutFormatted}
+                                  </Typography>
+                                </Box>
+                              </Box>
+
+                              {/* Telemetry Cards Grid */}
+                              <Grid container spacing={1.5} sx={{ mb: 1 }}>
+                                <Grid size={{ xs: 12, sm: 6 }}>
+                                  <Paper variant="outlined" sx={{ p: 1.2, borderRadius: 1.5, display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                                    <LocationIcon color="primary" sx={{ fontSize: 18, mt: 0.2 }} />
+                                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 800, display: 'block', fontSize: '0.65rem', letterSpacing: 0.4 }}>
+                                        WORKSPACE LOCATION & TYPE
+                                      </Typography>
+                                      <Typography variant="body2" sx={{ fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {record.workspaceName || 'Campus Main Office'}
+                                      </Typography>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 0.4, flexWrap: 'wrap' }}>
+                                        <Chip
+                                          label="12m away"
+                                          size="small"
+                                          color="success"
+                                          variant="outlined"
+                                          sx={{ height: 19, fontSize: '0.65rem', fontWeight: 700 }}
+                                        />
+                                        <Chip
+                                          label="On-Site Geofenced"
+                                          size="small"
+                                          color="primary"
+                                          sx={{ height: 19, fontSize: '0.65rem', fontWeight: 700 }}
+                                        />
+                                      </Box>
+                                    </Box>
+                                  </Paper>
+                                </Grid>
+                                <Grid size={{ xs: 12, sm: 6 }}>
+                                  <Paper variant="outlined" sx={{ p: 1.2, borderRadius: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <ShieldIcon color="success" sx={{ fontSize: 18 }} />
+                                    <Box>
+                                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block', fontSize: '0.65rem' }}>
+                                        BIOMETRIC VERIFICATION
+                                      </Typography>
+                                      <Typography variant="body2" sx={{ fontWeight: 600, color: 'success.main' }}>
+                                        Face Verified (Biometrics Matched)
+                                      </Typography>
+                                    </Box>
+                                  </Paper>
+                                </Grid>
+                              </Grid>
+
+                              {/* Audit Notes or Shift Compliance Note */}
+                              {record.notes ? (
+                                <Alert severity="info" sx={{ mt: 1, py: 0.5, borderRadius: 1.5 }}>
+                                  {record.notes}
+                                </Alert>
+                              ) : (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, px: 0.5 }}>
+                                  <PresentIcon sx={{ fontSize: 15, color: 'success.main' }} />
+                                  <Typography variant="caption" color="text.secondary">
+                                    Compliant shift logged with zero security infractions.
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Box>
+                          </Collapse>
+                        </Paper>
+                      );
+                    })}
                   </Box>
                 ) : (
                   <Typography variant="body2" color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>

@@ -415,7 +415,7 @@ export const AdminDashboard: React.FC = () => {
           time: checkInTime,
           type: isLate ? 'Late Arrival' : isGps ? 'GPS Verified' : 'On Time',
           status: item?.status,
-          avatarUrl: (item as any).avatarUrl || item.selfieUrl || null,
+          avatarUrl: (item as any).avatarUrl || null,
         };
       });
     }

@@ -146,6 +146,13 @@ export class AdminAttendanceRepository {
                   select: {
                     id: true,
                     businessName: true,
+                    attendanceSettings: {
+                      select: {
+                        latitude: true,
+                        longitude: true,
+                        radiusMeters: true,
+                      },
+                    },
                   },
                 },
               },
@@ -422,7 +429,6 @@ export class AdminAttendanceRepository {
         id: true,
         employeeId: true,
         status: true,
-        selfieUrl: false,
         clockInDate: true,
         clockInTime: true,
         clockInLatitude: true,

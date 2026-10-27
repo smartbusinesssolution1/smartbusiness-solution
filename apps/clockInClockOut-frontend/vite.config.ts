@@ -67,8 +67,6 @@ export default defineConfig(() => {
       strictPort: true,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-      port: 5174,
-      strictPort: true,
       proxy: {
         '/uploads': {
           target: 'http://localhost:3000',

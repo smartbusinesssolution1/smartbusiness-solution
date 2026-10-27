@@ -229,7 +229,6 @@ export class AttendanceRepository {
   async createAttendanceRecord(params: {
     employeeId: string;
     status: AttendanceStatus;
-    selfieUrl?: string;
     clockInDate: Date;
     clockInTime: Date;
     clockInLatitude: number;
@@ -240,7 +239,6 @@ export class AttendanceRepository {
     const {
       employeeId,
       status,
-      selfieUrl,
       clockInDate,
       clockInTime,
       clockInLatitude,
@@ -253,7 +251,6 @@ export class AttendanceRepository {
       data: {
         employeeId,
         status,
-        selfieUrl: selfieUrl || null,
         clockInDate,
         clockInTime,
         clockInLatitude,

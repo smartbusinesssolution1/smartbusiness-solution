@@ -247,9 +247,6 @@ export class AttendanceService {
     const todaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
     const isFirstSessionToday = todaySessions.length === 0;
 
-    // 3. Punch selfie is NOT uploaded or stored in S3/database (processed strictly in-memory)
-    const selfieUrl: string | undefined = undefined;
-
     // 4. Determine status:
     // Evaluate shift start time & grace minutes for first session of the day
     // Subsequent punches today default to PRESENT
@@ -380,7 +377,6 @@ export class AttendanceService {
     const record = await this.attendanceRepo.createAttendanceRecord({
       employeeId: employee.id,
       status,
-      selfieUrl: selfieUrl || undefined,
       clockInDate: todayDate,
       clockInTime: now,
       clockInLatitude: input.latitude,
@@ -800,7 +796,6 @@ export class AttendanceService {
         status: normalizedStatus,
         isFirstSession,
         sessionNumber,
-        selfieUrl: rec.selfieUrl,
         notes: rec.notes,
       };
     });
@@ -832,7 +827,6 @@ export class AttendanceService {
       checkInTime: formatTimeAMPM(new Date(rec.clockInTime)),
       checkOutTime: rec.clockOutTime ? formatTimeAMPM(new Date(rec.clockOutTime)) : null,
       workingHours: Number(rec.workingHours || 0),
-      selfieUrl: rec.selfieUrl,
       clockInLatitude: rec.clockInLatitude ? Number(rec.clockInLatitude) : null,
       clockInLongitude: rec.clockInLongitude ? Number(rec.clockInLongitude) : null,
       clockInFaceMatchConfidence: rec.clockInFaceMatchConfidence ? Number(rec.clockInFaceMatchConfidence) : null,
