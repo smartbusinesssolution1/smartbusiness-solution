@@ -1,78 +1,79 @@
-# SmartBusinessSolution_chatBot_frontend
+# chatbot-frontend
 
-The chat widget for SmartBusiness Solutions. Plain HTML/CSS/JS: **no Docker, no build, no install.**
-It talks to the backend project (`SmartBusinessSolution_chatBot_backend`).
+React + TypeScript, npm only. **No Docker.** Two separate parts that both talk to `chatbot-backend`:
 
 ```
-SmartBusinessSolution_chatBot_frontend/
-├── widget/
-│   ├── index.html    demo page + the one setting (backend URL)
-│   ├── widget.js     the widget (looks, texts, chat logic)
-│   └── widget.css    styling
+chatbot-frontend/
+├── chatbot/
+│   └── FloatingChatWidget.tsx   the chat bubble, one file, goes INTO your web portal
+├── admin-console/               separate React + TS app (Vite) for you / your client: upload PDFs, conversations, cost
 └── README.md
 ```
 
-## Run it
-1. Start the backend first (see its README) so http://localhost:8000 works.
-2. Serve this folder (the browser needs http, not a double-click):
+## 1. Chatbot: add it to your web portal
+`FloatingChatWidget.tsx` is a drop-in replacement for your current `FloatingChatWidget.tsx`. Same props
+(`isOpen`, `onToggle`, `onNavigatePricing`), same Tailwind look, same imports (`ChatMessage` from `../../types`,
+`SmartBusinessLogo`, `lucide-react`). The mock replies are gone; it now streams real answers from the backend.
+
+Steps
+1. Replace the file in the portal (`src/components/chat/FloatingChatWidget.tsx`, wherever yours lives) with this one.
+   If your path differs, only the two `import` lines at the top need adjusting.
+2. Add to the portal's `.env`:
+   ```
+   VITE_CHAT_API_URL=http://localhost:8000
+   ```
+   In production use your public https backend URL. Restart `npm run dev` after changing `.env`.
+3. Backend `.env`: add the portal address to `CORS_ORIGINS` (e.g. `http://localhost:5173`, later `https://your-site.com`), restart the backend.
+4. Nothing else. Your existing `<FloatingChatWidget isOpen=... />` usage keeps working. (If the portal is not Vite, replace `import.meta.env.VITE_CHAT_API_URL` near the top of the file with your own config value.)
+
+What it does: creates a signed session on first open (kept in `localStorage`), streams the answer, shows bold and bullet
+lists safely (no raw HTML), retries once if the session expired, shows friendly messages on rate limit or server error,
+and the reset button starts a new conversation. Quick-question chips show until the first question.
+
+Things to know
+- The "Federal Reserve Check 21 & MICR Certified" strip was copied from your file. Keep it only if it is true.
+- Cloudflare Turnstile captcha is not in this version. Leave `TURNSTILE_SECRET` empty in the backend.
+- The widget needs the Tailwind setup your portal already has (`animate-in`, `rounded-br-xs`, `shadow-2xs` etc. are from your original file).
+
+## 2. Admin console
+Its own app, **one single page** (no menu of pages), with the SmartBusiness logo. It also has a test chat bubble at the bottom right.
+You enter the **admin password** (the `ADMIN_API_KEY` from the backend `.env`) once per browser tab. This is a small box on the same page,
+not a separate login screen. It cannot be removed, because without it anyone who opens the page could delete your documents.
+
 ```powershell
-cd widget
-python -m http.server 8080
+cd admin-console
+npm install
+copy .env.example .env      # optional: VITE_API_BASE=http://localhost:8000
+npm run dev                 # http://localhost:5173  (if the portal uses 5173: npm run dev -- --port 5174)
 ```
-(or in VS Code: right-click `index.html` → **Open with Live Server**)
-3. Open **http://localhost:8080** and click the purple chat button.
+Logo: copy `smart.png` from the web portal's `public/` folder into `admin-console/public/smart.png`. Until then the logo shows the built-in SVG fallback.
+Add the console's address to the backend `CORS_ORIGINS`. Production: `npm run build`, upload `dist/` to a static host, keep it private.
 
-## The only setting: backend URL
-In `widget/index.html`:
-```html
-<script>
-  window.RAG_CHAT_CONFIG = {
-    apiBase: "http://localhost:8000"   // no trailing slash
-  };
-</script>
+What is on the page (top to bottom)
+| Section | What you see |
+|---|---|
+| Header | logo, backend health dot, Lock button |
+| Add knowledge (top of the page) | drag and drop several PDFs (20 MB each) with a progress bar per file, edit each title, set a category, a warning when a title will replace an existing document, retry on failure; or paste text. Next to it: the documents list with search and delete |
+| Usage & cost | period selector, questions, answer rate, speed, estimated cost, tokens, messages per day, cost per day, cost by model |
+| Conversations | shows the **latest 5**; pick "Show" 10 / 25 / 50 / 100 for more (then Prev / Next), plus search, result filter, open a row for the full answer, export CSV |
+| Delete old data | remove conversations older than N days |
+
 ```
-For production use your public https backend URL, e.g. `https://chat-api.yourdomain.com`.
-Optional extras: `debug: true` (dev only, shows retrieved chunks in the browser console) and
-`turnstileSiteKey: "..."` (only if the backend uses Cloudflare Turnstile).
-
-The SmartBusiness look and texts (title, welcome message, quick-reply questions, colour) are built into the top of
-`widget.js` (the `BRAND` block), so you don't need any settings for them.
-
-## Put it on your website
-Upload the three files in `widget/` (`widget.js`, `widget.css`, plus your config) to your site or any static host
-(Netlify, Cloudflare Pages, S3...), then add before `</body>`:
-```html
-<script>window.RAG_CHAT_CONFIG = { apiBase: "https://chat-api.yourdomain.com" };</script>
-<script src="https://YOUR-HOST/widget.js"></script>
+admin-console/src/
+├── lib/         api.ts (typed backend client), types.ts, ctx.tsx, useAsync.ts, format.ts
+├── components/  SmartBusinessLogo (copied from the portal), Chart, Tile, RangeSelect, ChatWidget (+ chat.css)
+└── sections/    Knowledge, Summary, Conversations, Maintenance
 ```
-`widget.js` loads `widget.css` from the same folder automatically.
-
-**Production checklist**
-- [ ] `apiBase` is the public **https** backend URL
-- [ ] Backend `.env` → `CORS_ORIGINS=https://your-website.com` (not `*`)
-- [ ] `debug` is not set
-- [ ] In the `BRAND` block of `widget.js`: the badge text ("Federal Reserve Check 21 & MICR Certified") is true, or set `badge: ""`; set `badgeLinkUrl` to your real pricing page (the "Plans" link only shows when a URL is set)
-- [ ] Turnstile site key set if the backend uses `TURNSTILE_SECRET`
-
-## Test checklist
-Open DevTools (F12) → Console + Network.
-- [ ] Chat button opens the panel; header, welcome message and 4 question chips show
-- [ ] First open creates a session (`POST /v1/session` → 200)
-- [ ] Clicking a chip sends it and the chips disappear
-- [ ] Answer streams in; bullets and bold look right; timestamps show
-- [ ] ↻ starts a new conversation, × closes the panel
-- [ ] 21 messages in a minute → friendly "slow down" message
-- [ ] Phone width (DevTools device toolbar): panel fits the screen
-- [ ] Backend stopped → friendly "something went wrong reaching the server" message
-
-Note: the chips "Are checks compliant with Federal Reserve MICR standards?" and "What are the pricing tiers for high
-volume?" only get real answers after you ingest documents that cover them. Without that the bot says it isn't sure.
+Notes
+- Tailwind is installed only for `SmartBusinessLogo.tsx` (utilities only, no reset), so the rest of the admin is plain CSS.
+- Costs are **estimates** (about 4 characters per token, list prices). Your provider's dashboard is the real bill. Edit prices with `MODEL_PRICES_JSON` in the backend `.env`.
+- PDFs must contain real text; scanned images give "no text found".
+- The password is kept only in the browser tab (session storage) and cleared on Lock or when the tab closes. Use https in production.
 
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|
-| `//v1/session` 404 | trailing slash in `apiBase` (the widget strips it, but remove it) |
-| CORS error in the console | add this page's address (e.g. `http://localhost:8080`) to the backend `CORS_ORIGINS`, restart the backend |
-| No chat button | `widget.js` not found (Network tab) or a JS error in the Console |
-| Unstyled panel | `widget.css` must sit next to `widget.js` |
-| Every answer is "rate-limited by an upstream service" | backend/LLM problem, read the **backend** logs |
+| CORS error in the console | add this page's address to backend `CORS_ORIGINS`, restart the backend |
+| Chat answers "something went wrong reaching the server" | backend not running, wrong `VITE_CHAT_API_URL` (restart dev server after editing `.env`), or CORS |
+| Every answer is "rate-limited by an upstream service" | LLM provider problem, read the **backend** logs |
+| Admin says "Wrong admin password" | must equal `ADMIN_API_KEY` in the backend `.env` (restart the backend after changing it) |

@@ -4,7 +4,7 @@ smalltalk replies. Runs BEFORE the optional NeMo LLM check (nemo_guard.py).
 """
 import re
 
-from app.config import settings
+from app.core import brand
 
 INJECTION_PATTERNS = [
     # "ignore / disregard / forget (all|any|the|your) (previous|prior|above) instructions|rules|prompt"
@@ -64,7 +64,7 @@ _BYE_RE = re.compile(r"^\s*(bye+|goodbye|see you|cya)\W*$", re.I)
 def smalltalk_reply(text: str) -> str | None:
     if _GREETING_RE.match(text):
         return (
-            f"Hi! I can answer questions about {settings.bot_company_name} - {settings.bot_topics}. "
+            f"Hi! I can answer questions about {brand.COMPANY_NAME} - {brand.TOPICS}. "
             "What would you like to know?"
         )
     if _THANKS_RE.match(text):
