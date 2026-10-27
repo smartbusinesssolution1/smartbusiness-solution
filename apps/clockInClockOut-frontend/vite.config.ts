@@ -49,17 +49,11 @@ export default defineConfig(() => {
               if (id.includes('recharts')) {
                 return 'vendor-charts';
               }
-              if (id.includes('xlsx')) {
-                return 'vendor-xlsx';
-              }
-              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('purify')) {
-                return 'vendor-export';
-              }
             }
           },
         },
       },
-      chunkSizeWarningLimit: 1200,
+      chunkSizeWarningLimit: 800,
     },
     server: {
       // Fixed port: the Check Printing portal uses 5173, and both start with `pnpm dev`.

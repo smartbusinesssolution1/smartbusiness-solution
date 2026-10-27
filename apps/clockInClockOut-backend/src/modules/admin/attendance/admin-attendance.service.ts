@@ -75,6 +75,19 @@ export class AdminAttendanceService {
   }
 
   /**
+   * Format a Date into DD, MMM YYYY (e.g. 27, Oct 2026)
+   */
+  private formatDisplayDate(date: Date | string): string {
+    const dt = new Date(date);
+    if (isNaN(dt.getTime())) return String(date ?? "");
+    const day = String(dt.getUTCDate()).padStart(2, "0");
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[dt.getUTCMonth()];
+    const year = dt.getUTCFullYear();
+    return `${day}, ${month} ${year}`;
+  }
+
+  /**
    * Format a Date into HH:mm:ss (using local server timezone rather than raw UTC)
    */
   private formatTimeOnly(date: Date | null): string | null {
@@ -270,7 +283,7 @@ export class AdminAttendanceService {
       const isAbsent = statusLower === "absent";
       return {
         id: rec.id,
-        date: this.formatDateOnly(rec.clockInDate),
+        date: this.formatDisplayDate(rec.clockInDate),
         employeeId: rec.employee.employeeCode,
         employeeName: rec.employee.workspaceMember.user.fullName,
         avatarUrl: rec.employee.biometricPhotoUrl || null,
@@ -391,7 +404,7 @@ export class AdminAttendanceService {
     const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
     worksheet["!cols"] = [
-      { wch: 12 },
+      { wch: 16 },
       { wch: 14 },
       { wch: 22 },
       { wch: 12 },
@@ -434,8 +447,8 @@ export class AdminAttendanceService {
 
         // Table Header
         let y = 88;
-        const colX = [36, 105, 185, 305, 375, 445, 525, 595];
-        const colWidths = [65, 75, 115, 65, 65, 75, 65, 205];
+        const colX = [36, 120, 195, 315, 385, 455, 535, 605];
+        const colWidths = [80, 70, 115, 65, 65, 75, 65, 195];
         const headers = ["Date", "Emp ID", "Employee Name", "Check-In", "Check-Out", "Status", "Hours", "Audit Notes"];
 
         const drawTableHeader = (posY: number) => {

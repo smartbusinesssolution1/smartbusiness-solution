@@ -23,7 +23,8 @@ import {
   CheckCircle as SuccessIcon,
 } from '@mui/icons-material';
 import { attendanceService, ExportReportParams } from '../services/attendanceService';
-import { CLOCKIN_API_URL } from '../services/apiClient';
+import { clockInApi, CLOCKIN_API_URL } from '../services/apiClient';
+import dayjs from 'dayjs';
 
 export interface ExportAuditReportModalProps {
   open: boolean;
@@ -117,19 +118,31 @@ export const ExportAuditReportModal: React.FC<ExportAuditReportModalProps> = ({
 
       const result = await attendanceService.exportAuditReport(payload);
 
-      // Trigger automatic file download
+      // Trigger automatic file download via blob for direct save dialog
       let fileUrl = result.downloadUrl;
       if (fileUrl.startsWith('/')) {
         fileUrl = `${CLOCKIN_API_URL}${fileUrl}`;
       }
 
-      const link = document.createElement('a');
-      link.href = fileUrl;
-      link.setAttribute('download', result.filename);
-      link.setAttribute('target', '_blank');
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+        const fileResponse = await clockInApi.get(result.downloadUrl, { responseType: 'blob' });
+        const blobUrl = window.URL.createObjectURL(new Blob([fileResponse.data]));
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.setAttribute('download', result.filename);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => window.URL.revokeObjectURL(blobUrl), 2000);
+      } catch {
+        const link = document.createElement('a');
+        link.href = fileUrl;
+        link.setAttribute('download', result.filename);
+        link.setAttribute('target', '_blank');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
 
       setSuccessInfo({
         filename: result.filename,
@@ -207,7 +220,11 @@ export const ExportAuditReportModal: React.FC<ExportAuditReportModalProps> = ({
             <Chip label={`Status: ${currentFilters.status.toUpperCase()}`} size="small" variant="outlined" />
           )}
           {currentFilters.date && (
-            <Chip label={`Date: ${currentFilters.date}`} size="small" variant="outlined" />
+            <Chip
+              label={`Date: ${dayjs(currentFilters.date).isValid() ? dayjs(currentFilters.date).format('DD, MMM YYYY') : currentFilters.date}`}
+              size="small"
+              variant="outlined"
+            />
           )}
           {currentFilters.search && (
             <Chip label={`Search: "${currentFilters.search}"`} size="small" variant="outlined" />

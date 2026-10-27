@@ -303,7 +303,7 @@ export const AdminProfile: React.FC = () => {
                       DATE ONBOARDED
                     </Typography>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      {user?.joinedDate ? dayjs(user.joinedDate).format('MMMM DD, YYYY') : '--'}
+                      {user?.joinedDate ? dayjs(user.joinedDate).format('DD, MMM YYYY') : '--'}
                     </Typography>
                   </Box>
                 </Box>

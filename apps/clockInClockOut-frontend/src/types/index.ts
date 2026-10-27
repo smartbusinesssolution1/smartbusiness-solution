@@ -1,4 +1,4 @@
-﻿export type UserRole = 'admin' | 'employee' | 'super_admin';
+export type UserRole = 'admin' | 'employee' | 'super_admin';
 
 export type TenantRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
@@ -194,26 +194,4 @@ export interface AdminDashboardMetrics {
     absent: number;
   }[];
   departmentStats?: DepartmentAttendanceStat[];
-}
-
-export interface TodaySessionInfo {
-  id: string;
-  sessionNumber: number;
-  checkIn: string;
-  checkOut: string | null;
-  workingHours: number;
-  status: string;
-  isActive: boolean;
-}
-
-export interface EmployeeDashboardMetrics {
-  todayAttendance: AttendanceRecord | null;
-  totalPresent: number;
-  totalLate: number;
-  totalWorkingHours: number;
-  attendanceRate: number;
-  recentAttendance: AttendanceRecord[];
-  hasActiveSession?: boolean;
-  activeSessionId?: string | null;
-  todaySessions?: TodaySessionInfo[];
 }

@@ -12,11 +12,6 @@ const RegisterPage = lazy(() => import('../pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
 
-// Employee Pages (lazy-loaded)
-const EmployeeDashboard = lazy(() => import('../pages/employee/EmployeeDashboard'));
-const AttendanceHistory = lazy(() => import('../pages/employee/AttendanceHistory'));
-const EmployeeProfile = lazy(() => import('../pages/employee/Profile'));
-
 // Admin Pages (lazy-loaded)
 const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard'));
 const EmployeeList = lazy(() => import('../pages/admin/EmployeeList'));
@@ -47,9 +42,9 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
-// Role Route Guard
-const RoleRoute: React.FC<{ children: React.ReactNode; allowedRole: 'admin' | 'employee' }> = ({ children, allowedRole }) => {
-  const { user, isLoading } = useAuth();
+// Admin Route Guard
+const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user, isLoading, isSuperAdmin } = useAuth();
 
   if (isLoading) {
     return <PageLoader message="Verifying permissions..." />;
@@ -59,12 +54,9 @@ const RoleRoute: React.FC<{ children: React.ReactNode; allowedRole: 'admin' | 'e
     return <Navigate to="/login" replace />;
   }
 
-  if (user.role !== allowedRole) {
-    // Administrators are permitted to preview employee interfaces
-    if (user.role === 'admin' && allowedRole === 'employee') {
-      return <>{children}</>;
-    }
-    return <Navigate to="/admin/dashboard" replace />;
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin' || isSuperAdmin;
+  if (!isAdmin) {
+    return <Navigate to="/login" replace />;
   }
 
   return <>{children}</>;
@@ -102,125 +94,91 @@ export const AppRoutes: React.FC = () => {
             element={<Navigate to="/admin/dashboard" replace />}
           />
 
-          {/* Employee Routes */}
-          <Route
-            path="employee"
-            element={
-              <RoleRoute allowedRole="employee">
-                <Navigate to="dashboard" replace />
-              </RoleRoute>
-            }
-          />
-          <Route
-            path="employee/dashboard"
-            element={
-              <RoleRoute allowedRole="employee">
-                <EmployeeDashboard />
-              </RoleRoute>
-            }
-          />
-          <Route
-            path="employee/history"
-            element={
-              <RoleRoute allowedRole="employee">
-                <AttendanceHistory />
-              </RoleRoute>
-            }
-          />
-          <Route
-            path="employee/profile"
-            element={
-              <RoleRoute allowedRole="employee">
-                <EmployeeProfile />
-              </RoleRoute>
-            }
-          />
-
           {/* Admin Routes */}
           <Route
             path="admin"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <Navigate to="dashboard" replace />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/dashboard"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <AdminDashboard />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/employees"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <EmployeeList />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/employees/new"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <CreateEmployee />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/employees/edit/:id"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <EditEmployee />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/reports"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <AttendanceReport />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/settings"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <OrganizationSettingsPage />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/profile"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <AdminProfile />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="admin/workspaces"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <WorkspaceSelectPage />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
           <Route
             path="workspace/select"
             element={
-              <RoleRoute allowedRole="admin">
+              <AdminRoute>
                 <WorkspaceSelectPage />
-              </RoleRoute>
+              </AdminRoute>
             }
           />
         </Route>
 
         {/* Catch-all Fallback */}
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
       </Routes>
     </Suspense>
   );

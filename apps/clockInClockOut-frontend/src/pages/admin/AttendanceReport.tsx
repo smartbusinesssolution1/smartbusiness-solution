@@ -667,7 +667,9 @@ export const AttendanceReport: React.FC = () => {
                             },
                           }}
                         >
-                          <TableCell sx={{ fontWeight: 700 }}>{record.date}</TableCell>
+                          <TableCell sx={{ fontWeight: 700 }}>
+                            {record.date ? dayjs(record.date).format('DD, MMM YYYY') : '--'}
+                          </TableCell>
                           <TableCell sx={{ fontWeight: 700, color: isAbsent ? 'error.main' : 'primary.main' }}>
                             {record.employeeId}
                           </TableCell>

@@ -218,7 +218,7 @@ export const AttendanceAuditDrawer: React.FC<AttendanceAuditDrawerProps> = ({
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontWeight: 600 }}>
               <CalendarIcon sx={{ fontSize: 13, color: 'text.secondary' }} />
-              {dayjs(record.date).format('dddd, MMMM D, YYYY')}
+              {dayjs(record.date).format('DD, MMM YYYY')}
             </Typography>
           </Box>
         </Box>

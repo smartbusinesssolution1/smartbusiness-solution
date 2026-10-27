@@ -1,4 +1,4 @@
-﻿import React, { useState, Suspense } from 'react';
+import React, { useState, Suspense } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
@@ -29,7 +29,6 @@ import {
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
   Dashboard as DashboardIcon,
-  History as HistoryIcon,
   Person as PersonIcon,
   People as PeopleIcon,
   Assessment as AssessmentIcon,
@@ -38,7 +37,6 @@ import {
   Brightness7 as Brightness7Icon,
   ExitToApp as ExitToAppIcon,
   AdminPanelSettings as AdminIcon,
-  Fingerprint as FingerprintIcon,
 } from '@mui/icons-material';
 import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
 
@@ -82,31 +80,19 @@ export const DashboardLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin' || isSuperAdmin;
-
   const handleProfileNavigate = () => {
     handleProfileMenuClose();
-    if (isAdminOrSuperAdmin) {
-      navigate('/admin/profile');
-    } else {
-      navigate('/employee/profile');
-    }
+    navigate('/admin/profile');
   };
 
-  // Define sidebar navigation items based on user role
-  const menuItems = isAdminOrSuperAdmin
-    ? [
-      { text: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
-      { text: 'Employee Directory', icon: <PeopleIcon />, path: '/admin/employees' },
-      { text: 'Attendance Reports', icon: <AssessmentIcon />, path: '/admin/reports' },
-      { text: 'Organization', icon: <SettingsIcon />, path: '/admin/settings' },
-      { text: 'My Profile', icon: <PersonIcon />, path: '/admin/profile' },
-    ]
-    : [
-      { text: 'My Dashboard', icon: <DashboardIcon />, path: '/employee/dashboard' },
-      { text: 'Attendance History', icon: <HistoryIcon />, path: '/employee/history' },
-      { text: 'My Profile', icon: <PersonIcon />, path: '/employee/profile' },
-    ];
+  // Sidebar navigation items for Admin console
+  const menuItems = [
+    { text: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
+    { text: 'Employee Directory', icon: <PeopleIcon />, path: '/admin/employees' },
+    { text: 'Attendance Reports', icon: <AssessmentIcon />, path: '/admin/reports' },
+    { text: 'Organization', icon: <SettingsIcon />, path: '/admin/settings' },
+    { text: 'My Profile', icon: <PersonIcon />, path: '/admin/profile' },
+  ];
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflowX: 'hidden' }}>
@@ -121,7 +107,7 @@ export const DashboardLayout: React.FC = () => {
         }}
       >
         <Box
-          onClick={() => navigate(isAdminOrSuperAdmin ? '/admin/dashboard' : '/employee/dashboard')}
+          onClick={() => navigate('/admin/dashboard')}
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -202,11 +188,9 @@ export const DashboardLayout: React.FC = () => {
               {user?.name}
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {isAdminOrSuperAdmin ? (
-                <AdminIcon sx={{ fontSize: 14, color: theme.palette.secondary.main }} />
-              ) : null}
+              <AdminIcon sx={{ fontSize: 14, color: theme.palette.secondary.main }} />
               <Typography variant="caption" sx={{ color: theme.palette.text.secondary, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-                {isSuperAdmin ? 'Super Administrator' : user?.role === 'admin' ? 'Administrator' : user?.designation || 'Employee'}
+                {isSuperAdmin ? 'Super Administrator' : user?.role === 'admin' ? 'Administrator' : 'Administrator'}
               </Typography>
             </Box>
           </Box>
@@ -232,8 +216,6 @@ export const DashboardLayout: React.FC = () => {
                     else if (item.path === '/admin/dashboard') import('../pages/admin/AdminDashboard');
                     else if (item.path === '/admin/reports') import('../pages/admin/AttendanceReport');
                     else if (item.path === '/admin/settings') import('../pages/admin/OrganizationSettings');
-                    else if (item.path === '/employee/dashboard') import('../pages/employee/EmployeeDashboard');
-                    else if (item.path === '/employee/history') import('../pages/employee/AttendanceHistory');
                   }}
                   sx={{
                     borderRadius: 2,
@@ -322,17 +304,17 @@ export const DashboardLayout: React.FC = () => {
   );
 
   return (
-    <Box id="checkpoint-app" sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* AppBar */}
+    <Box sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
+      {/* Top App Bar */}
       <AppBar
         position="fixed"
+        elevation={0}
         sx={{
           width: { md: `calc(100% - ${currentDrawerWidth}px)` },
           ml: { md: `${currentDrawerWidth}px` },
-          boxShadow: 'none',
+          bgcolor: theme.palette.background.paper,
+          color: theme.palette.text.primary,
           borderBottom: `1px solid ${theme.palette.divider}`,
-          bgcolor: 'background.paper',
-          color: 'text.primary',
           transition: theme.transitions.create(['width', 'margin'], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.enteringScreen,
@@ -356,7 +338,7 @@ export const DashboardLayout: React.FC = () => {
               alt="Clock In Clock Out"
               sx={{ height: 32, width: 32, objectFit: 'contain', display: { xs: 'none', sm: 'block', md: 'none' } }}
             />
-            {/* Workspace / Branch Switcher (Self-gated: Owner or Multi-branch Admin) */}
+            {/* Workspace / Branch Switcher */}
             <WorkspaceSwitcher />
           </Box>
 
@@ -396,21 +378,21 @@ export const DashboardLayout: React.FC = () => {
                 <ListItemIcon>
                   <PersonIcon fontSize="small" />
                 </ListItemIcon>
-                My Profile
+                <ListItemText primary="Admin Profile" />
               </MenuItem>
               <Divider />
-              <MenuItem onClick={handleLogoutClick} sx={{ color: 'error.main' }}>
-                <ListItemIcon>
-                  <ExitToAppIcon fontSize="small" color="error" />
+              <MenuItem onClick={handleLogoutClick} sx={{ color: theme.palette.error.main }}>
+                <ListItemIcon sx={{ color: theme.palette.error.main }}>
+                  <ExitToAppIcon fontSize="small" />
                 </ListItemIcon>
-                Sign Out
+                <ListItemText primary="Sign Out" />
               </MenuItem>
             </Menu>
           </Box>
         </Toolbar>
       </AppBar>
 
-      {/* Navigation Drawer */}
+      {/* Navigation Drawer System */}
       <Box
         component="nav"
         sx={{
