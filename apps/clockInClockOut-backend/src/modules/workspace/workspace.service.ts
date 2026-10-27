@@ -110,7 +110,6 @@ export class WorkspaceService {
         role = "EMPLOYEE";
       }
 
-      console.log("[Workspace Role] Workspace:", w.businessName, "| empRole:", empRole, "| Assigned:", role);
 
       return {
         ...w,
@@ -122,11 +121,11 @@ export class WorkspaceService {
         userRole: role,
         settings: attendanceSettings
           ? {
-              latitude: Number(attendanceSettings.latitude),
-              longitude: Number(attendanceSettings.longitude),
-              radiusMeters: attendanceSettings.radiusMeters,
-              graceMinutes: attendanceSettings.graceMinutes,
-            }
+            latitude: Number(attendanceSettings.latitude),
+            longitude: Number(attendanceSettings.longitude),
+            radiusMeters: attendanceSettings.radiusMeters,
+            graceMinutes: attendanceSettings.graceMinutes,
+          }
           : null,
         createdAt: w.createdAt?.toISOString?.() ?? w.createdAt,
         updatedAt: w.updatedAt?.toISOString?.() ?? w.updatedAt,

@@ -49,25 +49,39 @@ export class FaceRecognitionService {
    * from the face-recognition microservice.
    */
   async getChallenge(): Promise<ChallengeData> {
+    const startTime = Date.now();
+    const endpoint = `${this.baseUrl}/api/v1/attendance/challenge`;
     try {
-      logger.info({ url: `${this.baseUrl}/api/v1/attendance/challenge` }, "Requesting Face Recognition challenge token");
-      const response = await fetch(`${this.baseUrl}/api/v1/attendance/challenge`, {
+      console.log(`\n🔑 [FACE-RECOGNITION] GET /attendance/challenge -> ${endpoint}`);
+      logger.info({ url: endpoint }, "Requesting Face Recognition challenge token");
+
+      const response = await fetch(endpoint, {
         method: "GET",
         headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(5000),
       });
+
+      const durationMs = Date.now() - startTime;
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
+        console.error(`❌ [FACE-RECOGNITION] Challenge request failed (HTTP ${response.status}, ${durationMs}ms):`, errorData);
+        logger.warn({ status: response.status, durationMs, errorData }, "Challenge request failed");
         const errMsg = errorData?.detail || errorData?.error || "Failed to issue liveness challenge.";
         throw new AppError(errMsg, response.status, "ERR_FACE_CHALLENGE_FAILED");
       }
 
-      return (await response.json()) as ChallengeData;
+      const data = (await response.json()) as ChallengeData;
+      console.log(`🔑 [FACE-RECOGNITION] Challenge token received (${durationMs}ms): steps=[${data.steps.join(", ")}], token=${data.challenge_token.substring(0, 20)}...`);
+      logger.info({ steps: data.steps, durationMs }, "Challenge token received successfully");
+      return data;
     } catch (err: any) {
       if (err instanceof AppError) throw err;
-      logger.error({ err: err.message }, "AI Face Recognition challenge service is unavailable");
+      const durationMs = Date.now() - startTime;
+      console.error(`❌ [FACE-RECOGNITION] AI challenge service unavailable (${durationMs}ms): ${err.message}`);
+      logger.error({ err: err.message, durationMs }, "AI Face Recognition challenge service is unavailable");
       throw new AppError(
-        "AI Face Recognition microservice is unavailable. Please ensure the AI service is running.",
+        "AI Face Recognition microservice is unavailable. Please ensure the AI service is running on port 8000.",
         503,
         "ERR_AI_SERVICE_UNAVAILABLE"
       );
@@ -93,6 +107,10 @@ export class FaceRecognitionService {
       );
     }
 
+    const startTime = Date.now();
+    const endpoint = `${this.baseUrl}/api/v1/attendance/mark-burst`;
+    const totalCaptureBytes = params.captureBuffers.reduce((sum, b) => sum + b.length, 0);
+
     const formData = new FormData();
 
     // Attach baseline registered portrait
@@ -115,31 +133,50 @@ export class FaceRecognitionService {
     // Attach signed single-use challenge token
     formData.append("challenge_token", params.challengeToken);
 
+    // ── High-Visibility Outgoing Log ──────────────────────────────────
+    console.log("\n=======================================================");
+    console.log("📤 [FACE-RECOGNITION API] SENDING IMAGES FOR VERIFICATION");
+    console.log(`  • Endpoint:         ${endpoint}`);
+    console.log(`  • Baseline Image:   ${params.baselineFilename || "profile.jpg"} (${params.baselineBuffer.length} bytes / ${(params.baselineBuffer.length / 1024).toFixed(1)} KB)`);
+    console.log(`  • Capture Frames:   ${params.captureBuffers.length} frame(s) (${totalCaptureBytes} bytes / ${(totalCaptureBytes / 1024).toFixed(1)} KB total)`);
+    params.captureBuffers.forEach((buf, i) => {
+      const fname = params.captureFilenames?.[i] || `frame_${i}.jpg`;
+      console.log(`    └─ Frame [${i + 1}/${params.captureBuffers.length}]: ${fname} (${buf.length} bytes / ${(buf.length / 1024).toFixed(1)} KB)`);
+    });
+    console.log(`  • Challenge Token:  ${params.challengeToken}`);
+    console.log("=======================================================");
+
+    logger.info(
+      {
+        url: endpoint,
+        baselineSize: params.baselineBuffer.length,
+        frameCount: params.captureBuffers.length,
+        totalCaptureBytes,
+        challengeToken: params.challengeToken.substring(0, 20) + "...",
+      },
+      "Calling Face Recognition mark-burst API"
+    );
+
     try {
-      console.log("\n=======================================================");
-      console.log("📤 [FACE-RECOGNITION] SENDING BURST REQUEST TO main.py...");
-      console.log(`  • URL:              ${this.baseUrl}/api/v1/attendance/mark-burst`);
-      console.log(`  • Baseline size:    ${params.baselineBuffer.length} bytes`);
-      console.log(`  • Burst frames:     ${params.captureBuffers.length}`);
-      console.log(`  • Challenge token:  ${params.challengeToken.substring(0, 16)}...`);
-      console.log("=======================================================");
-
-      logger.info({ url: `${this.baseUrl}/api/v1/attendance/mark-burst`, frames: params.captureBuffers.length }, "Calling Face Recognition mark-burst API");
-
-      const response = await fetch(`${this.baseUrl}/api/v1/attendance/mark-burst`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         body: formData,
+        signal: AbortSignal.timeout(30000), // 30-second AI processing timeout
       });
+
+      const durationMs = Date.now() - startTime;
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        console.error("\n❌ [FACE-RECOGNITION] ERROR RESPONSE FROM main.py (Port 8000):");
+        console.error("\n=======================================================");
+        console.error(`❌ [FACE-RECOGNITION API] ERROR RESPONSE (${durationMs}ms, HTTP ${response.status}):`);
+        console.error(`  • URL:              ${endpoint}`);
         console.error(`  • HTTP Status:      ${response.status}`);
-        console.error("  • Details:         ", JSON.stringify(errorData, null, 2));
+        console.error("  • Error Body:      ", JSON.stringify(errorData, null, 2));
         console.error("=======================================================\n");
 
         const errMsg = errorData?.detail || errorData?.error || errorData?.message || "Face burst verification failed.";
-        logger.warn({ status: response.status, errorData }, "Face Recognition mark-burst API returned non-200");
+        logger.warn({ status: response.status, durationMs, errorData }, "Face Recognition mark-burst API returned non-200");
         throw new AppError(
           typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg),
           response.status === 422 ? 400 : response.status,
@@ -149,9 +186,9 @@ export class FaceRecognitionService {
 
       const data = await response.json();
 
-      // High-visibility terminal logging
+      // ── High-Visibility Response Log ─────────────────────────────────
       console.log("\n=======================================================");
-      console.log("📸 [FACE-RECOGNITION] BURST RESPONSE RECEIVED FROM main.py:");
+      console.log(`📸 [FACE-RECOGNITION API] RESPONSE RECEIVED (${durationMs}ms, HTTP ${response.status}):`);
       console.log(JSON.stringify(data, null, 2));
       console.log("-------------------------------------------------------");
       console.log(`  • Status:           ${data.status}`);
@@ -167,10 +204,11 @@ export class FaceRecognitionService {
       if (data.liveness?.reasons?.length > 0) {
         console.log(`  • Spoof Flags:      ${data.liveness.reasons.join(", ")}`);
       }
+      console.log(`  • Latency:          ${durationMs}ms`);
       console.log(`  • Message:          ${data.message}`);
       console.log("=======================================================\n");
 
-      logger.info({ data }, "Face Recognition API burst response received");
+      logger.info({ data, durationMs, status: response.status }, "Face Recognition API burst response received");
 
       const isMatch = Boolean(data.is_match ?? data.matched);
       const isLive = Boolean(data.liveness?.is_live ?? data.liveness_passed ?? true);
@@ -187,8 +225,13 @@ export class FaceRecognitionService {
       };
     } catch (err: any) {
       if (err instanceof AppError) throw err;
-      console.error("\n❌ [FACE-RECOGNITION] EXCEPTION CONNECTING TO main.py:", err.message);
-      logger.error({ err: err.message }, "Error connecting to Face Recognition API");
+      const durationMs = Date.now() - startTime;
+      console.error("\n=======================================================");
+      console.error(`❌ [FACE-RECOGNITION API] EXCEPTION CONNECTING TO AI SERVICE (${durationMs}ms):`);
+      console.error(`  • URL:              ${endpoint}`);
+      console.error(`  • Message:          ${err.message}`);
+      console.error("=======================================================\n");
+      logger.error({ err: err.message, durationMs }, "Error connecting to Face Recognition API");
       throw new AppError(
         `Face recognition service unavailable: ${err.message}`,
         503,
@@ -209,9 +252,11 @@ export class FaceRecognitionService {
     captureFilename: string;
     challengeToken?: string;
   }): Promise<FaceMatchResult> {
+    console.log(`\n📷 [FACE-RECOGNITION] verifyFace called with single capture frame (${params.captureBuffer.length} bytes)`);
     let token = params.challengeToken;
     if (!token) {
       try {
+        console.log("🔑 [FACE-RECOGNITION] No challenge token provided, acquiring fresh challenge...");
         const challenge = await this.getChallenge();
         token = challenge.challenge_token;
       } catch (err: any) {

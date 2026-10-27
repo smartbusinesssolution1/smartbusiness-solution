@@ -247,17 +247,8 @@ export class AttendanceService {
     const todaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
     const isFirstSessionToday = todaySessions.length === 0;
 
-    // 3. Save selfie if uploaded as file (optional)
-    let selfieUrl: string | undefined = input.selfieUri;
-    if (file) {
-      try {
-        const uploadResult = await storageService.uploadAvatar({ tenantId, file });
-        selfieUrl = uploadResult.url;
-      } catch (err: any) {
-        // Fallback to placeholder if storage unavailable
-        selfieUrl = `/uploads/avatars/selfie-${Date.now()}.jpg`;
-      }
-    }
+    // 3. Punch selfie is NOT uploaded or stored in S3/database (processed strictly in-memory)
+    const selfieUrl: string | undefined = undefined;
 
     // 4. Determine status:
     // Evaluate shift start time & grace minutes for first session of the day
@@ -283,6 +274,28 @@ export class AttendanceService {
     const hasPhoto = allFiles.length > 0 || Boolean(input.selfieUri);
 
     if (hasPhoto && employee.biometricPhotoUrl) {
+      console.log("\n=======================================================");
+      console.log("👤 [ATTENDANCE] PREPARING FACE RECOGNITION VERIFICATION");
+      console.log(`  • Employee ID:      ${employee.id}`);
+      console.log(`  • Employee Code:    ${employee.employeeCode}`);
+      console.log(`  • Baseline URL:     ${employee.biometricPhotoUrl}`);
+      console.log(`  • Uploaded Files:   ${allFiles.length}`);
+      console.log(`  • Selfie URI:       ${input.selfieUri ? (input.selfieUri.startsWith("data:") ? "base64 data URI" : input.selfieUri) : "none"}`);
+      console.log(`  • Challenge Token:  ${input.challengeToken ? input.challengeToken.substring(0, 20) + "..." : "none"}`);
+      console.log("=======================================================");
+
+      logger.info(
+        {
+          employeeId: employee.id,
+          employeeCode: employee.employeeCode,
+          biometricPhotoUrl: employee.biometricPhotoUrl,
+          captureFilesCount: allFiles.length,
+          hasSelfieUri: Boolean(input.selfieUri),
+          hasChallengeToken: Boolean(input.challengeToken),
+        },
+        "Starting face verification for attendance clock-in"
+      );
+
       const captureBuffers: Buffer[] = [];
       for (const f of allFiles) {
         if (f.buffer) captureBuffers.push(f.buffer);
@@ -293,14 +306,27 @@ export class AttendanceService {
           const base64Data = input.selfieUri.split(",")[1];
           captureBuffers.push(Buffer.from(base64Data, "base64"));
         } else {
+          console.log(`📥 [ATTENDANCE] Downloading selfie frame from: ${input.selfieUri}`);
           captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
         }
       }
 
       if (captureBuffers.length > 0) {
-        const baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
+        console.log(`📥 [ATTENDANCE] Loading baseline photo from: ${employee.biometricPhotoUrl}`);
+        let baselineBuffer: Buffer | null = null;
+        try {
+          const baselineStart = Date.now();
+          baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
+          console.log(`📥 [ATTENDANCE] Baseline loaded: ${baselineBuffer.length} bytes in ${Date.now() - baselineStart}ms`);
+        } catch (storageErr: any) {
+          logger.warn(
+            { employeeId: employee.id, biometricPhotoUrl: employee.biometricPhotoUrl, error: storageErr.message },
+            "Employee baseline photo is currently unreachable. Proceeding with punch without facial match."
+          );
+        }
 
-        let faceResult;
+        if (baselineBuffer) {
+          let faceResult;
         if (input.challengeToken) {
           faceResult = await faceRecognitionService.verifyFaceBurst({
             baselineBuffer,
@@ -316,6 +342,8 @@ export class AttendanceService {
             captureFilename: file?.originalname || "capture.jpg",
           });
         }
+
+        console.log(`🎯 [ATTENDANCE] Verification Outcome: matched=${faceResult.matched}, similarity=${faceResult.similarity}, liveness=${faceResult.livenessPassed}, status=${faceResult.status}`);
 
         if (!faceResult.matched) {
           throw new AppError(
@@ -335,6 +363,14 @@ export class AttendanceService {
 
         faceMatchConfidence = Math.min(100, Math.round(faceResult.similarity * 10000) / 100);
         livenessScore = faceResult.liveness?.liveness_score ?? 1.0;
+        }
+      }
+    } else {
+      if (!employee.biometricPhotoUrl) {
+        console.log(`ℹ️ [ATTENDANCE] Employee ${employee.employeeCode} (${employee.id}) has NO registered biometricPhotoUrl in database. Skipping face verification.`);
+        logger.info({ employeeId: employee.id, employeeCode: employee.employeeCode }, "No biometricPhotoUrl registered; skipping face verification");
+      } else if (!hasPhoto) {
+        console.log(`ℹ️ [ATTENDANCE] No photo / selfie provided with punch for employee ${employee.employeeCode}. Skipping face verification.`);
       }
     }
 
