@@ -47,6 +47,7 @@ export const CreateEmployeeSchema = z.object({
   shiftEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().nullable(),
   weeklySchedule: PreprocessedWeeklyScheduleSchema,
   workspaceId: z.string().optional(),
+  existingAvatarUrl: z.string().trim().optional(),
 });
 
 export const UpdateEmployeeSchema = z.object({
@@ -63,6 +64,7 @@ export const UpdateEmployeeSchema = z.object({
   shiftEndTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).optional().nullable(),
   weeklySchedule: PreprocessedWeeklyScheduleSchema,
   workspaceId: z.string().optional(),
+  existingAvatarUrl: z.string().trim().optional(),
 });
 
 export const EmployeeIdParamSchema = z.object({
@@ -85,3 +87,9 @@ export type CreateEmployeeInput = z.infer<typeof CreateEmployeeSchema>;
 export type UpdateEmployeeInput = z.infer<typeof UpdateEmployeeSchema>;
 export type EmployeeIdParamInput = z.infer<typeof EmployeeIdParamSchema>;
 export type EmployeeListQueryInput = z.infer<typeof EmployeeListQuerySchema>;
+export type CheckEmployeeEmailQueryInput = z.infer<typeof CheckEmployeeEmailQuerySchema>;
+
+export const CheckEmployeeEmailQuerySchema = z.object({
+  email: z.string().trim().email("Valid email address is required").toLowerCase(),
+  workspaceId: z.string().trim().optional(),
+});

@@ -18,6 +18,9 @@ router.use(requireAdmin);
 // GET /api/v1/admin/employees - Directory listing with search & filters
 router.get("/", controller.list);
 
+// GET /api/v1/admin/employees/check-email - Check if email exists in tenant/workspace
+router.get("/check-email", controller.checkEmail);
+
 // GET /api/v1/admin/employees/:id - Retrieve single employee details
 router.get("/:id", controller.get);
 

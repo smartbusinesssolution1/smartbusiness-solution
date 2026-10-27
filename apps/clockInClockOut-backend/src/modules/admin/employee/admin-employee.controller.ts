@@ -6,6 +6,7 @@ import {
   UpdateEmployeeSchema,
   EmployeeIdParamSchema,
   EmployeeListQuerySchema,
+  CheckEmployeeEmailQuerySchema,
 } from "./admin-employee.schema.js";
 import { ValidationError } from "../../../shared/errors/index.js";
 
@@ -60,6 +61,41 @@ export class AdminEmployeeController {
    * GET /api/v1/admin/employees/:id
    * Retrieve single employee profile details
    */
+  /**
+   * GET /api/v1/admin/employees/check-email
+   * Check if email is already registered in tenant and workspace
+   */
+  checkEmail = async (req: Request, res: Response): Promise<void> => {
+    const headerWorkspaceId = req.headers["x-workspace-id"] as string | undefined;
+    const rawQuery = {
+      ...req.query,
+      workspaceId:
+        req.query.workspaceId ||
+        (headerWorkspaceId && headerWorkspaceId !== "null" && headerWorkspaceId !== "undefined"
+          ? headerWorkspaceId
+          : undefined),
+    };
+
+    const queryParsed = CheckEmployeeEmailQuerySchema.safeParse(rawQuery);
+    if (!queryParsed.success) {
+      throw new ValidationError("Invalid email query parameters", {
+        query: queryParsed.error.issues.map((i) => i.message),
+      });
+    }
+
+    const tenantId = req.tenant!.tenantId;
+    const result = await this.employeeService.checkEmailAvailability(
+      tenantId,
+      queryParsed.data.email,
+      queryParsed.data.workspaceId
+    );
+
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  };
+
   get = async (req: Request, res: Response): Promise<void> => {
     const paramParsed = EmployeeIdParamSchema.safeParse(req.params);
     if (!paramParsed.success) {
@@ -96,7 +132,7 @@ export class AdminEmployeeController {
       throw new ValidationError("Invalid employee registration data", fieldErrors);
     }
 
-    if (!req.file) {
+    if (!req.file && !bodyParsed.data.existingAvatarUrl) {
       throw new ValidationError("Corporate profile picture is mandatory for biometric face registration.");
     }
 

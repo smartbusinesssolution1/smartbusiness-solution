@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { employeeService } from '../../services/employeeService';
+import { employeeService, CheckEmployeeEmailResult } from '../../services/employeeService';
 import { settingsService } from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
 import {
@@ -46,6 +46,7 @@ import {
   Business as BusinessIcon,
   Tune as TuneIcon,
   InfoOutlined as InfoIcon,
+  WarningAmber as WarningIcon,
   AccessTime as AccessTimeIcon,
   Badge as BadgeIcon,
 } from '@mui/icons-material';
@@ -53,6 +54,7 @@ import { ShiftTimePicker } from '../../components/ShiftTimePicker';
 import { DayWiseShiftPicker, DEFAULT_WEEKLY_SCHEDULE } from '../../components/DayWiseShiftPicker';
 import { WeeklySchedule } from '../../types';
 import { STANDARD_DEPARTMENTS } from '../../constants/departments';
+import { getAvatarUrl } from '../../utils/imageUrl';
 
 // Helper for formatting HH:mm to 12-hour AM/PM
 const formatTime12Hour = (time24?: string) => {
@@ -106,6 +108,8 @@ export const CreateEmployee: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
+  const [isAutoFilling, setIsAutoFilling] = useState<boolean>(false);
   const [weeklySchedule, setWeeklySchedule] = useState<WeeklySchedule>(DEFAULT_WEEKLY_SCHEDULE);
 
   // Fetch organization to display configured standard shift
@@ -141,6 +145,37 @@ export const CreateEmployee: React.FC = () => {
   const watchShiftType = watch('shiftType');
   const watchStartTime = watch('shiftStartTime');
   const watchEndTime = watch('shiftEndTime');
+  const watchEmail = watch('email');
+
+  const [emailCheckState, setEmailCheckState] = useState<{
+    isLoading: boolean;
+    result: CheckEmployeeEmailResult | null;
+  }>({
+    isLoading: false,
+    result: null,
+  });
+
+  // Debounced check for existing user in tenant / other workspaces
+  useEffect(() => {
+    const trimmed = (watchEmail || '').trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmed || !emailRegex.test(trimmed)) {
+      setEmailCheckState({ isLoading: false, result: null });
+      return;
+    }
+
+    setEmailCheckState((prev) => ({ ...prev, isLoading: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await employeeService.checkEmail(trimmed);
+        setEmailCheckState({ isLoading: false, result: res });
+      } catch {
+        setEmailCheckState({ isLoading: false, result: null });
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [watchEmail]);
 
   // Ensure "Standard Employee" and "Active" are explicitly selected by default on mount
   useEffect(() => {
@@ -188,6 +223,7 @@ export const CreateEmployee: React.FC = () => {
         return;
       }
       setSelectedFile(file);
+      setExistingAvatarUrl(null);
       setFileError(null);
 
       const reader = new FileReader();
@@ -201,16 +237,83 @@ export const CreateEmployee: React.FC = () => {
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
+    setExistingAvatarUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
+  const handleAutoFill = async () => {
+    if (!emailCheckState.result?.user) return;
+    setIsAutoFilling(true);
+
+    try {
+      const { user, existingWorkspaces } = emailCheckState.result;
+      const profile = existingWorkspaces?.find((w) => w.isActive) || existingWorkspaces?.[0];
+
+      // 1. Personal Details
+      if (user.name) {
+        setValue('name', user.name, { shouldValidate: true });
+      }
+      const phoneVal = user.phone || profile?.phone;
+      if (phoneVal) {
+        setValue('phone', phoneVal, { shouldValidate: true });
+      }
+
+      // 2. Department & Designation
+      if (profile?.designation) {
+        setValue('designation', profile.designation, { shouldValidate: true });
+      }
+      if (profile?.department) {
+        setValue('department', profile.department, { shouldValidate: true });
+      }
+
+      // 3. Role
+      if (isOwner && profile?.role) {
+        setValue('role', profile.role === 'admin' ? 'admin' : 'employee', { shouldValidate: true });
+      }
+
+      // 4. Status
+      if (profile?.isActive !== undefined) {
+        setValue('status', profile.isActive ? 'active' : 'inactive', { shouldValidate: true });
+      }
+
+      // 5. Photo & Biometrics
+      const targetAvatar = user.avatarUrl || profile?.avatarUrl;
+      if (targetAvatar) {
+        setExistingAvatarUrl(targetAvatar);
+        const fullUrl = getAvatarUrl(targetAvatar);
+        if (fullUrl) {
+          setPreviewUrl(fullUrl);
+          setFileError(null);
+          try {
+            const res = await fetch(fullUrl, { credentials: 'include' });
+            if (res.ok) {
+              const blob = await res.blob();
+              const mime = blob.type || 'image/jpeg';
+              const ext = mime.split('/')[1] || 'jpg';
+              const file = new File([blob], `avatar-${Date.now()}.${ext}`, { type: mime });
+              setSelectedFile(file);
+            }
+          } catch {
+            // Non-fatal: existingAvatarUrl payload will be used
+          }
+        }
+      }
+    } finally {
+      setIsAutoFilling(false);
+    }
+  };
+
   const onSubmit = (data: EmployeeFormValues) => {
+    if (emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE') {
+      setError('An employee with this email already exists in this workspace.');
+      return;
+    }
     setError(null);
     setFileError(null);
 
-    if (!selectedFile) {
+    if (!selectedFile && !existingAvatarUrl) {
       setFileError('Corporate profile picture is mandatory for biometric face registration.');
       return;
     }
@@ -228,7 +331,11 @@ export const CreateEmployee: React.FC = () => {
     formData.append('department', data.department);
     formData.append('role', isOwner ? data.role : 'employee');
     formData.append('status', data.status);
-    formData.append('avatar', selectedFile);
+    if (selectedFile) {
+      formData.append('avatar', selectedFile);
+    } else if (existingAvatarUrl) {
+      formData.append('existingAvatarUrl', existingAvatarUrl);
+    }
 
     // Shift Schedule
     formData.append('shiftType', data.shiftType);
@@ -304,13 +411,21 @@ export const CreateEmployee: React.FC = () => {
                   fullWidth
                   label="Corporate Email Address"
                   placeholder="richard@checkpoint.io"
-                  error={!!errors.email}
-                  helperText={errors.email?.message}
+                  error={!!errors.email || emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE'}
+                  helperText={
+                    errors.email?.message ||
+                    (emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE'
+                      ? 'An employee with this email already exists in this workspace.'
+                      : '')
+                  }
                   disabled={mutation.isPending}
                   {...register('email')}
                   slotProps={{
                     input: {
                       startAdornment: <EmailIcon sx={{ color: 'text.secondary', mr: 1 }} />,
+                      endAdornment: emailCheckState.isLoading ? (
+                        <CircularProgress size={18} sx={{ color: 'text.secondary', mr: 0.5 }} />
+                      ) : null,
                     },
                   }}
                 />
@@ -391,6 +506,79 @@ export const CreateEmployee: React.FC = () => {
               <Grid size={{ xs: 12 }}>
                 <Divider sx={{ my: 1 }} />
               </Grid>
+
+              {emailCheckState.result?.status === 'EXISTS_OTHER_WORKSPACE' && (
+                <Grid size={{ xs: 12 }}>
+                  <Alert
+                    severity="warning"
+                    icon={<WarningIcon fontSize="inherit" />}
+                    sx={{
+                      borderRadius: 2,
+                      border: '1px solid',
+                      borderColor: 'warning.light',
+                      '& .MuiAlert-message': { width: '100%' },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        flexDirection: { xs: 'column', md: 'row' },
+                        justifyContent: 'space-between',
+                        alignItems: { xs: 'flex-start', md: 'center' },
+                        gap: 2,
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        {(emailCheckState.result.user?.avatarUrl || emailCheckState.result.existingWorkspaces?.[0]?.avatarUrl) && (
+                          <Avatar
+                            src={getAvatarUrl(emailCheckState.result.user?.avatarUrl || emailCheckState.result.existingWorkspaces?.[0]?.avatarUrl)}
+                            sx={{ width: 48, height: 48, border: '2px solid', borderColor: 'warning.main', display: { xs: 'none', sm: 'flex' } }}
+                          />
+                        )}
+                        <Box>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                            User Already Registered in Organization
+                          </Typography>
+                          <Typography variant="body2" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                            <strong>{emailCheckState.result.user?.name}</strong> is already registered under{' '}
+                            <strong>
+                              {emailCheckState.result.existingWorkspaces?.map((w) => w.workspaceName).join(', ') || 'another workspace'}
+                            </strong>
+                            {emailCheckState.result.existingWorkspaces?.[0]?.designation
+                              ? ` as ${emailCheckState.result.existingWorkspaces[0].designation}`
+                              : ''}
+                            .
+                          </Typography>
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: 'text.secondary', fontStyle: 'italic' }}>
+                            Onboarding this employee will grant access to this workspace while linking their existing account credentials.
+                          </Typography>
+                        </Box>
+                      </Box>
+                      {emailCheckState.result.user?.name && (
+                        <Button
+                          variant="contained"
+                          color="warning"
+                          size="small"
+                          disabled={isAutoFilling}
+                          startIcon={isAutoFilling ? <CircularProgress size={14} color="inherit" /> : null}
+                          onClick={handleAutoFill}
+                          sx={{ textTransform: 'none', whiteSpace: 'nowrap', fontWeight: 600, mt: { xs: 1, md: 0 } }}
+                        >
+                          {isAutoFilling ? 'Auto-filling...' : 'Auto-fill All Details'}
+                        </Button>
+                      )}
+                    </Box>
+                  </Alert>
+                </Grid>
+              )}
+
+              {emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE' && (
+                <Grid size={{ xs: 12 }}>
+                  <Alert severity="error" sx={{ borderRadius: 2 }}>
+                    <strong>Duplicate Employee:</strong> An employee with this email already exists in this workspace. Please use another email address.
+                  </Alert>
+                </Grid>
+              )}
 
               {/* Placement Section */}
               <Grid size={{ xs: 12 }}>
@@ -722,7 +910,7 @@ export const CreateEmployee: React.FC = () => {
                   type="submit"
                   variant="contained"
                   color="primary"
-                  disabled={mutation.isPending}
+                  disabled={mutation.isPending || emailCheckState.isLoading || emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE'}
                   startIcon={mutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
                   sx={{ py: 1.25, px: 4 }}
                 >

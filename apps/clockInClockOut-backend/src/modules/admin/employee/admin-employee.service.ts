@@ -106,6 +106,75 @@ export class AdminEmployeeService {
   /**
    * Get single employee by ID
    */
+  /**
+   * Check if an email is already associated with an existing user in this tenant,
+   * distinguishing between current workspace (conflict) vs. other workspaces in tenant (warning).
+   */
+  async checkEmailAvailability(tenantId: string, email: string, currentWorkspaceId?: string) {
+    const user = await this.employeeRepo.findUserWithTenantWorkspaces(email, tenantId);
+
+    // If user does not exist or does not belong to this tenant, email is free/available
+    if (!user || !user.tenantMembers || user.tenantMembers.length === 0) {
+      return {
+        exists: false,
+      };
+    }
+
+    // Workspace memberships in this tenant
+    const workspaceMemberships = user.workspaceMembers || [];
+    const isInCurrentWorkspace = currentWorkspaceId
+      ? workspaceMemberships.some((wm) => wm.workspace.id === currentWorkspaceId)
+      : false;
+
+    // Collate existing workspace summaries
+    const existingWorkspaces = workspaceMemberships.map((wm) => {
+      const activeProfile = wm.employeeProfiles?.[0];
+      return {
+        workspaceId: wm.workspace.id,
+        workspaceName: wm.workspace.businessName,
+        employeeCode: activeProfile?.employeeCode || null,
+        designation: activeProfile?.designation || null,
+        department: activeProfile?.department || null,
+        role: activeProfile?.role || "employee",
+        phone: activeProfile?.phone || null,
+        avatarUrl: activeProfile?.biometricPhotoUrl || null,
+        isActive: activeProfile?.isActive ?? true,
+      };
+    });
+
+    const primaryProfile = existingWorkspaces.find((w) => w.isActive) || existingWorkspaces[0];
+
+    if (isInCurrentWorkspace) {
+      return {
+        exists: true,
+        status: "EXISTS_CURRENT_WORKSPACE" as const,
+        message: "An employee with this email already exists in this workspace.",
+        user: {
+          id: user.id,
+          name: user.fullName,
+          email: user.email,
+          phone: primaryProfile?.phone || null,
+          avatarUrl: primaryProfile?.avatarUrl || null,
+        },
+        existingWorkspaces,
+      };
+    }
+
+    return {
+      exists: true,
+      status: "EXISTS_OTHER_WORKSPACE" as const,
+      message: "This user is already registered in another workspace within your organization.",
+      user: {
+        id: user.id,
+        name: user.fullName,
+        email: user.email,
+        phone: primaryProfile?.phone || null,
+        avatarUrl: primaryProfile?.avatarUrl || null,
+      },
+      existingWorkspaces,
+    };
+  }
+
   async getEmployeeById(employeeId: string, tenantId: string) {
     const emp = await this.employeeRepo.findEmployeeById(employeeId, tenantId);
     if (!emp) {
@@ -204,14 +273,18 @@ export class AdminEmployeeService {
     }
 
     // 2. Validate Avatar
-    if (!avatarFile) {
+    let biometricPhotoUrl: string;
+    if (avatarFile) {
+      const uploadResult = await storageService.uploadAvatar({
+        tenantId,
+        file: avatarFile,
+      });
+      biometricPhotoUrl = uploadResult.url;
+    } else if (input.existingAvatarUrl) {
+      biometricPhotoUrl = input.existingAvatarUrl;
+    } else {
       throw new ValidationError("Corporate portrait photograph is mandatory for biometric face registration.");
     }
-
-    const { url: biometricPhotoUrl } = await storageService.uploadAvatar({
-      tenantId,
-      file: avatarFile,
-    });
 
     // 3. Determine employee code (user-provided or smart sequential e.g. EMP-GA004...)
     const employeeCode = await this.determineEmployeeCode(tenantId, workspaceId, input.employeeId);

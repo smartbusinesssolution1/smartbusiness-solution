@@ -175,6 +175,55 @@ export class AdminEmployeeRepository {
   /**
    * Find user by email
    */
+  /**
+   * Find user by email along with tenant and workspace memberships scoped to tenantId
+   */
+  async findUserWithTenantWorkspaces(email: string, tenantId: string) {
+    return prisma.user.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        deletedAt: null,
+      },
+      include: {
+        tenantMembers: {
+          where: { tenantId },
+          select: { id: true, role: true },
+        },
+        workspaceMembers: {
+          where: {
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+            deletedAt: null,
+          },
+          include: {
+            workspace: {
+              select: {
+                id: true,
+                businessName: true,
+              },
+            },
+            employeeProfiles: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                employeeCode: true,
+                designation: true,
+                department: true,
+                phone: true,
+                role: true,
+                shiftType: true,
+                biometricPhotoUrl: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
   async findUserByEmail(email: string) {
     return prisma.user.findUnique({
       where: { email },
