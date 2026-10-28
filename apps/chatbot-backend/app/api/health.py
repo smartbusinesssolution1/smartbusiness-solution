@@ -1,4 +1,6 @@
+
 from fastapi import APIRouter, Depends, Response
+
 from sqlalchemy import text
 
 from app.core import cache
@@ -8,7 +10,7 @@ from app.db.session import engine
 router = APIRouter(tags=["health"])
 
 
-@router.get("/healthz")
+@router.get("/health")
 def healthz():
     """Liveness: process is up. Cheap, no dependencies."""
     return {"status": "ok"}

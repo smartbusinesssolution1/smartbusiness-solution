@@ -11,9 +11,36 @@ import { Conversations } from "./sections/Conversations";
 import { Maintenance } from "./sections/Maintenance";
 import type { Health } from "./lib/types";
 
-const API = (import.meta.env.VITE_API_BASE || "http://localhost:8000").replace(/\/+$/, "");
+const isBrowser = typeof window !== "undefined";
+const currentHost = isBrowser && window.location.hostname ? window.location.hostname : "localhost";
+const isLocalhost = currentHost === "localhost" || currentHost === "127.0.0.1";
+
+export function getApiBase(): string {
+  const envBase = (import.meta.env.VITE_API_BASE || "").trim();
+  if (envBase && (!isBrowser || isLocalhost || !envBase.includes("localhost"))) {
+    return envBase.replace(/\/+$/, "");
+  }
+
+  if (isBrowser) {
+    const port = window.location.port;
+    if (port === "5175") {
+      return "/api";
+    }
+    if (port === "80" || port === "443" || port === "") {
+      return "/chatbot-api";
+    }
+    const protocol = window.location.protocol || "http:";
+    return `${protocol}//${currentHost}:8001`;
+  }
+
+  return "http://localhost:8001";
+}
+
+const API = getApiBase();
 const get = (k: string) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 const set = (k: string, v: string | null) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch { /* ignore */ } };
+
+
 
 export default function App() {
   const [client, setClient] = useState<Client | null>(null);
