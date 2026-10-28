@@ -1,4 +1,4 @@
-export type PageRoute = 'home' | 'services' | 'pricing' | 'faq' | 'contact' | 'signin';
+export type PageRoute = 'home' | 'services' | 'pricing' | 'faq' | 'contact' | 'signin' | 'account';
 
 export interface PricingPlan {
   id: string;

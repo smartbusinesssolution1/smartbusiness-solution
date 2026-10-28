@@ -16,8 +16,14 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      "/api/v1/auth": { target: process.env.PLATFORM_API_URL ?? "http://localhost:3001", changeOrigin: false },
-      "/api/v1": { target: process.env.CHECK_API_URL ?? "http://localhost:3005", changeOrigin: false },
+      "/api/v1/auth": {
+        target: process.env.PLATFORM_API_URL ?? "http://localhost:3001",
+        changeOrigin: true,
+      },
+      "/api/v1": {
+        target: process.env.CHECK_API_URL ?? "http://localhost:3005",
+        changeOrigin: true,
+      },
     },
   },
 });

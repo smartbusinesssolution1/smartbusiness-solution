@@ -45,7 +45,8 @@ export const envSchema = z
 
   CORS_ORIGIN: z
     .string()
-    .default("http://localhost:5173,http://localhost:5174")
+    // Check Printing (5173), Clock-In (5174), the portal where companies sign up (3003).
+    .default("http://localhost:5173,http://localhost:5174,http://localhost:3003")
     .transform((value) =>
       value
         .split(",")

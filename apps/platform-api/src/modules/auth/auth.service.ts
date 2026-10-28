@@ -1,6 +1,7 @@
 import {
   AuthRepository,
   type TenantInfo,
+  type TenantInfoWithProducts,
   type UserWithTenants,
 } from "./auth.repository.js";
 import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
@@ -453,16 +454,30 @@ export class AuthService {
     });
   }
 
+  // Who is signed in, their companies, and which products each company can open: the
+  // portal uses the products to show "Open" for what the company has.
   async getCurrentUser(userId: string): Promise<{
     user: AuthUser;
-    tenants: TenantInfo[];
+    tenants: TenantInfoWithProducts[];
   } | null> {
-    const user = await this.authRepository.findUserById(userId);
+    const user = await this.authRepository.findUserWithTenantProducts(userId);
     if (!user) return null;
+
+    const productsByTenant = new Map(
+      user.tenantMembers.map((tm) => [
+        tm.tenant.id,
+        tm.tenant.subscriptions.map((s) => ({
+          slug: s.product.slug,
+          name: s.product.name,
+          status: s.status,
+          trialEndsAt: s.trialEndsAt,
+        })),
+      ]),
+    );
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
-      tenants: this.extractTenants(user),
+      tenants: this.extractTenants(user).map((t) => ({ ...t, products: productsByTenant.get(t.tenantId) ?? [] })),
     };
   }
 
