@@ -37,6 +37,15 @@ function AppContent() {
       .catch(() => setSession(null));
   }, []);
 
+  // A product's "Create your company account" link (e.g. Check Printing's /sign-up) opens
+  // the portal with ?start=signup: show sign-up straight away.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('start') === 'signup') {
+      setAuthMode('signup');
+      setCurrentRoute('signin');
+    }
+  }, []);
+
   const goTo = (route: PageRoute) => {
     setCurrentRoute(route);
     window.scrollTo({ top: 0, behavior: 'smooth' });

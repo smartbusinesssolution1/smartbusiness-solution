@@ -18,11 +18,11 @@ export default defineConfig({
     proxy: {
       "/api/v1/auth": {
         target: process.env.PLATFORM_API_URL ?? "http://localhost:3001",
-        changeOrigin: true,
+        changeOrigin: false,
       },
       "/api/v1": {
         target: process.env.CHECK_API_URL ?? "http://localhost:3005",
-        changeOrigin: true,
+        changeOrigin: false,
       },
     },
   },

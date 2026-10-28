@@ -12,7 +12,9 @@ function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
   return React.lazy(async () => ({ default: (await load())[name] as React.ComponentType }));
 }
 const SignInPage = page(() => import("@/pages/auth/auth-pages"), "SignInPage");
-const SignUpPage = page(() => import("@/pages/auth/auth-pages"), "SignUpPage");
+// Sign-up moved to the SmartBusiness portal; /sign-up now forwards there.
+// const SignUpPage = page(() => import("@/pages/auth/auth-pages"), "SignUpPage");
+const SignUpMovedPage = page(() => import("@/pages/auth/auth-pages"), "SignUpMovedPage");
 const ForgotPasswordPage = page(() => import("@/pages/auth/auth-pages"), "ForgotPasswordPage");
 const ResetPasswordPage = page(() => import("@/pages/auth/auth-pages"), "ResetPasswordPage");
 const AcceptInvitationPage = page(() => import("@/pages/auth/auth-pages"), "AcceptInvitationPage");
@@ -95,7 +97,8 @@ export const router = createBrowserRouter([
         element: <RedirectIfSignedIn />,
         children: [
           { path: "/sign-in", element: <SignInPage /> },
-          { path: "/sign-up", element: <SignUpPage /> },
+          // { path: "/sign-up", element: <SignUpPage /> },
+          { path: "/sign-up", element: <SignUpMovedPage /> },
         ],
       },
       { path: "/forgot-password", element: <ForgotPasswordPage /> },

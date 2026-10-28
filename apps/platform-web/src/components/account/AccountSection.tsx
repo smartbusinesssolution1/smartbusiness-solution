@@ -68,6 +68,7 @@ function TenantProducts({ tenant, onOpenContact }: { tenant: PortalTenant; onOpe
             key={product.slug}
             product={product}
             access={tenant.products.find((p) => p.slug === product.slug)}
+            tenantId={tenant.tenantId}
             isOwner={isOwner}
             onOpenContact={onOpenContact}
           />
@@ -80,15 +81,17 @@ function TenantProducts({ tenant, onOpenContact }: { tenant: PortalTenant; onOpe
 function ProductCard({
   product,
   access,
+  tenantId,
   isOwner,
   onOpenContact,
 }: {
   product: ProductInfo;
   access: PortalTenant['products'][number] | undefined;
+  tenantId: string;
   isOwner: boolean;
   onOpenContact: () => void;
 }) {
-  const url = productUrl(product, import.meta.env);
+  const url = productUrl(product, import.meta.env, tenantId);
   const trialEnds = access?.status === 'TRIALING' ? formatTrialEnd(access.trialEndsAt) : null;
 
   return (

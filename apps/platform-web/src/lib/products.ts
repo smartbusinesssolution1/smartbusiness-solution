@@ -43,11 +43,14 @@ export interface BuildEnv {
 }
 
 // The full address to open a product, or null when this build doesn't know where it is.
-export function productUrl(product: ProductInfo, env: BuildEnv): string | null {
+// tenantId: the company it is opened for, so someone in several companies lands in the one
+// whose "Open" they clicked (the product only accepts one of the user's own companies).
+export function productUrl(product: ProductInfo, env: BuildEnv, tenantId?: string): string | null {
   const configured = env[product.envKey]?.trim();
   const base = configured || (env.DEV ? product.devUrl : '');
   if (!base) return null;
-  return `${base.replace(/\/+$/, '')}${product.entryPath}`;
+  const url = `${base.replace(/\/+$/, '')}${product.entryPath}`;
+  return tenantId ? `${url}?tenant=${encodeURIComponent(tenantId)}` : url;
 }
 
 // "Trial ends Nov 11, 2026" style date, in the reader's own locale and time zone.

@@ -12,6 +12,8 @@ interface CachedProductSubscription {
 
 export const productSubscriptionCache = new SimpleCache<CachedProductSubscription>(60);
 
+export const PRODUCT_NOT_AVAILABLE = "PRODUCT_NOT_AVAILABLE";
+
 export function requireProduct(productSlug: string) {
   return async function productMiddleware(
     req: Request,
@@ -45,9 +47,13 @@ export function requireProduct(productSlug: string) {
       include: { product: true },
     });
 
+    // Its own code, so a product's frontend can tell "your company doesn't have this
+    // product" (send them to the portal) from "you're not a member here". Same status and
+    // message as before: anything that only checks for 403 behaves as it did.
     if (!subscription) {
       throw new ForbiddenError(
         "Your organization does not have an active subscription to this product.",
+        PRODUCT_NOT_AVAILABLE,
       );
     }
 

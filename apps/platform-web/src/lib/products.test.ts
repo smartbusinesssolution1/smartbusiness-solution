@@ -19,6 +19,13 @@ describe('productUrl', () => {
     assert.equal(productUrl(clockIn, { DEV: true }), 'http://localhost:5174/');
   });
 
+  it('names the company it is opened for, so a person in several companies lands in the right one', () => {
+    assert.equal(
+      productUrl(checkPrinting, { VITE_CHECK_PRINTING_URL: 'https://checks.example.com' }, 'c0ffee00-0000-4000-8000-000000000001'),
+      'https://checks.example.com/workspaces?tenant=c0ffee00-0000-4000-8000-000000000001',
+    );
+  });
+
   it('a production build without the address gives no link, never localhost', () => {
     assert.equal(productUrl(checkPrinting, { DEV: false }), null);
     assert.equal(productUrl(checkPrinting, { DEV: false, VITE_CHECK_PRINTING_URL: '   ' }), null);

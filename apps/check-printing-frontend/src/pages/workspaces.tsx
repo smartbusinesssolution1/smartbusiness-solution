@@ -12,7 +12,8 @@ import { Select, SelectItem } from "@/components/ui/controls";
 import { Brand } from "@/components/app/brand";
 import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Skeleton } from "@/components/app/layout";
-import { Splash } from "@/app/guards";
+import { NoProductAccess, Splash } from "@/app/guards";
+import { isProductNotAvailable } from "@/lib/portal";
 import { applyServerErrors, US_STATES } from "@/lib/forms";
 import { initials } from "@/lib/format";
 
@@ -66,6 +67,7 @@ export function WorkspacePickerPage() {
   const navigate = useNavigate();
 
   if (isPending) return <Splash />;
+  if (isProductNotAvailable(error)) return <NoProductAccess />;
   if (error) return <div className="mx-auto max-w-md p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>;
   if (workspaces.length === 0) return isOwner ? <Navigate to="/workspaces/new" replace /> : <AskOwnerForAccess />;
   if (workspaces.length === 1) return <Navigate to={`/w/${workspaces[0]!.id}`} replace />;
