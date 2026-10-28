@@ -9,6 +9,7 @@ import { storageService } from "../../shared/services/storage.service.js";
 import { faceRecognitionService } from "../../shared/services/faceRecognition.service.js";
 import { memoryCache } from "../../shared/services/cache.service.js";
 import { logger } from "../../shared/services/logger.js";
+import { redisClient } from "../../shared/services/redis.service.js";
 import type {
   VerifyLocationInput,
   CheckInInput,
@@ -64,10 +65,10 @@ export class AttendanceService {
    * Helper: Resolve employee and throw if not found (with 60s in-memory cache)
    */
   private async getEmployee(userId: string, tenantId: string, employeeIdParam?: string, workspaceId?: string) {
-    const cacheKey = `${tenantId}:${userId}:${employeeIdParam || ""}:${workspaceId || ""}`;
-    const cached = this.employeeCache.get(cacheKey);
-    if (cached && Date.now() < cached.expiresAt) {
-      return cached.data;
+    const cacheKey = `cache:emp:${tenantId}:${userId}:${employeeIdParam || ""}:${workspaceId || ""}`;
+    const cached = await memoryCache.get<any>(cacheKey);
+    if (cached) {
+      return cached;
     }
 
     let employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, workspaceId);
@@ -103,7 +104,7 @@ export class AttendanceService {
       throw new NotFoundError("Employee profile not found for this account.");
     }
 
-    this.employeeCache.set(cacheKey, { data: employee, expiresAt: Date.now() + 60_000 });
+    await memoryCache.set(cacheKey, employee, 60);
     return employee;
   }
 
@@ -119,6 +120,13 @@ export class AttendanceService {
     const defaultWsId = defaultWs?.id;
     const targetWsId = workspaceId || defaultWsId;
 
+    const wsCacheKey = `cache:ws:settings:${tenantId}:${targetWsId}`;
+    const cachedWs = await memoryCache.get<{ workspace: any; settings: any }>(wsCacheKey);
+    if (cachedWs) {
+      return cachedWs;
+    }
+
+    let result: { workspace: any; settings: any };
     // Fast-path: If target is employee's primary assigned workspace, reuse already-loaded data
     if (defaultWs && (!workspaceId || workspaceId === defaultWsId)) {
       const settings = defaultWs.attendanceSettings ?? {
@@ -129,24 +137,27 @@ export class AttendanceService {
         defaultShiftEndTime: "18:00",
         graceMinutes: 15,
       };
-      return { workspace: defaultWs, settings };
+      result = { workspace: defaultWs, settings };
+    } else {
+      const ws = await this.attendanceRepo.findWorkspaceWithGeofence(targetWsId, tenantId);
+      if (!ws) {
+        throw new NotFoundError("Target Workspace");
+      }
+
+      const settings = ws.attendanceSettings ?? {
+        latitude: 37.774929,
+        longitude: -122.419416,
+        radiusMeters: 150,
+        defaultShiftStartTime: "09:00",
+        defaultShiftEndTime: "18:00",
+        graceMinutes: 15,
+      };
+
+      result = { workspace: ws, settings };
     }
 
-    const ws = await this.attendanceRepo.findWorkspaceWithGeofence(targetWsId, tenantId);
-    if (!ws) {
-      throw new NotFoundError("Target Workspace");
-    }
-
-    const settings = ws.attendanceSettings ?? {
-      latitude: 37.774929,
-      longitude: -122.419416,
-      radiusMeters: 150,
-      defaultShiftStartTime: "09:00",
-      defaultShiftEndTime: "18:00",
-      graceMinutes: 15,
-    };
-
-    return { workspace: ws, settings };
+    await memoryCache.set(wsCacheKey, result, 900); // 15 mins TTL
+    return result;
   }
 
   /**
@@ -211,6 +222,25 @@ export class AttendanceService {
   ) {
     const employee = await this.getEmployee(userId, tenantId, input.employeeId);
 
+    // Concurrency Lock: Prevent rapid double-tap punch race conditions
+    const punchLockKey = `lock:punch:${employee.id}`;
+    let lockAcquired = false;
+    try {
+      const lockRes = await redisClient.set(punchLockKey, "1", "PX", 8000, "NX");
+      lockAcquired = lockRes === "OK";
+    } catch {
+      lockAcquired = true; // fail-open if Redis is unreachable
+    }
+
+    if (!lockAcquired) {
+      throw new AppError(
+        "A punch request is already being processed. Please wait a moment.",
+        429,
+        "ERR_PUNCH_IN_PROGRESS"
+      );
+    }
+
+    try {
     // 1. Resolve Workspace & Geofence
     const { workspace, settings } = await this.resolveWorkspaceAndSettings(
       employee,
@@ -271,16 +301,7 @@ export class AttendanceService {
     const hasPhoto = allFiles.length > 0 || Boolean(input.selfieUri);
 
     if (hasPhoto && employee.biometricPhotoUrl) {
-      console.log("\n=======================================================");
-      console.log("👤 [ATTENDANCE] PREPARING FACE RECOGNITION VERIFICATION");
-      console.log(`  • Employee ID:      ${employee.id}`);
-      console.log(`  • Employee Code:    ${employee.employeeCode}`);
-      console.log(`  • Baseline URL:     ${employee.biometricPhotoUrl}`);
-      console.log(`  • Uploaded Files:   ${allFiles.length}`);
-      console.log(`  • Selfie URI:       ${input.selfieUri ? (input.selfieUri.startsWith("data:") ? "base64 data URI" : input.selfieUri) : "none"}`);
-      console.log(`  • Challenge Token:  ${input.challengeToken ? input.challengeToken.substring(0, 20) + "..." : "none"}`);
-      console.log("=======================================================");
-
+      
       logger.info(
         {
           employeeId: employee.id,
@@ -303,18 +324,28 @@ export class AttendanceService {
           const base64Data = input.selfieUri.split(",")[1];
           captureBuffers.push(Buffer.from(base64Data, "base64"));
         } else {
-          console.log(`📥 [ATTENDANCE] Downloading selfie frame from: ${input.selfieUri}`);
-          captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
+                    captureBuffers.push(await storageService.getFileBuffer(input.selfieUri));
         }
       }
 
       if (captureBuffers.length > 0) {
-        console.log(`📥 [ATTENDANCE] Loading baseline photo from: ${employee.biometricPhotoUrl}`);
         let baselineBuffer: Buffer | null = null;
+        const faceCacheKey = `cache:face:baseline:${employee.id}`;
         try {
-          const baselineStart = Date.now();
-          baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
-          console.log(`📥 [ATTENDANCE] Baseline loaded: ${baselineBuffer.length} bytes in ${Date.now() - baselineStart}ms`);
+          const cachedBase64 = await memoryCache.get<string>(faceCacheKey);
+          if (cachedBase64) {
+            baselineBuffer = Buffer.from(cachedBase64, "base64");
+            logger.info({ employeeId: employee.id }, "Biometric baseline loaded from Redis/L1 cache");
+          } else {
+            const baselineStart = Date.now();
+            baselineBuffer = await storageService.getFileBuffer(employee.biometricPhotoUrl);
+            const durationMs = Date.now() - baselineStart;
+            logger.info(
+              { employeeId: employee.id, bytes: baselineBuffer.length, durationMs },
+              "Biometric baseline fetched from storage and cached to Redis"
+            );
+            await memoryCache.set(faceCacheKey, baselineBuffer.toString("base64"), 86400); // 24h TTL
+          }
         } catch (storageErr: any) {
           logger.warn(
             { employeeId: employee.id, biometricPhotoUrl: employee.biometricPhotoUrl, error: storageErr.message },
@@ -340,8 +371,7 @@ export class AttendanceService {
           });
         }
 
-        console.log(`🎯 [ATTENDANCE] Verification Outcome: matched=${faceResult.matched}, similarity=${faceResult.similarity}, liveness=${faceResult.livenessPassed}, status=${faceResult.status}`);
-
+        
         if (!faceResult.matched) {
           throw new AppError(
             faceResult.message || "Face verification failed: Captured face does not match the employee profile.",
@@ -364,11 +394,9 @@ export class AttendanceService {
       }
     } else {
       if (!employee.biometricPhotoUrl) {
-        console.log(`ℹ️ [ATTENDANCE] Employee ${employee.employeeCode} (${employee.id}) has NO registered biometricPhotoUrl in database. Skipping face verification.`);
-        logger.info({ employeeId: employee.id, employeeCode: employee.employeeCode }, "No biometricPhotoUrl registered; skipping face verification");
+                logger.info({ employeeId: employee.id, employeeCode: employee.employeeCode }, "No biometricPhotoUrl registered; skipping face verification");
       } else if (!hasPhoto) {
-        console.log(`ℹ️ [ATTENDANCE] No photo / selfie provided with punch for employee ${employee.employeeCode}. Skipping face verification.`);
-      }
+              }
     }
 
     const sessionNumber = todaySessions.length + 1;
@@ -451,6 +479,11 @@ export class AttendanceService {
       },
       message: `Good ${now.getHours() < 12 ? "morning" : "afternoon"}! Session #${sessionNumber} clocked in as ${record.status}.`,
     };
+    await memoryCache.delPattern(`cache:att:today:${tenantId}:${userId}:*`);
+    await memoryCache.delPattern(`cache:att:today:${tenantId}:*:*`);
+    } finally {
+      redisClient.del(punchLockKey).catch(() => {});
+    }
   }
 
   /**
@@ -460,6 +493,25 @@ export class AttendanceService {
     const targetWorkspaceId = headerWorkspaceId || (input as any).workspaceId;
     const employee = await this.getEmployee(userId, tenantId, input.employeeId, targetWorkspaceId);
 
+    // Concurrency Lock: Prevent rapid double-tap punch race conditions
+    const punchLockKey = `lock:punch:${employee.id}`;
+    let lockAcquired = false;
+    try {
+      const lockRes = await redisClient.set(punchLockKey, "1", "PX", 8000, "NX");
+      lockAcquired = lockRes === "OK";
+    } catch {
+      lockAcquired = true; // fail-open if Redis is unreachable
+    }
+
+    if (!lockAcquired) {
+      throw new AppError(
+        "A punch request is already being processed. Please wait a moment.",
+        429,
+        "ERR_PUNCH_IN_PROGRESS"
+      );
+    }
+
+    try {
     const now = new Date();
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
@@ -582,15 +634,26 @@ export class AttendanceService {
       },
       message: statusMessage,
     };
+    await memoryCache.delPattern(`cache:att:today:${tenantId}:${userId}:*`);
+    await memoryCache.delPattern(`cache:att:today:${tenantId}:*:*`);
+    } finally {
+      redisClient.del(punchLockKey).catch(() => {});
+    }
   }
 
   /**
    * Get active shift status for today, supporting multiple sessions
    */
   async getTodayShift(userId: string, tenantId: string, headerWorkspaceId?: string) {
-    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, headerWorkspaceId);
-
     const now = new Date();
+    const todayDateStr = now.toISOString().split("T")[0];
+    const todayCacheKey = `cache:att:today:${tenantId}:${userId}:${headerWorkspaceId || "def"}:${todayDateStr}`;
+    const cachedToday = await memoryCache.get<any>(todayCacheKey);
+    if (cachedToday) {
+      return cachedToday;
+    }
+
+    const employee = await this.attendanceRepo.findEmployeeByUserId(userId, tenantId, headerWorkspaceId);
     const todayDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
     if (!employee) {
@@ -684,7 +747,7 @@ export class AttendanceService {
       isActive: !s.clockOutTime,
     }));
 
-    return {
+    const todayDto = {
       date: now.toISOString().split("T")[0],
       hasClockedIn: Boolean(firstSession),
       hasClockedOut: Boolean(firstSession) && !activeSession,
@@ -713,6 +776,9 @@ export class AttendanceService {
         targetHours: 8.0,
       },
     };
+
+    await memoryCache.set(todayCacheKey, todayDto, 60); // 60s micro-cache
+    return todayDto;
   }
 
   /**

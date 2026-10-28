@@ -876,6 +876,7 @@ model AttendanceEmployeeDetails {
   attendanceRecords AttendanceRecord[]
 
   @@index([workspaceMemberId])
+  @@index([employeeCode])
   @@index([deletedAt])
   @@index([workspaceMemberId, isActive, deletedAt])
   @@map("employees")

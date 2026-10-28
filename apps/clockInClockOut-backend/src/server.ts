@@ -2,6 +2,7 @@ import { createApp } from "./app.js"
 import { env } from "./config/index.js"
 import { prisma } from "@smartbusiness/database"
 import { logger } from "./shared/services/logger.js"
+import { closeRedisConnection } from "./shared/services/redis.service.js"
 
 // Reload trigger: S3 storage active - Mumbai ap-south-1
 
@@ -53,7 +54,7 @@ async function startServer() {
                 } catch {
                     // non-fatal keepalive
                 }
-            }, 45000);
+            }, 15000);
             dbKeepAlive.unref();
         })
 
@@ -93,6 +94,7 @@ async function startServer() {
                     // Disconnect database
                     await prisma.$disconnect()
                     logger.info("Database disconnected")
+                    await closeRedisConnection()
 
                     clearTimeout(forceShutdownTimer)
                     logger.info("Shutdown complete")

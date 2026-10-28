@@ -35,6 +35,7 @@ COPY --from=pruner /app/out/full/ .
 RUN pnpm --filter @smartbusiness/database generate
 RUN pnpm --filter @smartbusiness/database build
 RUN pnpm --filter @smartbusiness/auth build
+RUN pnpm --filter @smartbusiness/jobs build
 
 # Build clockInClockOut-backend
 RUN pnpm --filter @smartbusiness/clockInClockOut-backend build

@@ -2,6 +2,7 @@ import { EmployeeRepository } from "./employee.repository.js";
 import { AppError, NotFoundError, ValidationError } from "../../shared/errors/index.js";
 import { storageService } from "../../shared/services/storage.service.js";
 import { logger } from "../../shared/services/logger.js";
+import { memoryCache } from "../../shared/services/cache.service.js";
 import type { UpdateProfileInput, RegisterPushTokenInput } from "./employee.schema.js";
 
 /**
@@ -161,6 +162,11 @@ export class EmployeeService {
       biometricPhotoUrl,
     });
 
+    if (biometricPhotoUrl) {
+      await memoryCache.del(`cache:face:baseline:${employee.id}`);
+    }
+    await memoryCache.delPattern(`cache:emp:${tenantId}:*`);
+
     return {
       id: employee.id,
       biometricPhotoUrl: result.employee.biometricPhotoUrl,
@@ -193,6 +199,9 @@ export class EmployeeService {
     const updated = await this.employeeRepo.updateEmployeeProfile(employee.id, {
       biometricPhotoUrl: uploadResult.url,
     });
+
+    await memoryCache.del(`cache:face:baseline:${employee.id}`);
+    await memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     return {
       avatarUrl: updated.biometricPhotoUrl,

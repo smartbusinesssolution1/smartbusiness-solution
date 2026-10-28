@@ -168,14 +168,10 @@ export class StorageService {
     // Purge from RAM cache
     this.memoryBufferCache.delete(avatarUrl);
 
-    // Purge from disk cache
+    // Purge from disk cache (non-blocking)
     const diskCacheFilename = `cached-${crypto.createHash("md5").update(avatarUrl).digest("hex")}.jpg`;
     const diskCachePath = path.join(this.avatarsLocalDir, diskCacheFilename);
-    if (fs.existsSync(diskCachePath)) {
-      try {
-        fs.unlinkSync(diskCachePath);
-      } catch {}
-    }
+    await fs.promises.unlink(diskCachePath).catch(() => {});
 
     try {
       // 1. AWS S3 / CloudFront URL
@@ -199,11 +195,9 @@ export class StorageService {
       // 2. Local disk file (/uploads/avatars/avatar-...)
       if (avatarUrl.startsWith("/uploads/avatars/")) {
         const filename = path.basename(avatarUrl);
-        const filePath = path.join(this.avatarsLocalDir, filename);
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-          logger.info({ filename }, "Cleaned up local avatar file");
-        }
+        const localAvatarPath = path.join(this.avatarsLocalDir, filename);
+        await fs.promises.unlink(localAvatarPath).catch(() => {});
+        logger.info({ filename }, "Cleaned up local avatar file");
       }
     } catch (err: any) {
       // Non-fatal cleanup error

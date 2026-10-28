@@ -130,17 +130,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -157,17 +162,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "asc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -185,17 +195,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
     if (active) return active;
@@ -208,17 +223,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -421,16 +441,16 @@ export class AttendanceRepository {
         ],
         skip,
         take,
-        include: {
-          employee: {
-            include: {
-              workspaceMember: {
-                include: {
-                  workspace: true,
-                },
-              },
-            },
-          },
+        select: {
+          id: true,
+          employeeId: true,
+          status: true,
+          clockInDate: true,
+          clockInTime: true,
+          clockOutDate: true,
+          clockOutTime: true,
+          workingHours: true,
+          notes: true,
         },
       }),
       prisma.attendanceRecord.count({ where }),
@@ -448,17 +468,22 @@ export class AttendanceRepository {
         id: recordId,
         employeeId,
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }

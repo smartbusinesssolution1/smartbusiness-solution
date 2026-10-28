@@ -6,6 +6,9 @@ import { NotFoundError, ValidationError, AppError, ForbiddenError } from "../../
 import { emailService } from "../../../shared/services/email.service.js";
 import { memoryCache } from "../../../shared/services/cache.service.js";
 import { storageService } from "../../../shared/services/storage.service.js";
+import { emailQueue, isRedisAvailable } from "../../../shared/services/redis.service.js";
+import { renderWelcomeEmail } from "../../../shared/templates/welcome-email.template.js";
+import { logger } from "../../../shared/services/logger.js";
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
@@ -327,18 +330,46 @@ export class AdminEmployeeService {
         }),
       ]);
 
-      await emailService.sendEmployeeWelcomeEmail({
-        to: input.email,
-        employeeName: input.name,
-        employeeCode,
-        role: input.role,
-        temporaryPassword,
-        organizationName: tenant?.name,
-        workspaceName: ws?.businessName,
-      });
+      let queued = false;
+      if (isRedisAvailable()) {
+        try {
+          const loginUrl = process.env.PORTAL_LOGIN_URL || "http://localhost:5173/login";
+          const { subject, html, text } = renderWelcomeEmail({
+            to: input.email,
+            employeeName: input.name,
+            employeeCode,
+            temporaryPassword,
+            loginUrl,
+          });
+
+          await emailQueue.add("notification-email", {
+            to: input.email,
+            tag: "welcome-email",
+            subject,
+            html,
+            text,
+          });
+          queued = true;
+          logger.info({ to: input.email, employeeCode }, "Welcome credentials email queued to BullMQ");
+        } catch (queueErr) {
+          logger.warn({ err: queueErr }, "Failed to enqueue welcome email, falling back to direct send");
+        }
+      }
+
+      if (!queued) {
+        await emailService.sendEmployeeWelcomeEmail({
+          to: input.email,
+          employeeName: input.name,
+          employeeCode,
+          role: input.role,
+          temporaryPassword,
+          organizationName: tenant?.name,
+          workspaceName: ws?.businessName,
+        });
+      }
     } catch (emailErr) {
       // Non-blocking: Log warning if email fails, employee creation still succeeds
-      console.error("[AdminEmployeeService] Failed to dispatch welcome email:", emailErr);
+      logger.warn({ err: emailErr }, "[AdminEmployeeService] Failed to dispatch welcome email");
     }
 
     // Invalidate cached attendance analytics for tenant
@@ -348,6 +379,8 @@ export class AdminEmployeeService {
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
     memoryCache.invalidatePattern(`emp:by-user:${tenantId}`);
+    memoryCache.del(`cache:face:baseline:${newEmployee.id}`);
+    memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     return this.formatEmployeeDto(newEmployee);
   }
@@ -444,6 +477,8 @@ export class AdminEmployeeService {
     }
 
     await this.employeeRepo.deleteEmployee(employeeId, tenantId);
+    memoryCache.del(`cache:face:baseline:${employeeId}`);
+    memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     // Clean up avatar image
     if (existing.biometricPhotoUrl) {

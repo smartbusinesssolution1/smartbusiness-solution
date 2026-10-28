@@ -316,9 +316,7 @@ export class AdminAttendanceService {
     });
 
     const reportsDir = path.join(UPLOADS_DIR, "reports");
-    if (!fs.existsSync(reportsDir)) {
-      fs.mkdirSync(reportsDir, { recursive: true });
-    }
+    await fs.promises.mkdir(reportsDir, { recursive: true });
 
     const timestamp = Date.now();
     const dateStamp = this.formatDateOnly(new Date());
@@ -328,9 +326,9 @@ export class AdminAttendanceService {
     const targetFilePath = path.join(reportsDir, filename);
 
     if (format === "csv") {
-      this.writeCsvFile(formattedItems, targetFilePath);
+      await this.writeCsvFile(formattedItems, targetFilePath);
     } else if (format === "xlsx") {
-      this.writeXlsxFile(formattedItems, targetFilePath);
+      await this.writeXlsxFile(formattedItems, targetFilePath);
     } else if (format === "pdf") {
       await this.writePdfFile(formattedItems, targetFilePath);
     }
@@ -345,7 +343,7 @@ export class AdminAttendanceService {
     };
   }
 
-  private writeCsvFile(items: FormattedAttendanceItem[], filePath: string): void {
+  private async writeCsvFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
     const headers = [
       "Date",
       "Employee ID",
@@ -373,10 +371,10 @@ export class AdminAttendanceService {
     ]);
 
     const content = "\uFEFF" + [headers.map(escapeCsv).join(","), ...rows.map((r) => r.join(","))].join("\r\n");
-    fs.writeFileSync(filePath, content, "utf-8");
+    await fs.promises.writeFile(filePath, content, "utf-8");
   }
 
-  private writeXlsxFile(items: FormattedAttendanceItem[], filePath: string): void {
+  private async writeXlsxFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
     const headers = [
       "Date",
       "Employee ID",
@@ -417,7 +415,8 @@ export class AdminAttendanceService {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Audit");
-    XLSX.writeFile(workbook, filePath);
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+    await fs.promises.writeFile(filePath, buffer);
   }
 
   private writePdfFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
