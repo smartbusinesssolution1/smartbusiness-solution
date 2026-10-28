@@ -6,7 +6,7 @@ RUN corepack enable && corepack prepare pnpm@11.25.0 --activate
 
 FROM base AS pruner
 WORKDIR /app
-RUN pnpm add -g turbo@^2.10.12
+RUN npm install -g turbo@^2.10.12
 COPY . .
 RUN turbo prune @smartbusiness/chatbot-frontend --docker
 
