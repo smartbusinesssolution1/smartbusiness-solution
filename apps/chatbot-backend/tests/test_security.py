@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from app.config import settings
+from app.config import DEFAULT_DATABASE_URL, settings
 from app.core import security
 
 
@@ -73,8 +73,13 @@ def test_production_config_validation(monkeypatch):
     monkeypatch.setattr(settings, "admin_api_key", "short")
     monkeypatch.setattr(settings, "session_secret", "")
     monkeypatch.setattr(settings, "cors_origins", "*")
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg2://u:p@ep-x.neon.tech/db?sslmode=require")
     problems = settings.production_problems()
     assert len(problems) == 3
+    # the placeholder DATABASE_URL must also block a production start
+    monkeypatch.setattr(settings, "database_url", DEFAULT_DATABASE_URL)
+    assert any("DATABASE_URL" in p for p in settings.production_problems())
+    monkeypatch.setattr(settings, "database_url", "postgresql+psycopg2://u:p@ep-x.neon.tech/db?sslmode=require")
     monkeypatch.setattr(settings, "admin_api_key", "x" * 30)
     monkeypatch.setattr(settings, "session_secret", "y" * 40)
     monkeypatch.setattr(settings, "cors_origins", "https://example.com, https://www.example.com")

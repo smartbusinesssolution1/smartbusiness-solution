@@ -17,13 +17,13 @@ separation inside a single database.
 | Layer | Choice | Why |
 |---|---|---|
 | Backend framework | FastAPI (Python) | async, streams responses over SSE |
-| Relational + vector DB | PostgreSQL + pgvector extension | one database instead of Postgres plus a separate vector DB |
+| Relational + vector DB | PostgreSQL (Neon) + pgvector extension | one database instead of Postgres plus a separate vector DB |
 | Cache / session / rate-limit store | Redis | fast, short-lived data; app degrades gracefully if Redis is down |
 | Embeddings | `BAAI/bge-small-en-v1.5` via `fastembed`, baked into the Docker image | free forever, no external API, no rate limit |
-| LLM (answers) | Groq (`openai/gpt-oss-20b` / `openai/gpt-oss-120b`) or Anthropic Claude, picked per environment | tiered: cheap/fast model for simple questions, stronger model for complex ones |
+| LLM (answers) | Groq (`openai/gpt-oss-20b` / `openai/gpt-oss-120b`) | tiered: cheap/fast model for simple questions, stronger model for complex ones |
 | Guardrail LLM (optional) | Groq, via NVIDIA NeMo Guardrails | free software; the LLM call itself is not free |
 | PDF text extraction | `pdfplumber` | page-by-page text, feeds the same chunker as pasted text |
-| Frontend | Vanilla JS widget, no framework | drops into any existing site with a two-line script tag |
+| Frontend | React + TypeScript (Tailwind) chat component + separate React admin console | one file dropped into the web portal; admin is its own Vite app |
 | Containerization | Docker + docker-compose | same environment locally and in production |
 | Tests | `pytest` | see section 6 |
 
@@ -32,7 +32,7 @@ separation inside a single database.
 ## 2. Repository layout
 
 ```
-SmartBusinessSolution_chatBot_backend/
+chatbot-backend/
 ├── app/
 │   ├── main.py              FastAPI app: startup checks, CORS, security headers, DB init
 │   ├── config.py            All settings (reads .env), production-mode validation
@@ -40,7 +40,7 @@ SmartBusinessSolution_chatBot_backend/
 │   │   ├── chunking.py      Splits ingested text into retrievable pieces
 │   │   ├── embeddings.py    Turns text into vectors (local model by default)
 │   │   ├── retrieval.py     Vector + keyword search over stored chunks
-│   │   ├── llm.py           Talks to Groq/Claude; tiered routing; follow-up rewriting
+│   │   ├── llm.py           Talks to Groq; tiered routing; follow-up rewriting
 │   │   ├── guardrails.py    Regex input/output checks, smalltalk replies
 │   │   ├── nemo_guard.py    Optional LLM-based input guardrail (NeMo Guardrails)
 │   │   ├── security.py      Admin auth, signed session tokens, captcha check
@@ -57,7 +57,6 @@ SmartBusinessSolution_chatBot_backend/
 │       ├── chat_service.py    Orchestrates one chat turn end to end
 │       └── ingest_service.py  Orchestrates chunk -> embed -> store (and PDF text extraction)
 ├── tests/                    pytest suite (see section 6)
-├── scripts/init_db.sql       Enables the pgvector Postgres extension
 ├── Dockerfile                Production image (bakes in the embedding model)
 ├── requirements.txt
 ├── eval/                          RAGAS offline answer-quality evaluation harness
@@ -69,7 +68,7 @@ SmartBusinessSolution_chatBot_backend/
 ```
 
 The chat widget is a **separate project** in the sibling folder
-`SmartBusinessSolution_chatBot_frontend` (own Dockerfile, compose and `.env`).
+`chatbot-frontend` (own Dockerfile, compose and `.env`).
 
 ---
 
@@ -111,25 +110,13 @@ URL) **replaces** the previous version instead of creating a duplicate.
 
 ---
 
-## 4. Reusing this for a different website
+## 4. Scope
 
-The deployment's identity lives in three env variables - `BOT_COMPANY_NAME`,
-`BOT_TOPICS`, `BOT_COMPANY_SUMMARY` (see `.env.example`). They drive the
-refusal message, greeting, system prompt and the NeMo guardrail policy.
-Currently set for **SmartBusiness Solutions** (Check Printing and Time &
-Attendance). For another site: change those three, set the widget `title` /
-`welcome`, and ingest that site's documents.
-Everything else - chunking, retrieval, the widget, the API - has no
-knowledge of what content it's serving.
-
-To stand up a second, separate deployment for another site:
-
-1. Run a second copy of this stack (its own Postgres, Redis, and backend
-   container - `docker compose -p sitename up -d`, or a second cloud project).
-2. Give it its own `.env` (its own `ADMIN_API_KEY`, `SESSION_SECRET`,
-   `CORS_ORIGINS` set to that site's domain).
-3. Ingest that site's own content via `/v1/ingest` and `/v1/ingest/pdf`.
-4. Point that site's copy of `widget.js` at this deployment's URL.
+This deployment is built for **SmartBusiness Solutions only** (Check Printing and Time & Attendance). The company
+identity (name, topics, summary) is a set of constants in `app/core/brand.py`: they drive the refusal message, greeting,
+system prompt and the NeMo guardrail policy. Everything else (chunking, retrieval, the API) has no knowledge of what
+content it serves, so reusing it for another company would mean editing `brand.py`, the chat component texts and
+uploading that company's documents, in a separate deployment with its own database.
 
 There is currently no multi-tenant mode (one database serving several
 unrelated sites at once, filtered by an account/tenant ID) - each site gets
@@ -219,12 +206,8 @@ Roughly in order of what matters before wider use:
 
 1. **Deploy it somewhere reachable** (Railway/Render/Fly.io) instead of
    `localhost` - see the README's deploy checklist.
-2. **Switch to Claude for the LLM** in production (`LLM_FAST_PROVIDER` /
-   `LLM_COMPLEX_PROVIDER=claude`) - Groq's free tier has no uptime
-   guarantee, which matters once real visitors depend on it.
-3. **An admin dashboard** for cost/errors/low-confidence questions. Fastest
-   path: Langfuse (free, LLM call tracing + cost) + Sentry (free, errors) +
-   Metabase pointed at the Postgres database (free, dashboards, no code).
+2. **Add a fallback LLM** (OpenAI-compatible provider) so chat keeps working if Groq is down.
+3. **Error alerts**: Sentry (free). The admin console already shows usage, cost and unanswered questions.
 4. **Human handoff**: right now the "not sure" fallback message doesn't
    actually connect to anyone - wire it to an email or a support-ticket
    webhook.

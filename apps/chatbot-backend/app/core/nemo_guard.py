@@ -30,6 +30,7 @@ import logging
 import threading
 
 from app.config import settings
+from app.core import brand
 
 logger = logging.getLogger("nemo_guard")
 
@@ -54,9 +55,9 @@ User message: "{{{{ user_input }}}}"
 Should the user message be blocked? Answer with exactly one word, Yes or No, and nothing else.
 Answer:"""
 
-# built from branding settings; the {{ user_input }} placeholder is filled in by NeMo
+# built from the brand constants; the {{ user_input }} placeholder is filled in by NeMo
 SELF_CHECK_INPUT_PROMPT = SELF_CHECK_INPUT_PROMPT_TEMPLATE.format(
-    company_name=settings.bot_company_name, company_summary=settings.bot_company_summary
+    company_name=brand.COMPANY_NAME, company_summary=brand.COMPANY_SUMMARY
 )
 
 

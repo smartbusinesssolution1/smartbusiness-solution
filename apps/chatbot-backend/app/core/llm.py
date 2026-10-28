@@ -1,14 +1,13 @@
 """
-LLM router: picks a "fast" or "complex" tier, each backed by a configurable
-provider (groq | claude). This is what lets you run 100% on Groq's free
-tier during dev, then flip LLM_COMPLEX_PROVIDER=claude in .env for
-production quality — no code changes.
+LLM router: picks a "fast" or "complex" Groq model per question
+(GROQ_FAST_MODEL / GROQ_COMPLEX_MODEL in .env).
 """
 from collections.abc import Iterator
 
 from app.config import settings
+from app.core import brand
 
-SYSTEM_PROMPT = f"""You are the support assistant for {settings.bot_company_name} ({settings.bot_topics}), embedded on its website.
+SYSTEM_PROMPT = f"""You are the support assistant for {brand.COMPANY_NAME} ({brand.TOPICS}), embedded on its website.
 Answer ONLY using the provided context. If the context doesn't contain the
 answer, say you're not sure and offer to connect the user with support —
 never invent an answer.
@@ -74,13 +73,8 @@ def stream_completion(
     tier: str,
 ) -> Iterator[str]:
     """Yields text deltas for SSE streaming."""
-    provider = settings.llm_fast_provider if tier == "fast" else settings.llm_complex_provider
     messages = _build_prompt(question, context_chunks, history)
-
-    if provider == "claude":
-        yield from _stream_claude(messages, tier)
-    else:
-        yield from _stream_groq(messages, tier)
+    yield from _stream_groq(messages, tier)
 
 
 def _stream_groq(messages: list[dict], tier: str) -> Iterator[str]:
@@ -102,41 +96,8 @@ def _stream_groq(messages: list[dict], tier: str) -> Iterator[str]:
             yield delta
 
 
-def _stream_claude(messages: list[dict], tier: str) -> Iterator[str]:
-    from anthropic import Anthropic
-
-    client = Anthropic(api_key=settings.anthropic_api_key, timeout=settings.llm_timeout_seconds, max_retries=1)
-    model = settings.claude_fast_model if tier == "fast" else settings.claude_complex_model
-
-    with client.messages.stream(
-        model=model,
-        max_tokens=MAX_ANSWER_TOKENS,
-        system=SYSTEM_PROMPT,
-        messages=messages,
-        temperature=0.2,
-    ) as stream:
-        for text in stream.text_stream:
-            yield text
-
-
 def complete_short(system: str, user: str, max_tokens: int = 100) -> str:
     """Small non-streaming completion on the FAST tier (query rewriting etc.)."""
-    provider = settings.llm_fast_provider
-    if provider == "claude":
-        from anthropic import Anthropic
-
-        client = Anthropic(
-            api_key=settings.anthropic_api_key, timeout=settings.llm_timeout_seconds, max_retries=1
-        )
-        resp = client.messages.create(
-            model=settings.claude_fast_model,
-            max_tokens=max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": user}],
-            temperature=0,
-        )
-        return "".join(b.text for b in resp.content if getattr(b, "type", "") == "text").strip()
-
     from groq import Groq
 
     client = Groq(api_key=settings.groq_api_key, timeout=settings.llm_timeout_seconds, max_retries=1)
