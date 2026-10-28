@@ -26,7 +26,7 @@ services:
     restart: always
     ports:
       - "3001:3001"
-    env_file: .env.production
+    env_file: apps/platform-api/.env
     environment:
       - PORT=3001
       - REDIS_URL=redis://redis:6379
@@ -45,7 +45,7 @@ services:
     restart: always
     ports:
       - "3005:3005"
-    env_file: .env.production
+    env_file: apps/check-printing-backend/.env
     environment:
       - PORT=3005
       - REDIS_URL=redis://redis:6379
@@ -66,9 +66,11 @@ services:
     restart: always
     ports:
       - "3000:3000"
-    env_file: .env.production
+    env_file: apps/clockInClockOut-backend/.env
     environment:
       - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - FACE_RECOGNITION_API_URL=http://face-recognition:8000
       - AWS_S3_BUCKET_NAME=clockin-clockout-bucket
     networks:
       - smartbusiness-net
@@ -82,25 +84,43 @@ services:
     restart: always
     ports:
       - "8000:8000"
-    env_file: .env.production
+    env_file: apps/clockInClockout-face-recognition/.env
     networks:
       - smartbusiness-net
 
   # ── RAG Chatbot Service ──
-  rag-chatbot:
+  chatbot-backend:
     build:
       context: apps/chatbot-backend
       dockerfile: Dockerfile
-    container_name: smartbusiness-rag-chatbot
+    image: chatbot-backend:latest
+    container_name: smartbusiness-chatbot-backend
     restart: always
     ports:
       - "8001:8000"
-    env_file: .env.production
+    env_file: apps/chatbot-backend/.env
     environment:
+      - PORT=8000
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - smartbusiness-net
+
+  # ── Chatbot Admin Console Frontend (Nginx Alpine) ──
+  chatbot-frontend:
+    build:
+      context: apps/chatbot-frontend
+      dockerfile: Dockerfile
+    image: chatbot-frontend:latest
+    container_name: smartbusiness-chatbot-frontend
+    restart: always
+    ports:
+      - "5175:80"
+    env_file: apps/chatbot-frontend/.env
+    depends_on:
+      - chatbot-backend
     networks:
       - smartbusiness-net
 
@@ -113,6 +133,7 @@ services:
     restart: always
     ports:
       - "5173:80"
+    env_file: apps/check-printing-frontend/.env
     networks:
       - smartbusiness-net
 
@@ -125,6 +146,7 @@ services:
     restart: always
     ports:
       - "5174:80"
+    env_file: apps/clockInClockOut-frontend/.env
     networks:
       - smartbusiness-net
 
@@ -137,6 +159,7 @@ services:
     restart: always
     ports:
       - "3003:80"
+    env_file: apps/platform-web/.env
     networks:
       - smartbusiness-net
 
@@ -158,6 +181,8 @@ services:
       - check-printing-frontend
       - clockin-frontend
       - platform-web
+      - chatbot-backend
+      - chatbot-frontend
     networks:
       - smartbusiness-net
 

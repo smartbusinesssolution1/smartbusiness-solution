@@ -16,30 +16,33 @@ widget ──POST /v1/chat + X-Session-Token──► FastAPI
    6 hybrid retrieval: pgvector cosine + Postgres full-text, fused
    7 confidence below threshold → "not sure" WITHOUT calling the LLM
    8 global daily message/token cap (refuses before paying)
-   9 tiered LLM (Groq / Claude) streamed over SSE
+   9 tiered LLM (Groq) streamed over SSE
   10 output PII check → cache → Redis history → Postgres log
 ```
 
 ## Quick start (local)
 
 1. `cp .env.example .env` and fill in:
-   - `GROQ_API_KEY` (free: console.groq.com)
-   - `ADMIN_API_KEY` — generate: `python -c "import secrets; print(secrets.token_urlsafe(32))"`
-2. `docker compose up -d --build` (first build is slow: it compiles NeMo's
-   `annoy` dependency and bakes the embedding model into the image)
-3. `curl http://localhost:8000/readyz` → `{"status":"ok",...}`
-4. Ingest content (PowerShell):
+   - `DATABASE_URL`: your Neon connection string (see `.env.example`; needs `postgresql+psycopg2://`, `sslmode=require` and `options=endpoint%3D<ep-id>`)
+   - `GROQ_API_KEY` (console.groq.com)
+   - `ADMIN_API_KEY` and `SESSION_SECRET`: generate each with `python -c "import secrets; print(secrets.token_urlsafe(32))"`
+   - `CORS_ORIGINS`: the web portal and admin console addresses (e.g. `http://localhost:5173,http://localhost:5174`)
+   - For quick local testing you may set `APP_ENV=development` (relaxes the secret checks, enables `/docs`)
+2. `docker compose up -d --build` (one compose file: backend + Redis. The first build is slow because it compiles NeMo's
+   `annoy` dependency and bakes the embedding model into the image. There is no local Postgres: the database is Neon.)
+3. `curl http://localhost:8000/readyz` returns `{"status":"ok","database":true,...}`
+4. Add content: open the admin console and upload your PDFs (Knowledge section), or use the API:
    ```powershell
    $h = @{ "X-Admin-Key" = "YOUR_ADMIN_API_KEY" }
    $body = @{ title="Pricing"; url="https://yoursite.com/pricing"; category="pricing"; text="# Free plan`n..." } | ConvertTo-Json
    Invoke-RestMethod -Uri http://localhost:8000/v1/ingest -Method Post -Headers $h -ContentType "application/json" -Body $body
    ```
-   Re-running with the same `url` **replaces** the old version (no duplicates)
-   and clears cached answers. Write section titles as `# Heading` lines.
-5. Start the widget from the sibling folder `SmartBusinessSolution_chatBot_frontend` (no Docker: `cd widget` then `python -m http.server 8080`, see its README), open http://localhost:8080 and chat.
+   Re-running with the same `url` or title **replaces** the old version (no duplicates)
+   and clears cached answers.
+5. Frontend lives in the sibling folder `chatbot-frontend`: `chatbot/FloatingChatWidget.tsx` (React + TypeScript chat for your web portal) and `admin-console/` (separate React admin app). See its README.
 
-Rebuild after code changes with `docker compose down` then `docker compose up -d --build`.
-Use `down -v` ONLY when you want to wipe all ingested data.
+After code changes: `docker compose up -d --build`. Your data lives in Neon, so rebuilding or deleting containers never touches it
+(see `DB.md`). Redis only holds short-term data and can be wiped safely.
 
 ## API
 
@@ -51,6 +54,11 @@ Use `down -v` ONLY when you want to wipe all ingested data.
 | `POST /v1/ingest/pdf` | `X-Admin-Key` | add/replace from PDF (multipart, ≤20MB) |
 | `GET /v1/documents` | `X-Admin-Key` | list documents + chunk counts |
 | `DELETE /v1/documents/{id}` | `X-Admin-Key` | delete a document |
+| `GET /v1/admin/stats?days=30` | `X-Admin-Key` | totals, daily series, cost by model (admin console) |
+| `GET /v1/admin/conversations` | `X-Admin-Key` | search/filter/paginate saved questions and answers |
+| `GET /v1/admin/pricing` | `X-Admin-Key` | model price table used for cost estimates |
+| `GET /v1/admin/usage` | `X-Admin-Key` | today's AI messages/tokens vs daily caps |
+| `DELETE /v1/admin/events?older_than_days=N` | `X-Admin-Key` | delete old conversations + analytics |
 | `GET /v1/admin/usage` | `X-Admin-Key` | today's LLM messages + est. tokens vs caps |
 | `GET /healthz` / `GET /readyz` | none | liveness / readiness (DB required, Redis = degraded) |
 
@@ -78,30 +86,28 @@ PDF upload: `curl.exe -X POST http://localhost:8000/v1/ingest/pdf -H "X-Admin-Ke
   (open-source, free) runs an LLM self-check on every message (~200-400ms).
   The software is free; the **extra LLM call per message is not free** — by
   default it uses Groq's free tier, so it uses up your Groq rate limit twice as fast.
-  Failures follow `GUARD_FAIL_MODE` (`open` = allow, `closed` = block).
+  Failures let the message through (the regex checks already passed). The check uses your `GROQ_API_KEY` and `openai/gpt-oss-20b`.
   The policy prompt lives in `app/core/nemo_guard.py`; it is built from
-  the `BOT_COMPANY_NAME` / `BOT_COMPANY_SUMMARY` settings so on-topic questions
+  the company constants in `app/core/brand.py` so on-topic questions
   about your products are never over-blocked.
   Only the current message is checked, not multi-turn attack chains.
 
-## Deploy checklist (Railway / Render / Fly)
+## Deploy checklist (Railway / Render / Fly / any Docker host)
 
-1. Push repo to GitHub; deploy this folder (uses the Dockerfile; honours `$PORT`).
-2. Add managed Postgres (pgvector) + Redis; set `DATABASE_URL`, `REDIS_URL`.
-   The app runs `CREATE EXTENSION vector` itself; if your host forbids it, enable pgvector in the host dashboard.
-3. Set env vars: `APP_ENV=production`, `ADMIN_API_KEY`, `SESSION_SECRET`,
-   `CORS_ORIGINS=https://yoursite.com`, `GROQ_API_KEY` / `ANTHROPIC_API_KEY`
-   (+ `LLM_FAST_PROVIDER=claude` for reliability), `WEB_CONCURRENCY=1` on ≤512MB hosts.
-4. Optional: Turnstile — create a widget at dash.cloudflare.com, put the
-   secret in `TURNSTILE_SECRET`, the public site key in `turnstileSiteKey` in the widget config.
-5. Ingest your content against the production URL with your admin key.
-6. Point the widget `apiBase` at the deployed URL. Watch logs (`retrieval | ... confidence=`) for a week and tune `RETRIEVAL_CONFIDENCE_THRESHOLD`.
+1. Push the repo to GitHub; deploy this folder (it uses the Dockerfile and honours `$PORT`).
+2. Database is Neon (already created). Redis: add a Redis (or Upstash) and set `REDIS_URL`. Keys are prefixed `chatbot:`, so it can be shared.
+3. Set env vars (see `.env.example`): `DATABASE_URL`, `REDIS_URL`, `APP_ENV=production`, `ADMIN_API_KEY`, `SESSION_SECRET`,
+   `CORS_ORIGINS=https://yoursite.com,https://admin.yoursite.com`, `GROQ_API_KEY`, `WEB_CONCURRENCY=1` on 512MB hosts.
+   In production the app refuses to start if a required value is missing, and prints which one.
+4. Check `https://<backend>/readyz` shows `"database": true`.
+5. Upload your documents in the admin console.
+6. Set `VITE_CHAT_API_URL` in the web portal (and `VITE_API_BASE` in the admin console) to the backend URL and rebuild them.
+   Watch the logs (`retrieval | ... confidence=`) for a week and tune `RETRIEVAL_CONFIDENCE_THRESHOLD`.
 
 ## Debugging what was retrieved
 
 Every question logs the standalone question, confidence, and matched chunks:
-`docker compose logs backend -f`. In dev, set `debug: true` in the widget
-config to see the same in the browser console.
+`docker compose logs backend -f`.
 
 ## Tests
 
@@ -114,7 +120,7 @@ Postgres, real LLM output quality, the browser widget.
 
 ## Still to do (see docs)
 
-- Admin dashboard (cost/errors) — start with Langfuse + Sentry + Metabase on Postgres
+- Fallback LLM provider if Groq fails (OpenAI-compatible, one extra setting block)
+- Sentry (error alerts)
 - Human handoff (the "not sure" message doesn't yet create a ticket/email)
-- Alembic migrations (schema changes need a wipe for now)
-- Fallback LLM provider if Groq fails; multilingual embeddings if users write non-English
+- Alembic migrations (schema changes need manual SQL for now)

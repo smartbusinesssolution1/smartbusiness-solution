@@ -33,6 +33,10 @@ _client = redis.Redis.from_url(
 
 HISTORY_MAX_TURNS = 6
 
+# Every Redis key this app creates starts with this, so the app can safely
+# share one Redis instance with other apps.
+REDIS_PREFIX = "chatbot:"
+
 # ---- in-process fallbacks (used only while Redis is down) ----
 _mem_lock = threading.Lock()
 _mem_windows: dict[str, list[float]] = defaultdict(list)
@@ -53,7 +57,7 @@ def _warn_redis_down(exc: Exception) -> None:
 
 def get_history(session_id: str) -> list[dict]:
     try:
-        raw = _client.get(f"history:{session_id}")
+        raw = _client.get(f"{REDIS_PREFIX}history:{session_id}")
         return json.loads(raw) if raw else []
     except Exception as exc:
         _warn_redis_down(exc)
@@ -65,7 +69,7 @@ def append_history(session_id: str, role: str, content: str) -> None:
         history = get_history(session_id)
         history.append({"role": role, "content": content})
         history = history[-HISTORY_MAX_TURNS:]
-        _client.set(f"history:{session_id}", json.dumps(history), ex=settings.session_ttl_seconds)
+        _client.set(f"{REDIS_PREFIX}history:{session_id}", json.dumps(history), ex=settings.session_ttl_seconds)
     except Exception as exc:
         _warn_redis_down(exc)
 
@@ -79,7 +83,7 @@ def append_history(session_id: str, role: str, content: str) -> None:
 # NOTE: rounding 32 dims is a cheap approximation - it behaves close to
 # exact-match caching, not true semantic similarity.
 
-CACHE_VERSION_KEY = "semcache_version"
+CACHE_VERSION_KEY = f"{REDIS_PREFIX}semcache_version"
 
 
 def _cache_version() -> str:
@@ -101,7 +105,7 @@ def bump_cache_version() -> None:
 def _cache_key(version: str, category: str | None, embedding: list[float]) -> str:
     rounded = [round(x, 2) for x in embedding[:32]]
     payload = json.dumps([version, category or "", rounded])
-    return "semcache:" + hashlib.sha256(payload.encode()).hexdigest()
+    return f"{REDIS_PREFIX}semcache:" + hashlib.sha256(payload.encode()).hexdigest()
 
 
 def get_cached_answer(category: str | None, embedding: list[float]) -> str | None:
@@ -123,7 +127,7 @@ def set_cached_answer(category: str | None, embedding: list[float], answer: str,
 
 def check_rate_limit(identifier: str, limit: int, window_seconds: int = 60) -> bool:
     """Returns True if the request is allowed. Counts this request."""
-    key = f"ratelimit:{identifier}:{window_seconds}"
+    key = f"{REDIS_PREFIX}ratelimit:{identifier}:{window_seconds}"
     now = time.time()
     window_start = now - window_seconds
     try:
@@ -157,7 +161,7 @@ def reserve_llm_budget(estimated_tokens: int) -> bool:
     caller can refuse BEFORE paying for the call.
     """
     day = _today()
-    msg_key, tok_key = f"budget:{day}:msgs", f"budget:{day}:tokens"
+    msg_key, tok_key = f"{REDIS_PREFIX}budget:{day}:msgs", f"{REDIS_PREFIX}budget:{day}:tokens"
     try:
         msgs = _client.incr(msg_key)
         _client.expire(msg_key, 172800)
@@ -186,7 +190,7 @@ def reserve_llm_budget(estimated_tokens: int) -> bool:
 def get_budget_usage() -> dict:
     """Today's usage - for health/admin endpoints."""
     day = _today()
-    msg_key, tok_key = f"budget:{day}:msgs", f"budget:{day}:tokens"
+    msg_key, tok_key = f"{REDIS_PREFIX}budget:{day}:msgs", f"{REDIS_PREFIX}budget:{day}:tokens"
     try:
         return {
             "day": day,
