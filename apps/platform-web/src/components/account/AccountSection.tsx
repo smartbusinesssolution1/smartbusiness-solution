@@ -1,7 +1,8 @@
 import React from 'react';
-import { ArrowUpRight, Building2, CalendarClock, Clock, LogOut, Printer } from 'lucide-react';
+import { ArrowUpRight, Building2, CalendarClock, Clock, LogOut } from 'lucide-react';
 import type { PortalSession, PortalTenant } from '../../lib/auth';
 import { formatTrialEnd, PRODUCT_CATALOG, productUrl, type ProductInfo } from '../../lib/products';
+import { CheckPrintingLogo } from '../common/CheckPrintingLogo';
 
 interface AccountSectionProps {
   session: PortalSession;
@@ -9,8 +10,12 @@ interface AccountSectionProps {
   onOpenContact: () => void;
 }
 
+// Products with their own logo show it; the others a generic icon on a tile.
+const PRODUCT_LOGOS: Record<string, React.ReactNode> = {
+  'check-printing': <CheckPrintingLogo size={44} />,
+};
+
 const PRODUCT_ICONS: Record<string, React.ReactNode> = {
-  'check-printing': <Printer className="w-5 h-5" />,
   'clock-in-clock-out': <Clock className="w-5 h-5" />,
 };
 
@@ -97,9 +102,14 @@ function ProductCard({
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col gap-4">
       <div className="flex items-start gap-3">
-        <div className={`rounded-xl p-2.5 ${access ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-          {PRODUCT_ICONS[product.slug]}
-        </div>
+        {PRODUCT_LOGOS[product.slug] ? (
+          // Not included in the plan: the logo is greyed out, like the generic tiles.
+          <div className={access ? '' : 'grayscale opacity-50'}>{PRODUCT_LOGOS[product.slug]}</div>
+        ) : (
+          <div className={`rounded-xl p-2.5 ${access ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+            {PRODUCT_ICONS[product.slug]}
+          </div>
+        )}
         <div className="space-y-1">
           <h3 className="font-bold text-slate-900">{product.name}</h3>
           <p className="text-sm text-slate-500">{product.description}</p>
