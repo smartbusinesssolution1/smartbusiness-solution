@@ -40,14 +40,15 @@ export function requireProduct(productSlug: string) {
       where: {
         tenantId,
         product: { slug: productSlug },
-        status: { in: ["ACTIVE", "TRIALING"] },
       },
       include: { product: true },
     });
 
-    if (!subscription) {
+    if (!subscription || !["ACTIVE", "TRIALING"].includes(subscription.status)) {
+      const code = subscription?.status === "EXPIRED" ? "SUBSCRIPTION_EXPIRED" : "SUBSCRIPTION_INACTIVE";
       throw new ForbiddenError(
         "Your organization does not have an active subscription to this product.",
+        code,
       );
     }
 
@@ -68,4 +69,3 @@ export function requireProduct(productSlug: string) {
     next();
   };
 }
-
