@@ -1,5 +1,6 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
 import { AttendanceRepository } from "./attendance.repository.js";
+import { autoClockOutService } from "./auto-clock-out.service.js";
 import {
   ATTENDANCE_THRESHOLDS,
   resolveAttendanceStatusByHours,
@@ -266,11 +267,33 @@ export class AttendanceService {
 
     const activeSession = await this.attendanceRepo.findActiveSession(employee.id);
     if (activeSession) {
-      throw new AppError(
-        "You already have an active open shift. Please clock out of your current session first.",
-        409,
-        "ERR_ALREADY_CLOCKED_IN"
-      );
+      const activeClockIn = new Date(activeSession.clockInTime);
+      const elapsedHours = (now.getTime() - activeClockIn.getTime()) / (1000 * 60 * 60);
+
+      const activeDateStr = activeClockIn.toISOString().split("T")[0];
+      const todayDateStr = now.toISOString().split("T")[0];
+
+      // Self-Healing: If the unclosed session is from a previous calendar day OR open for > 16 hours,
+      // auto-close it immediately so the employee is not blocked from starting today's shift!
+      if (activeDateStr !== todayDateStr || elapsedHours >= 16) {
+        logger.info(
+          {
+            employeeId: employee.id,
+            sessionId: activeSession.id,
+            activeDateStr,
+            todayDateStr,
+            elapsedHours,
+          },
+          "Self-healing: Auto-closing stale session from previous day on new check-in attempt"
+        );
+        await autoClockOutService.autoCloseStaleSession(activeSession, employee);
+      } else {
+        throw new AppError(
+          "You already have an active open shift. Please clock out of your current session first.",
+          409,
+          "ERR_ALREADY_CLOCKED_IN"
+        );
+      }
     }
 
     // Check prior sessions completed today
@@ -527,7 +550,13 @@ export class AttendanceService {
 
     const clockInTimestamp = new Date(activeSession.clockInTime).getTime();
     const elapsedMs = Math.max(0, now.getTime() - clockInTimestamp);
-    const sessionWorkingHours = Math.round((elapsedMs / (1000 * 60 * 60)) * 100) / 100;
+    const rawElapsedHours = elapsedMs / (1000 * 60 * 60);
+
+    // Safeguard: If clocking out of a stale shift (> 16 hours old), cap working hours at 8.0
+    const isOverdueSession = rawElapsedHours > 16;
+    const sessionWorkingHours = isOverdueSession
+      ? 8.0
+      : Math.round(rawElapsedHours * 100) / 100;
 
     // Fetch prior completed sessions today to calculate day's cumulative working hours
     const priorTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
@@ -557,7 +586,9 @@ export class AttendanceService {
     // An individual subsequent punch record must NEVER be marked as LATE arrival.
     // Punctuality (LATE) belongs strictly to the first session of the day.
     const isFirstSession = priorTodaySessions.length === 0 || firstSessionToday.id === activeSession.id;
-    const sessionRecordStatus = isFirstSession
+    const sessionRecordStatus = isOverdueSession
+      ? AttendanceStatus.AUTO_CLOSED
+      : isFirstSession
       ? resolvedStatus
       : resolvedStatus === AttendanceStatus.LATE
       ? AttendanceStatus.PRESENT
@@ -570,7 +601,9 @@ export class AttendanceService {
       clockOutLongitude: input.longitude,
       clockOutFaceMatchConfidence: 98.0,
       workingHours: sessionWorkingHours,
-      notes: input.notes,
+      notes: isOverdueSession
+        ? (input.notes ? `${input.notes} · Late checkout (capped at standard shift)` : "Late checkout (capped at standard shift)")
+        : input.notes,
       status: sessionRecordStatus,
     });
 
