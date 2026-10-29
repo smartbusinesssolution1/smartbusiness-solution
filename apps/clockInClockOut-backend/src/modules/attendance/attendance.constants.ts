@@ -20,6 +20,12 @@ export const ATTENDANCE_THRESHOLDS = {
   FULL_DAY_TARGET_HOURS: 8.0,
 } as const;
 
+export interface AttendanceThresholds {
+  MIN_HOURS_FOR_ABSENT: number;
+  MIN_HOURS_FOR_HALF_DAY: number;
+  FULL_DAY_TARGET_HOURS: number;
+}
+
 /**
  * Resolves the final attendance status based on cumulative hours worked today
  * and whether the employee's initial arrival was late.
@@ -32,7 +38,7 @@ export const ATTENDANCE_THRESHOLDS = {
 export function resolveAttendanceStatusByHours(
   totalWorkingHours: number,
   isLateArrival: boolean,
-  thresholds = ATTENDANCE_THRESHOLDS
+  thresholds: AttendanceThresholds = ATTENDANCE_THRESHOLDS
 ): AttendanceStatus {
   if (totalWorkingHours < thresholds.MIN_HOURS_FOR_ABSENT) {
     return AttendanceStatus.ABSENT;
