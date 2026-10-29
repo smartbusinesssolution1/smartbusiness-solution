@@ -28,10 +28,10 @@ export function BrandMark({ className }: { className?: string }) {
 }
 
 // The sign-in pages' top-left brand: the mark, the company name with a product badge and a
-// small caption, on a white card.
+// small caption, straight on the page (no card around it, so it doesn't read as a button).
 export function BrandCard({ className }: { className?: string }) {
   return (
-    <div className={cn("flex w-fit items-center gap-3 rounded-2xl border border-line bg-panel py-2.5 pr-4 pl-2.5 shadow-card", className)}>
+    <div className={cn("flex w-fit items-center gap-3", className)}>
       <BrandMark className="size-9" />
       <div className="flex flex-col gap-1 leading-none">
         <div className="flex items-center gap-2">

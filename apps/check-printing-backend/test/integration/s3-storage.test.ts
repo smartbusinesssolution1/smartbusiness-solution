@@ -7,6 +7,7 @@ import {
   StorageIntegrityError,
   StorageNotFoundError,
 } from "../../src/shared/storage/index.js";
+import { checkStorage } from "../../src/shared/storage/startup-check.js";
 import { TEST_S3 } from "../setup/test-env.js";
 
 // #2: the S3 driver against the S3 API, using S3Mock from docker-compose.test.yml.
@@ -78,5 +79,32 @@ describe("EncryptedStorage over S3", () => {
     await s3.put(b, await s3.get(a), "application/octet-stream");
 
     await expect(encrypted.get(b)).rejects.toBeInstanceOf(StorageIntegrityError);
+  });
+});
+
+// The startup check against the S3 API: the same code the server runs before listening.
+describe("startup check over S3", () => {
+  const location = { driver: "s3" as const, bucket: TEST_S3.bucket, prefix: "", region: TEST_S3.region };
+
+  it("passes against a reachable bucket, and a missing file is 'not found'", async () => {
+    const result = await checkStorage(encrypted, location, { sleep: async () => {} });
+
+    expect(result).toEqual({ ok: true, attempts: 1, missingFileIsNotFound: true });
+  });
+
+  it("fails at once on a bucket that doesn't exist, naming the setting to fix", async () => {
+    const wrongBucket = new S3Storage({
+      bucket: `no-such-bucket-${randomUUID().slice(0, 8)}`,
+      region: TEST_S3.region,
+      endpoint: TEST_S3.endpoint,
+      forcePathStyle: true,
+      serverSideEncryption: "none",
+    });
+
+    const result = await checkStorage(new EncryptedStorage(wrongBucket, keyring), { ...location, bucket: "wrong" }, { sleep: async () => {} });
+    wrongBucket.destroy();
+
+    expect(result).toMatchObject({ ok: false, attempts: 1 });
+    expect(!result.ok && result.reason).toContain("Check S3_BUCKET");
   });
 });
