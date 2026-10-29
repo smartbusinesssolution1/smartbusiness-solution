@@ -49,17 +49,11 @@ export default defineConfig(() => {
               if (id.includes('recharts')) {
                 return 'vendor-charts';
               }
-              if (id.includes('xlsx')) {
-                return 'vendor-xlsx';
-              }
-              if (id.includes('jspdf') || id.includes('html2canvas') || id.includes('purify')) {
-                return 'vendor-export';
-              }
             }
           },
         },
       },
-      chunkSizeWarningLimit: 1200,
+      chunkSizeWarningLimit: 800,
     },
     server: {
       // Fixed port: the Check Printing portal uses 5173, and both start with `pnpm dev`.
@@ -67,8 +61,6 @@ export default defineConfig(() => {
       strictPort: true,
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
-      port: 5174,
-      strictPort: true,
       proxy: {
         '/uploads': {
           target: 'http://localhost:3000',

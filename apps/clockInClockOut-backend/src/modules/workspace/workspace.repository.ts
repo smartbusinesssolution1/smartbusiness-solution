@@ -1,4 +1,4 @@
-import { prisma } from "@smartbusiness/database";
+﻿import { prisma } from "@smartbusiness/database";
 
 export class WorkspaceRepository {
   /**
@@ -32,6 +32,62 @@ export class WorkspaceRepository {
       orderBy: {
         createdAt: "asc",
       },
+    });
+  }
+  async listByTenantAndUser(tenantId: string, userId: string, isOwner = false) {
+    const whereClause: any = {
+      tenantId,
+      deletedAt: null,
+    };
+
+    if (!isOwner) {
+      whereClause.members = {
+        some: {
+          userId,
+          deletedAt: null,
+        },
+      };
+    }
+
+    return prisma.workspace.findMany({
+      where: whereClause,
+      include: {
+        attendanceSettings: {
+          select: {
+            latitude: true,
+            longitude: true,
+            radiusMeters: true,
+            graceMinutes: true,
+          },
+        },
+        _count: {
+          select: {
+            members: {
+              where: { deletedAt: null },
+            },
+          },
+        },
+        members: {
+          where: {
+            userId,
+            deletedAt: null,
+          },
+          include: {
+            employeeProfiles: {
+              where: { deletedAt: null },
+              select: { role: true },
+            },
+            assignedRoles: {
+              include: {
+                role: {
+                  select: { slug: true, name: true },
+                },
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: "asc" },
     });
   }
 

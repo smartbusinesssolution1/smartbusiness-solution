@@ -74,8 +74,9 @@ export class AttendanceController {
   checkOut = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
+    const headerWorkspaceId = (req.headers["x-workspace-id"] as string | undefined) || (req.body?.workspaceId as string | undefined);
 
-    const result = await this.attendanceService.checkOut(userId, tenantId, req.body);
+    const result = await this.attendanceService.checkOut(userId, tenantId, req.body, headerWorkspaceId);
 
     res.status(200).json({
       success: true,
@@ -91,8 +92,9 @@ export class AttendanceController {
   today = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
+    const headerWorkspaceId = (req.headers["x-workspace-id"] as string | undefined) || (req.query.workspaceId as string | undefined);
 
-    const result = await this.attendanceService.getTodayShift(userId, tenantId);
+    const result = await this.attendanceService.getTodayShift(userId, tenantId, headerWorkspaceId);
 
     res.status(200).json({
       success: true,
@@ -107,8 +109,10 @@ export class AttendanceController {
   history = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
+    const headerWorkspaceId = (req.headers["x-workspace-id"] as string | undefined) || (req.query.workspaceId as string | undefined);
+    const query = { ...req.query, workspaceId: headerWorkspaceId || (req.query.workspaceId as string | undefined) };
 
-    const result = await this.attendanceService.getHistory(userId, tenantId, req.query as any);
+    const result = await this.attendanceService.getHistory(userId, tenantId, query as any, headerWorkspaceId);
 
     res.status(200).json({
       success: true,
@@ -147,8 +151,9 @@ export class AttendanceController {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
     const month = req.query.month as string | undefined;
+    const headerWorkspaceId = (req.headers["x-workspace-id"] as string | undefined) || (req.query.workspaceId as string | undefined);
 
-    const result = await this.attendanceService.getMonthlyMetrics(userId, tenantId, month);
+    const result = await this.attendanceService.getMonthlyMetrics(userId, tenantId, month, headerWorkspaceId);
 
     res.status(200).json({
       success: true,
@@ -163,8 +168,9 @@ export class AttendanceController {
   exportLedger = async (req: Request, res: Response): Promise<void> => {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
+    const headerWorkspaceId = (req.headers["x-workspace-id"] as string | undefined) || (req.body?.workspaceId as string | undefined);
 
-    const result = await this.attendanceService.exportLedger(userId, tenantId, req.body);
+    const result = await this.attendanceService.exportLedger(userId, tenantId, req.body, headerWorkspaceId);
 
     res.setHeader("Content-Type", result.contentType);
     res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);

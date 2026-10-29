@@ -35,6 +35,9 @@ apiV1.use('/auth', async (req, res) => {
     if (req.headers['x-tenant-id']) headers['x-tenant-id'] = req.headers['x-tenant-id'] as string;
     if (req.headers['platform']) headers['platform'] = req.headers['platform'] as string;
     if (req.headers['x-platform']) headers['x-platform'] = req.headers['x-platform'] as string;
+    if (req.headers.origin) headers['origin'] = req.headers.origin as string;
+    if (req.headers.referer) headers['referer'] = req.headers.referer as string;
+    if (req.headers['x-forwarded-for']) headers['x-forwarded-for'] = req.headers['x-forwarded-for'] as string;
 
     const fetchResponse = await fetch(targetUrl, {
       method: req.method,

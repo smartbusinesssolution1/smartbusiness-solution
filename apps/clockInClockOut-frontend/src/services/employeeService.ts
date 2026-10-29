@@ -1,6 +1,32 @@
 import { clockInApi } from './apiClient';
 import { User } from '../types';
 
+export interface ExistingWorkspaceInfo {
+  workspaceId: string;
+  workspaceName: string;
+  employeeCode?: string | null;
+  designation?: string | null;
+  department?: string | null;
+  role?: string;
+  phone?: string | null;
+  avatarUrl?: string | null;
+  isActive?: boolean;
+}
+
+export interface CheckEmployeeEmailResult {
+  exists: boolean;
+  status?: 'EXISTS_CURRENT_WORKSPACE' | 'EXISTS_OTHER_WORKSPACE';
+  message?: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    phone?: string | null;
+    avatarUrl?: string | null;
+  };
+  existingWorkspaces?: ExistingWorkspaceInfo[];
+}
+
 export interface EmployeeFilterParams {
   search?: string;
   department?: string;
@@ -72,6 +98,7 @@ export const employeeService = {
       return response.data?.data || response.data;
     } catch (error: any) {
       const errorMsg =
+        error.response?.data?.error?.originalMessage ||
         error.response?.data?.error?.message ||
         error.response?.data?.message ||
         error.response?.data?.error ||
@@ -94,6 +121,22 @@ export const employeeService = {
         error.response?.data?.message ||
         error.response?.data?.error ||
         'Failed to update employee.';
+      throw new Error(errorMsg);
+    }
+  },
+
+  async checkEmail(email: string, workspaceId?: string): Promise<CheckEmployeeEmailResult> {
+    try {
+      const response = await clockInApi.get('/api/v1/admin/employees/check-email', {
+        params: { email, workspaceId },
+      });
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      const errorMsg =
+        error.response?.data?.error?.message ||
+        error.response?.data?.message ||
+        error.response?.data?.error ||
+        'Failed to check email availability.';
       throw new Error(errorMsg);
     }
   },

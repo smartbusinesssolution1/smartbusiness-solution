@@ -89,7 +89,16 @@ export function useLogout() {
 
 export function useForgotPassword() {
   return useMutation({
-    mutationFn: async (email: string) => (await api<{ message: string }>("/auth/forgot-password", { method: "POST", body: { email } })).data,
+    mutationFn: async (email: string) =>
+      (
+        await api<{ message: string }>("/auth/forgot-password", {
+          method: "POST",
+          body: {
+            email,
+            redirectUrl: typeof window !== "undefined" ? window.location.origin : undefined,
+          },
+        })
+      ).data,
   });
 }
 

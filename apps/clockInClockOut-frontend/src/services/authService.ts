@@ -1,4 +1,4 @@
-import { User, Tenant, Workspace } from '../types';
+﻿import { User, Tenant, Workspace } from '../types';
 import { platformAuthApi, clockInApi, isSignedIn, markSignedIn, markSignedOut, refreshSession } from './apiClient';
 import { getSessionUser, setSessionUser, getUsers } from './mockDb';
 
@@ -80,19 +80,26 @@ export const authService = {
       try {
         const res = await clockInApi.get('/api/v1/workspaces');
         if (res.data?.success && Array.isArray(res.data.data)) {
-          const fetchedList: Workspace[] = res.data.data.map((item: any, idx: number) => ({
-            id: item.id,
-            tenantId: item.tenantId,
-            name: item.name || item.businessName || 'Workspace',
-            address: item.address || item.addressLine1 || '',
-            city: item.city || '',
-            state: item.state || '',
-            zipCode: item.zipCode || '',
-            phone: item.phone || '',
-            isDefault: item.isDefault ?? idx === 0,
-            employeeCount: item.employeeCount ?? 0,
-            createdAt: item.createdAt,
-          }));
+          const currentTenant = this.getCurrentTenant();
+          const defaultRole = (currentTenant?.role || 'MEMBER').toUpperCase();
+          const fetchedList: Workspace[] = res.data.data.map((item: any, idx: number) => {
+            const rawRole = (item.role || item.userRole || (defaultRole === 'OWNER' ? 'OWNER' : 'EMPLOYEE')).toUpperCase();
+            return {
+              id: item.id,
+              tenantId: item.tenantId,
+              name: item.name || item.businessName || 'Workspace',
+              address: item.address || item.addressLine1 || '',
+              city: item.city || '',
+              state: item.state || '',
+              zipCode: item.zipCode || '',
+              phone: item.phone || '',
+              isDefault: item.isDefault ?? idx === 0,
+              employeeCount: item.employeeCount ?? 0,
+              role: rawRole,
+              userRole: rawRole,
+              createdAt: item.createdAt,
+            };
+          });
           this.setWorkspaces(fetchedList);
           return fetchedList;
         }
@@ -123,12 +130,18 @@ export const authService = {
    */
   getActiveWorkspace(): Workspace | null {
     const list = this.getWorkspaces();
+    const adminWorkspaces = list.filter((w) => {
+      const r = (w.role || w.userRole || '').toUpperCase();
+      return r === 'ADMIN' || r === 'OWNER';
+    });
+    const pool = adminWorkspaces.length > 0 ? adminWorkspaces : list;
+
     const activeId = localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY);
     if (activeId) {
-      const found = list.find((w) => w.id === activeId);
+      const found = pool.find((w) => w.id === activeId);
       if (found) return found;
     }
-    const defaultWorkspace = list.find((w) => w.isDefault) || list[0] || null;
+    const defaultWorkspace = pool.find((w) => w.isDefault) || pool[0] || null;
     if (defaultWorkspace) {
       localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, defaultWorkspace.id);
     }
@@ -167,6 +180,8 @@ export const authService = {
       const res = await clockInApi.post('/api/v1/workspaces', payload);
       if (res.data?.success && res.data.data) {
         const item = res.data.data;
+        const defaultRole = (currentTenant?.role || 'ADMIN').toUpperCase();
+        const role = (item.role || item.userRole || defaultRole).toUpperCase();
         const newWs: Workspace = {
           id: item.id,
           tenantId: item.tenantId || currentTenant?.id || '',
@@ -178,6 +193,8 @@ export const authService = {
           phone: item.phone || payload.phone,
           isDefault: false,
           employeeCount: item.employeeCount ?? 1,
+          role,
+          userRole: role,
           createdAt: item.createdAt || new Date().toISOString(),
         };
 
@@ -256,14 +273,8 @@ export const authService = {
         workspaces = this.getWorkspaces().filter((w) => w.tenantId === tenant.id);
       }
 
-      const currentWorkspace = workspaces.find((w) => w.isDefault) || workspaces[0] || null;
-      if (currentWorkspace) {
-        this.setWorkspaces(workspaces);
-        localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
-      } else {
-        this.setWorkspaces(workspaces);
-        localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
-      }
+      this.setWorkspaces(workspaces);
+      const currentWorkspace = this.getActiveWorkspace();
 
       // Fetch employee badge profile if available
       let employeeProfile: any = null;
@@ -287,6 +298,20 @@ export const authService = {
         joinedDate: authUser.createdAt ? authUser.createdAt.split('T')[0] : new Date().toISOString().split('T')[0],
         avatarUrl: employeeProfile?.biometricPhotoUrl || authUser.avatarUrl || '',
       };
+
+      // Clean up any stale session checklist dismissals on new login
+      try {
+        const sessionKeysToRemove: string[] = [];
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          if (key && key.startsWith("checkpoint_onboarding_dismissed")) {
+            sessionKeysToRemove.push(key);
+          }
+        }
+        sessionKeysToRemove.forEach((k) => sessionStorage.removeItem(k));
+      } catch {
+        // Storage unavailable
+      }
 
       setSessionUser(user);
 
@@ -322,7 +347,6 @@ export const authService = {
         companyName,
         fullName,
         email,
-        password: 'Password1!',
       });
 
       const { user: authUser, tenants: rawTenants } = res.data.data;
@@ -397,6 +421,43 @@ export const authService = {
   },
 
   /**
+   * Request password reset link (dispatched via platform-api)
+   */
+  async forgotPassword(email: string): Promise<string> {
+    try {
+      const res = await platformAuthApi.post('/api/v1/auth/forgot-password', {
+        email,
+        redirectUrl: window.location.origin,
+      });
+      return res.data?.data?.message || res.data?.message || 'If an account exists, instructions have been sent.';
+    } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to request password reset.';
+      throw new Error(errorMsg);
+    }
+  },
+
+  /**
+   * Complete password reset using secure token (via platform-api)
+   */
+  async resetPassword(token: string, password: string): Promise<string> {
+    try {
+      const res = await platformAuthApi.post('/api/v1/auth/reset-password', { token, password });
+      return res.data?.data?.message || res.data?.message || 'Your password has been changed successfully.';
+    } catch (err: any) {
+      const errorMsg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        err.message ||
+        'Failed to reset password. The link may have expired or is invalid.';
+      throw new Error(errorMsg);
+    }
+  },
+
+  /**
    * Log out and clear session
    */
   async logout(): Promise<void> {
@@ -410,6 +471,23 @@ export const authService = {
       localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
       localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
       localStorage.removeItem(WORKSPACES_STORAGE_KEY);
+
+      // Clean up any onboarding checklist dismissal state so that next login
+      // will always display the checklist until 100% completed
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && (key.startsWith("checkpoint_onboarding_dismissed") || key.startsWith("checkpoint_onboarding_session"))) {
+            keysToRemove.push(key);
+          }
+        }
+        keysToRemove.forEach((k) => localStorage.removeItem(k));
+        sessionStorage.clear();
+      } catch {
+        // Storage unavailable
+      }
+
       setSessionUser(null);
     }
   },
@@ -476,12 +554,7 @@ export const authService = {
           }
           this.setWorkspaces(workspaces);
 
-          const currentWorkspace = workspaces.find((w) => w.isDefault) || workspaces[0] || null;
-          if (currentWorkspace) {
-            localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, currentWorkspace.id);
-          } else {
-            localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
-          }
+          const currentWorkspace = this.getActiveWorkspace();
 
           let employeeProfile: any = null;
           try {

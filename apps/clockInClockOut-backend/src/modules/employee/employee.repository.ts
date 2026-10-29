@@ -4,7 +4,51 @@ export class EmployeeRepository {
   /**
    * Find employee attendance profile by User ID and Tenant ID
    */
-  async findEmployeeByUserIdAndTenant(userId: string, tenantId: string) {
+  async findEmployeeByUserIdAndTenant(userId: string, tenantId: string, workspaceId?: string) {
+    if (workspaceId) {
+      const scoped = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
+          deletedAt: null,
+          workspaceMember: {
+            userId,
+            workspaceId,
+            deletedAt: null,
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                  isActive: true,
+                  createdAt: true,
+                },
+              },
+              workspace: {
+                select: {
+                  id: true,
+                  businessName: true,
+                  tenantId: true,
+                  addressLine1: true,
+                  city: true,
+                  state: true,
+                  attendanceSettings: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (scoped) return scoped;
+    }
+
     return prisma.attendanceEmployeeDetails.findFirst({
       where: {
         deletedAt: null,

@@ -1,82 +1,48 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { employeeService } from '../../services/employeeService';
+import {
+  ArrowLeft,
+  Upload,
+  Trash2,
+  Clock,
+  User as UserIcon,
+  UserPlus,
+  Mail,
+  Phone,
+  Briefcase,
+  Building2,
+  ShieldCheck,
+  AlertTriangle,
+  CheckCircle2,
+  RotateCw,
+  Sparkles,
+} from 'lucide-react';
+
+import { employeeService, CheckEmployeeEmailResult } from '../../services/employeeService';
 import { settingsService } from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  TextField,
-  Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  FormHelperText,
-  Grid,
-  Divider,
-  Snackbar,
-  Alert,
-  CircularProgress,
-  useTheme,
-  Avatar,
-  Stack,
-  ToggleButton,
-  ToggleButtonGroup,
-  Paper,
-  Chip,
-  Skeleton,
-} from '@mui/material';
-import {
-  ArrowBack as BackIcon,
-  Save as SaveIcon,
-  Person as PersonIcon,
-  Email as EmailIcon,
-  Phone as PhoneIcon,
-  Work as WorkIcon,
-  CloudUpload as CloudUploadIcon,
-  Delete as DeleteIcon,
-  Schedule as ClockIcon,
-  Business as BusinessIcon,
-  Tune as TuneIcon,
-  InfoOutlined as InfoIcon,
-  AccessTime as AccessTimeIcon,
-  Badge as BadgeIcon,
-} from '@mui/icons-material';
-import { ShiftTimePicker } from '../../components/ShiftTimePicker';
 import { DayWiseShiftPicker, DEFAULT_WEEKLY_SCHEDULE } from '../../components/DayWiseShiftPicker';
 import { WeeklySchedule } from '../../types';
 import { STANDARD_DEPARTMENTS } from '../../constants/departments';
-
-// Helper for formatting HH:mm to 12-hour AM/PM
-const formatTime12Hour = (time24?: string) => {
-  if (!time24) return '';
-  const [hourStr, minStr] = time24.split(':');
-  const hour = parseInt(hourStr, 10);
-  if (isNaN(hour)) return time24;
-  const ampm = hour >= 12 ? 'PM' : 'AM';
-  const hour12 = hour % 12 || 12;
-  return `${hour12.toString().padStart(2, '0')}:${minStr || '00'} ${ampm}`;
-};
-
-// Helper to calculate total duration between two times (HH:mm)
-const calculateShiftDuration = (start?: string, end?: string) => {
-  if (!start || !end) return null;
-  const [h1, m1] = start.split(':').map(Number);
-  const [h2, m2] = end.split(':').map(Number);
-  if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return null;
-  let totalMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
-  if (totalMinutes < 0) totalMinutes += 24 * 60; // handles overnight shift
-  const hours = Math.floor(totalMinutes / 60);
-  const mins = totalMinutes % 60;
-  return `${hours} hr${hours !== 1 ? 's' : ''}${mins > 0 ? ` ${mins} min${mins !== 1 ? 's' : ''}` : ''}`;
-};
+import { getAvatarUrl } from '../../utils/imageUrl';
+import { cn } from '../../lib/utils';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Badge,
+  Input,
+  Label,
+  Select,
+  SelectItem,
+} from '../../components/ui';
 
 // Form Validation Schema
 const schema = z.object({
@@ -96,7 +62,6 @@ type EmployeeFormValues = z.infer<typeof schema>;
 
 export const CreateEmployee: React.FC = () => {
   const navigate = useNavigate();
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user, currentTenant, isSuperAdmin } = useAuth();
@@ -106,10 +71,12 @@ export const CreateEmployee: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
+  const [isAutoFilling, setIsAutoFilling] = useState<boolean>(false);
   const [weeklySchedule, setWeeklySchedule] = useState<WeeklySchedule>(DEFAULT_WEEKLY_SCHEDULE);
 
-  // Fetch organization to display configured standard shift
-  const { data: orgSettings, isLoading: isLoadingSettings } = useQuery({
+  // Fetch organization settings for standard shift default
+  const { data: orgSettings } = useQuery({
     queryKey: ['adminSettings'],
     queryFn: () => settingsService.getSettings(),
     enabled: Boolean(user),
@@ -139,16 +106,41 @@ export const CreateEmployee: React.FC = () => {
   });
 
   const watchShiftType = watch('shiftType');
-  const watchStartTime = watch('shiftStartTime');
-  const watchEndTime = watch('shiftEndTime');
+  const watchRole = watch('role');
+  const watchStatus = watch('status');
+  const watchEmail = watch('email');
 
-  // Ensure "Standard Employee" and "Active" are explicitly selected by default on mount
+  const [emailCheckState, setEmailCheckState] = useState<{
+    isLoading: boolean;
+    result: CheckEmployeeEmailResult | null;
+  }>({
+    isLoading: false,
+    result: null,
+  });
+
+  // Debounced check for existing user in tenant
   useEffect(() => {
-    setValue('role', 'employee');
-    setValue('status', 'active');
-  }, [setValue]);
+    const trimmed = (watchEmail || '').trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!trimmed || !emailRegex.test(trimmed)) {
+      setEmailCheckState({ isLoading: false, result: null });
+      return;
+    }
 
-  // Sync default shift times from organization settings when loaded
+    setEmailCheckState((prev) => ({ ...prev, isLoading: true }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await employeeService.checkEmail(trimmed);
+        setEmailCheckState({ isLoading: false, result: res });
+      } catch {
+        setEmailCheckState({ isLoading: false, result: null });
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [watchEmail]);
+
+  // Sync default shift times from organization settings
   useEffect(() => {
     if (orgSettings?.officeStartTime || orgSettings?.officeEndTime) {
       const defaultStart = orgSettings.officeStartTime || '09:00';
@@ -188,6 +180,7 @@ export const CreateEmployee: React.FC = () => {
         return;
       }
       setSelectedFile(file);
+      setExistingAvatarUrl(null);
       setFileError(null);
 
       const reader = new FileReader();
@@ -201,17 +194,68 @@ export const CreateEmployee: React.FC = () => {
   const handleRemoveFile = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
+    setExistingAvatarUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
+  const handleAutoFill = async () => {
+    if (!emailCheckState.result?.user) return;
+    setIsAutoFilling(true);
+
+    try {
+      const { user, existingWorkspaces } = emailCheckState.result;
+      const profile = existingWorkspaces?.find((w) => w.isActive) || existingWorkspaces?.[0];
+
+      if (user.name) setValue('name', user.name, { shouldValidate: true });
+      const phoneVal = user.phone || profile?.phone;
+      if (phoneVal) setValue('phone', phoneVal, { shouldValidate: true });
+      if (profile?.designation) setValue('designation', profile.designation, { shouldValidate: true });
+      if (profile?.department) setValue('department', profile.department, { shouldValidate: true });
+      if (isOwner && profile?.role) {
+        setValue('role', profile.role === 'admin' ? 'admin' : 'employee', { shouldValidate: true });
+      }
+      if (profile?.isActive !== undefined) {
+        setValue('status', profile.isActive ? 'active' : 'inactive', { shouldValidate: true });
+      }
+
+      const targetAvatar = user.avatarUrl || profile?.avatarUrl;
+      if (targetAvatar) {
+        setExistingAvatarUrl(targetAvatar);
+        const fullUrl = getAvatarUrl(targetAvatar);
+        if (fullUrl) {
+          setPreviewUrl(fullUrl);
+          setFileError(null);
+          try {
+            const res = await fetch(fullUrl, { credentials: 'include' });
+            if (res.ok) {
+              const blob = await res.blob();
+              const mime = blob.type || 'image/jpeg';
+              const ext = mime.split('/')[1] || 'jpg';
+              const file = new File([blob], `avatar-${Date.now()}.${ext}`, { type: mime });
+              setSelectedFile(file);
+            }
+          } catch {
+            // Non-fatal
+          }
+        }
+      }
+    } finally {
+      setIsAutoFilling(false);
+    }
+  };
+
   const onSubmit = (data: EmployeeFormValues) => {
+    if (emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE') {
+      setError('An employee with this email already exists in this workspace.');
+      return;
+    }
     setError(null);
     setFileError(null);
 
-    if (!selectedFile) {
-      setFileError('Corporate profile picture is mandatory for biometric face registration.');
+    if (!selectedFile && !existingAvatarUrl) {
+      setFileError('Profile photo is mandatory for biometric face registration.');
       return;
     }
 
@@ -228,9 +272,12 @@ export const CreateEmployee: React.FC = () => {
     formData.append('department', data.department);
     formData.append('role', isOwner ? data.role : 'employee');
     formData.append('status', data.status);
-    formData.append('avatar', selectedFile);
+    if (selectedFile) {
+      formData.append('avatar', selectedFile);
+    } else if (existingAvatarUrl) {
+      formData.append('existingAvatarUrl', existingAvatarUrl);
+    }
 
-    // Shift Schedule
     formData.append('shiftType', data.shiftType);
     if (data.shiftType === 'custom') {
       formData.append('weeklySchedule', JSON.stringify(weeklySchedule));
@@ -240,501 +287,381 @@ export const CreateEmployee: React.FC = () => {
   };
 
   return (
-    <Box sx={{ maxWidth: 960, mx: 'auto', width: '100%' }}>
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       {/* Back button */}
-      <Button
-        startIcon={<BackIcon />}
-        onClick={() => navigate('/admin/employees')}
-        sx={{ mb: 2, color: 'text.secondary' }}
-      >
-        Back to Directory
-      </Button>
+      <div>
+        <Button variant="ghost" size="sm" asChild className="gap-1.5 -ml-2 text-muted hover:text-ink">
+          <Link to="/admin/employees">
+            <ArrowLeft className="size-3.5" />
+            <span>Back to directory</span>
+          </Link>
+        </Button>
+      </div>
 
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
-          Onboard Member
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Register a new corporate identity, assign departments, roles, and setup baseline permissions.
-        </Typography>
-      </Box>
+      {/* Page Header */}
+      <div className="flex flex-col gap-1.5">
+        <span className="eyebrow">PERSONNEL ONBOARDING</span>
+        <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-[-0.02em] leading-tight text-ink">
+          Onboard New Employee
+        </h1>
+        <p className="text-xs sm:text-sm text-muted leading-relaxed">
+          Register credentials, upload biometric face photo, and configure shift working schedule.
+        </p>
+      </div>
 
+      {/* Global Error Banner */}
       {error && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
-          {error}
-        </Alert>
+        <div className="flex items-center gap-2.5 rounded-xl border border-rose-200 bg-rose-50 p-3.5 text-xs text-rose-800">
+          <AlertTriangle className="size-4 shrink-0 text-rose-600" />
+          <span>{error}</span>
+        </div>
       )}
 
-      {/* Main Card Form */}
-      <Card sx={{ borderRadius: 3 }}>
-        <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
-          <form onSubmit={handleSubmit(onSubmit)}>
-            <Grid container spacing={3}>
+      {/* Existing User Auto-Fill Banner */}
+      {emailCheckState.result?.status === 'EXISTS_OTHER_WORKSPACE' && (
+        <Card className="border-primary-200 bg-primary-50/50 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-2.5">
+              <Sparkles className="size-4 shrink-0 text-primary-600 mt-0.5" />
+              <div>
+                <p className="text-xs font-semibold text-primary-900">
+                  Existing SmartBusiness Account Found
+                </p>
+                <p className="text-[0.6875rem] text-primary-700/80 leading-relaxed">
+                  {emailCheckState.result.user?.name} is registered in your organization. Auto-fill will import contact details and verified face photo.
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="brand"
+              size="sm"
+              onClick={handleAutoFill}
+              disabled={isAutoFilling}
+              className="shrink-0"
+            >
+              {isAutoFilling ? 'Importing...' : 'Auto-fill profile'}
+            </Button>
+          </div>
+        </Card>
+      )}
 
-              {/* Primary Personal Information Section */}
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main' }}>
-                  1. Personal & Contact Information
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Baseline contact details of the incoming staff member.
-                </Typography>
-              </Grid>
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+        {/* Card 1: Biometric Identity & Photo */}
+        <Card className="p-5">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="text-sm font-semibold">1. Biometric Profile Photo</CardTitle>
+            <CardDescription className="text-xs">
+              Clear frontal photo required for automated AI face-recognition check-in.
+            </CardDescription>
+          </CardHeader>
 
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  fullWidth
-                  label="Full Name"
-                  placeholder="e.g. Richard Hendricks"
-                  error={!!errors.name}
-                  helperText={errors.name?.message}
-                  disabled={mutation.isPending}
-                  {...register('name')}
-                  slotProps={{
-                    input: {
-                      startAdornment: <PersonIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                    },
-                  }}
+          <div className="flex flex-col sm:flex-row items-center gap-5 pt-2">
+            <div className="relative">
+              {previewUrl ? (
+                <img
+                  src={previewUrl}
+                  alt="Avatar preview"
+                  className="size-24 rounded-2xl border-2 border-primary-200 object-cover shadow-sm"
                 />
-              </Grid>
+              ) : (
+                <div className="flex size-24 items-center justify-center rounded-2xl border-2 border-dashed border-line bg-subtle text-faint">
+                  <UserIcon className="size-10" />
+                </div>
+              )}
+            </div>
 
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  fullWidth
-                  label="Corporate Email Address"
-                  placeholder="richard@checkpoint.io"
-                  error={!!errors.email}
-                  helperText={errors.email?.message}
-                  disabled={mutation.isPending}
-                  {...register('email')}
-                  slotProps={{
-                    input: {
-                      startAdornment: <EmailIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                    },
-                  }}
-                />
-              </Grid>
+            <div className="flex flex-1 flex-col gap-2 items-center sm:items-start text-center sm:text-left">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileChange}
+                className="hidden"
+                id="avatar-upload-input"
+              />
 
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  fullWidth
-                  label="Contact Phone"
-                  placeholder="+1 (555) 012-3456"
-                  error={!!errors.phone}
-                  helperText={errors.phone?.message}
-                  disabled={mutation.isPending}
-                  {...register('phone')}
-                  slotProps={{
-                    input: {
-                      startAdornment: <PhoneIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                    },
-                  }}
-                />
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <Box>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style={{ display: 'none' }}
-                    ref={fileInputRef}
-                    onChange={handleFileChange}
-                    disabled={mutation.isPending}
-                  />
-                  <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2 }}>
-                    <Avatar
-                      src={previewUrl || undefined}
-                      sx={{ width: 64, height: 64, border: '2px solid', borderColor: fileError ? 'error.main' : 'divider' }}
-                    >
-                      <PersonIcon sx={{ fontSize: 32 }} />
-                    </Avatar>
-                    <Box>
-                      <Button
-                        variant="outlined"
-                        component="span"
-                        size="small"
-                        startIcon={<CloudUploadIcon />}
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={mutation.isPending}
-                        sx={{ textTransform: 'none', borderRadius: 2 }}
-                      >
-                        Upload Profile Photo *
-                      </Button>
-                      {previewUrl && (
-                        <Button
-                          variant="text"
-                          color="error"
-                          size="small"
-                          startIcon={<DeleteIcon />}
-                          onClick={handleRemoveFile}
-                          disabled={mutation.isPending}
-                          sx={{ ml: 1, textTransform: 'none' }}
-                        >
-                          Remove
-                        </Button>
-                      )}
-                      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                        Supported formats: JPG, PNG, JPEG. Mandatory for Face Matching.
-                      </Typography>
-                    </Box>
-                  </Box>
-                  {fileError && (
-                    <FormHelperText error sx={{ mt: 1, fontWeight: 500 }}>
-                      {fileError}
-                    </FormHelperText>
-                  )}
-                </Box>
-              </Grid>
-
-              <Grid size={{ xs: 12 }}>
-                <Divider sx={{ my: 1 }} />
-              </Grid>
-
-              {/* Placement Section */}
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main' }}>
-                  2. Organization Placement & Scope
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Departmental roles, titles, and system authorizations.
-                </Typography>
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  fullWidth
-                  label="Official Designation / Title"
-                  placeholder="e.g. DevOps Lead"
-                  error={!!errors.designation}
-                  helperText={errors.designation?.message}
-                  disabled={mutation.isPending}
-                  {...register('designation')}
-                  slotProps={{
-                    input: {
-                      startAdornment: <WorkIcon sx={{ color: 'text.secondary', mr: 1 }} />,
-                    },
-                  }}
-                />
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <FormControl fullWidth error={!!errors.department}>
-                  <InputLabel id="dept-select-label">Department / Cost Center *</InputLabel>
-                  <Controller
-                    name="department"
-                    control={control}
-                    defaultValue=""
-                    render={({ field }) => (
-                      <Select
-                        {...field}
-                        value={field.value || ''}
-                        labelId="dept-select-label"
-                        id="dept-select"
-                        label="Department / Cost Center *"
-                        disabled={mutation.isPending}
-                      >
-                        {STANDARD_DEPARTMENTS.map((dept) => (
-                          <MenuItem key={dept} value={dept}>
-                            {dept}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    )}
-                  />
-                  {errors.department && (
-                    <FormHelperText error>{errors.department.message}</FormHelperText>
-                  )}
-                </FormControl>
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <FormControl fullWidth error={!!errors.role}>
-                  <InputLabel id="role-select-label">Access Authorization Role</InputLabel>
-                  <Controller
-                    name="role"
-                    control={control}
-                    defaultValue="employee"
-                    render={({ field }) => (
-                      <Select
-                        {...field}
-                        value={field.value || 'employee'}
-                        labelId="role-select-label"
-                        id="role-select"
-                        label="Access Authorization Role"
-                        disabled={mutation.isPending}
-                        readOnly={!isOwner}
-                        inputProps={{ readOnly: !isOwner }}
-                        sx={{
-                          '& .MuiSelect-select': {
-                            color: 'text.primary',
-                            fontWeight: 600,
-                          },
-                        }}
-                      >
-                        <MenuItem value="employee">Standard Employee</MenuItem>
-                        <MenuItem value="admin" disabled={!isOwner}>
-                          Platform Administrator {!isOwner ? '(Requires Owner Access)' : ''}
-                        </MenuItem>
-                      </Select>
-                    )}
-                  />
-                  {errors.role ? (
-                    <FormHelperText>{errors.role.message}</FormHelperText>
-                  ) : !isOwner ? (
-                    <FormHelperText sx={{ color: 'text.secondary' }}>
-                      Admins have access to create Standard Employees only.
-                    </FormHelperText>
-                  ) : null}
-                </FormControl>
-              </Grid>
-
-              <Grid size={{ xs: 12, sm: 6 }}>
-                <FormControl fullWidth error={!!errors.status}>
-                  <InputLabel id="status-select-label">Initial Employment Status</InputLabel>
-                  <Controller
-                    name="status"
-                    control={control}
-                    defaultValue="active"
-                    render={({ field }) => (
-                      <Select
-                        {...field}
-                        value={field.value || 'active'}
-                        labelId="status-select-label"
-                        id="status-select"
-                        label="Initial Employment Status"
-                        disabled={mutation.isPending}
-                      >
-                        <MenuItem value="active">Active Duty</MenuItem>
-                        <MenuItem value="inactive">Suspended / Inactive</MenuItem>
-                      </Select>
-                    )}
-                  />
-                  {errors.status && <FormHelperText>{errors.status.message}</FormHelperText>}
-                </FormControl>
-              </Grid>
-
-              <Grid size={{ xs: 12 }}>
-                <Divider sx={{ my: 1 }} />
-              </Grid>
-
-              {/* 3. Shift & Working Schedule Configuration */}
-              <Grid size={{ xs: 12 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <ClockIcon fontSize="small" />
-                  3. Shift & Working Schedule
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Assign the employee's work schedule. Choose between the organization's standard corporate hours or a personalized custom shift.
-                </Typography>
-              </Grid>
-
-              {/* Shift Selector Buttons */}
-              <Grid size={{ xs: 12 }}>
-                <ToggleButtonGroup
-                  value={watchShiftType}
-                  exclusive
-                  onChange={(_, val) => {
-                    if (val) setValue('shiftType', val, { shouldValidate: true });
-                  }}
-                  fullWidth
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' },
-                    gap: 2,
-                    '& .MuiToggleButtonGroup-grouped': {
-                      border: (theme) => `1.5px solid ${theme.palette.divider} !important`,
-                      borderRadius: '12px !important',
-                      p: 2,
-                      mx: 0,
-                      justifyContent: 'flex-start',
-                      textAlign: 'left',
-                      transition: 'all 0.2s ease-in-out',
-                      '&.Mui-selected': {
-                        borderColor: (theme) => `${theme.palette.primary.main} !important`,
-                        backgroundColor: (theme) =>
-                          theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.12)' : 'rgba(99, 102, 241, 0.05)',
-                        boxShadow: (theme) =>
-                          theme.palette.mode === 'dark'
-                            ? '0 4px 12px rgba(0, 0, 0, 0.3)'
-                            : '0 4px 12px rgba(99, 102, 241, 0.1)',
-                        '&:hover': {
-                          backgroundColor: (theme) =>
-                            theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.16)' : 'rgba(99, 102, 241, 0.08)',
-                        },
-                      },
-                      '&:hover': {
-                        borderColor: (theme) => theme.palette.text.secondary,
-                      },
-                    },
-                  }}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="gap-1.5"
                 >
-                  <ToggleButton value="general">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                      <Avatar
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          bgcolor: watchShiftType === 'general' ? 'primary.main' : 'action.selected',
-                          color: watchShiftType === 'general' ? 'primary.contrastText' : 'text.secondary',
-                          transition: 'all 0.2s',
-                        }}
-                      >
-                        <BusinessIcon fontSize="small" />
-                      </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: watchShiftType === 'general' ? 'primary.main' : 'text.primary' }}>
-                            General Shift
-                          </Typography>
-                          {watchShiftType === 'general' && (
-                            <Chip
-                              label="Active"
-                              size="small"
-                              color="primary"
-                              sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
-                            />
-                          )}
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Inherit standard company hours
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </ToggleButton>
+                  <Upload className="size-3.5" />
+                  <span>Choose Photo</span>
+                </Button>
 
-                  <ToggleButton value="custom">
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, width: '100%' }}>
-                      <Avatar
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          bgcolor: watchShiftType === 'custom' ? 'primary.main' : 'action.selected',
-                          color: watchShiftType === 'custom' ? 'primary.contrastText' : 'text.secondary',
-                          transition: 'all 0.2s',
-                        }}
-                      >
-                        <TuneIcon fontSize="small" />
-                      </Avatar>
-                      <Box sx={{ flex: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: watchShiftType === 'custom' ? 'primary.main' : 'text.primary' }}>
-                            Custom Shift
-                          </Typography>
-                          {watchShiftType === 'custom' && (
-                            <Chip
-                              label="Active"
-                              size="small"
-                              color="primary"
-                              sx={{ height: 20, fontSize: '0.68rem', fontWeight: 700 }}
-                            />
-                          )}
-                        </Box>
-                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                          Set custom start & end time
-                        </Typography>
-                      </Box>
-                    </Box>
-                  </ToggleButton>
-                </ToggleButtonGroup>
-              </Grid>
-
-              {/* General Shift Selected Display */}
-              {watchShiftType === 'general' && (
-                <Grid size={{ xs: 12 }}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 2.5,
-                      borderRadius: 2.5,
-                      border: '1.5px solid',
-                      borderColor: 'divider',
-                      bgcolor: (theme) =>
-                        theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.02)' : 'rgba(0, 0, 0, 0.015)',
-                    }}
+                {previewUrl && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRemoveFile}
+                    className="gap-1.5 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                   >
-                    <Box sx={{ display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, mb: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                        <ClockIcon sx={{ color: 'primary.main', fontSize: 26 }} />
-                        <Box>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                            Organization Configured Shift
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Standard operating hours defined in Organization
-                          </Typography>
-                        </Box>
-                      </Box>
+                    <Trash2 className="size-3.5" />
+                    <span>Remove</span>
+                  </Button>
+                )}
+              </div>
 
-                      {isLoadingSettings ? (
-                        <Skeleton variant="rounded" width={220} height={32} />
-                      ) : (
-                        <Chip
-                          icon={<AccessTimeIcon sx={{ fontSize: 16 }} />}
-                          label={`${formatTime12Hour(orgSettings?.officeStartTime || '09:00')} - ${formatTime12Hour(orgSettings?.officeEndTime || '18:00')} (${orgSettings?.officeStartTime || '09:00'} - ${orgSettings?.officeEndTime || '18:00'})`}
-                          color="primary"
-                          variant="outlined"
-                          sx={{ fontWeight: 700, fontSize: '0.8rem', py: 0.5, px: 0.5 }}
-                        />
-                      )}
-                    </Box>
+              <p className="text-[0.6875rem] text-muted">
+                JPG, PNG or WebP up to 5MB. Front-facing, well-lit without sunglasses or masks.
+              </p>
 
-                    <Divider sx={{ my: 1.5, borderStyle: 'dashed' }} />
-
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                      <InfoIcon sx={{ fontSize: 18, color: 'text.secondary', mt: 0.2 }} />
-                      <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.5 }}>
-                        This employee will automatically follow the company's baseline schedule (<strong>{formatTime12Hour(orgSettings?.officeStartTime || '09:00')} to {formatTime12Hour(orgSettings?.officeEndTime || '18:00')}</strong>). Late mark evaluation and daily attendance calculations will use these hours.
-                      </Typography>
-                    </Box>
-                  </Paper>
-                </Grid>
+              {fileError && (
+                <p className="text-xs text-rose-600 font-medium">{fileError}</p>
               )}
+            </div>
+          </div>
+        </Card>
 
-              {/* Custom Shift Selected: Day-Wise Shift Configuration */}
-              {watchShiftType === 'custom' && (
-                <Grid size={{ xs: 12 }}>
-                  <DayWiseShiftPicker
-                    value={weeklySchedule}
-                    onChange={(newSched) => {
-                      setWeeklySchedule(newSched);
-                    }}
-                    disabled={mutation.isPending}
+        {/* Card 2: Contact & Personal Details */}
+        <Card className="p-5">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="text-sm font-semibold">2. Personal & Contact Credentials</CardTitle>
+            <CardDescription className="text-xs">
+              Primary identification details and account login email.
+            </CardDescription>
+          </CardHeader>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            {/* Full Name */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="name">Full Name *</Label>
+              <Input
+                id="name"
+                placeholder="e.g. Sarah Connor"
+                error={Boolean(errors.name)}
+                {...register('name')}
+              />
+              {errors.name && <p className="text-[0.6875rem] text-rose-600">{errors.name.message}</p>}
+            </div>
+
+            {/* Email */}
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="email">Business Email *</Label>
+                {emailCheckState.isLoading && (
+                  <RotateCw className="size-3 animate-spin text-muted" />
+                )}
+              </div>
+              <Input
+                id="email"
+                type="email"
+                placeholder="sarah@company.com"
+                error={Boolean(errors.email || emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE')}
+                {...register('email')}
+              />
+              {errors.email ? (
+                <p className="text-[0.6875rem] text-rose-600">{errors.email.message}</p>
+              ) : emailCheckState.result?.status === 'EXISTS_CURRENT_WORKSPACE' ? (
+                <p className="text-[0.6875rem] text-rose-600">Employee already exists in this workspace.</p>
+              ) : null}
+            </div>
+
+            {/* Phone */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="phone">Contact Phone *</Label>
+              <Input
+                id="phone"
+                placeholder="+1 (555) 012-3456"
+                error={Boolean(errors.phone)}
+                {...register('phone')}
+              />
+              {errors.phone && <p className="text-[0.6875rem] text-rose-600">{errors.phone.message}</p>}
+            </div>
+
+            {/* Account Role using shadcn Select */}
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="role">Access Role *</Label>
+              <Select
+                id="role"
+                value={watchRole}
+                onValueChange={(val) => setValue('role', val as any, { shouldValidate: true })}
+                disabled={!isOwner}
+              >
+                <SelectItem value="employee">Standard Staff (Attendance Check-In)</SelectItem>
+                <SelectItem value="admin">Administrator (Management & Reports)</SelectItem>
+              </Select>
+              {!isOwner && (
+                <p className="text-[0.6875rem] text-muted">Only organization owners can grant admin role.</p>
+              )}
+            </div>
+
+            {/* Account Status */}
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label htmlFor="status">Account Status *</Label>
+              <div className="flex gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="active"
+                    checked={watchStatus === 'active'}
+                    onChange={() => setValue('status', 'active')}
+                    className="accent-primary-600"
                   />
-                </Grid>
+                  <Badge variant="success" className="cursor-pointer">Active Account</Badge>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    value="inactive"
+                    checked={watchStatus === 'inactive'}
+                    onChange={() => setValue('status', 'inactive')}
+                    className="accent-primary-600"
+                  />
+                  <Badge variant="secondary" className="cursor-pointer">Inactive / On Hold</Badge>
+                </label>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        {/* Card 3: Department & Position */}
+        <Card className="p-5">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="text-sm font-semibold">3. Department & Organization Position</CardTitle>
+            <CardDescription className="text-xs">
+              Assign structural department division and job title.
+            </CardDescription>
+          </CardHeader>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="department">Department Division *</Label>
+              <Select
+                id="department"
+                value={watch('department') || ''}
+                onValueChange={(val) => setValue('department', val, { shouldValidate: true })}
+                placeholder="Select Department"
+              >
+                {STANDARD_DEPARTMENTS.map((dept) => (
+                  <SelectItem key={dept} value={dept}>
+                    {dept}
+                  </SelectItem>
+                ))}
+              </Select>
+              {errors.department && (
+                <p className="text-[0.6875rem] text-rose-600">{errors.department.message}</p>
               )}
+            </div>
 
-              <Grid size={{ xs: 12 }}>
-                <Divider sx={{ my: 1 }} />
-              </Grid>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="designation">Job Title / Designation *</Label>
+              <Input
+                id="designation"
+                placeholder="e.g. Lead Product Designer"
+                error={Boolean(errors.designation)}
+                {...register('designation')}
+              />
+              {errors.designation && (
+                <p className="text-[0.6875rem] text-rose-600">{errors.designation.message}</p>
+              )}
+            </div>
+          </div>
+        </Card>
 
-              <Grid size={{ xs: 12 }} sx={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
-                <Button
-                  variant="outlined"
-                  onClick={() => navigate('/admin/employees')}
-                  disabled={mutation.isPending}
-                  sx={{ py: 1.25, px: 3 }}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  variant="contained"
-                  color="primary"
-                  disabled={mutation.isPending}
-                  startIcon={mutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
-                  sx={{ py: 1.25, px: 4 }}
-                >
-                  {mutation.isPending ? 'Onboarding...' : 'Onboard Employee'}
-                </Button>
-              </Grid>
+        {/* Card 4: Working Hours & Shift Assignment */}
+        <Card className="p-5">
+          <CardHeader className="p-0 pb-4">
+            <CardTitle className="text-sm font-semibold">4. Shift Hours & Working Schedule</CardTitle>
+            <CardDescription className="text-xs">
+              Determine expected punch-in hours and geofence tracking policy.
+            </CardDescription>
+          </CardHeader>
 
-            </Grid>
-          </form>
-        </CardContent>
-      </Card>
-    </Box>
+          <div className="flex flex-col gap-4 pt-1">
+            {/* Shift Mode Toggle */}
+            <div className="flex rounded-lg border border-line bg-subtle p-0.5 max-w-md">
+              <button
+                type="button"
+                onClick={() => setValue('shiftType', 'general')}
+                className={cn(
+                  'flex-1 rounded-md py-1.5 text-xs font-medium transition-all text-center',
+                  watchShiftType === 'general'
+                    ? 'bg-panel font-semibold text-ink shadow-sm'
+                    : 'text-muted hover:text-ink'
+                )}
+              >
+                Company Default Shift
+              </button>
+              <button
+                type="button"
+                onClick={() => setValue('shiftType', 'custom')}
+                className={cn(
+                  'flex-1 rounded-md py-1.5 text-xs font-medium transition-all text-center',
+                  watchShiftType === 'custom'
+                    ? 'bg-panel font-semibold text-ink shadow-sm'
+                    : 'text-muted hover:text-ink'
+                )}
+              >
+                Custom Day-Wise Shift
+              </button>
+            </div>
+
+            {watchShiftType === 'general' ? (
+              <div className="rounded-xl border border-line bg-subtle/50 p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Clock className="size-4 text-primary-600" />
+                    <div>
+                      <p className="text-xs font-semibold text-ink">Organization Standard Hours</p>
+                      <p className="font-mono text-xs text-muted num">
+                        {orgSettings?.officeStartTime || '09:00'} - {orgSettings?.officeEndTime || '18:00'} (Mon-Fri)
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="brand" className="font-mono text-[0.625rem]">
+                    Company Default
+                  </Badge>
+                </div>
+              </div>
+            ) : (
+              <div className="pt-2">
+                <DayWiseShiftPicker
+                  value={weeklySchedule}
+                  onChange={setWeeklySchedule}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Submit Actions */}
+        <div className="flex items-center justify-end gap-3 pt-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => navigate('/admin/employees')}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            type="submit"
+            variant="brand"
+            disabled={mutation.isPending}
+            className="gap-2 px-6"
+          >
+            {mutation.isPending ? (
+              <>
+                <RotateCw className="size-4 animate-spin" />
+                <span>Onboarding...</span>
+              </>
+            ) : (
+              <>
+                <UserPlus className="size-4" />
+                <span>Onboard Employee</span>
+              </>
+            )}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 };
 

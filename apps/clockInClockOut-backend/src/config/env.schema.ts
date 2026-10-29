@@ -91,6 +91,7 @@ export const envSchema = z.object({
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
     AWS_S3_BUCKET_NAME: z.string().optional(),
     FACE_RECOGNITION_API_URL: z.string().default("http://127.0.0.1:8000"),
+    REDIS_URL: z.string().regex(/^rediss?:\/\//, "REDIS_URL must start with redis:// or rediss://").default("redis://127.0.0.1:6379"),
 });
 
 export type Env = z.infer<typeof envSchema>;

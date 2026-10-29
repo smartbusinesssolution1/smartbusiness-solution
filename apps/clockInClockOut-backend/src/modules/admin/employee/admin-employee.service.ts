@@ -6,6 +6,9 @@ import { NotFoundError, ValidationError, AppError, ForbiddenError } from "../../
 import { emailService } from "../../../shared/services/email.service.js";
 import { memoryCache } from "../../../shared/services/cache.service.js";
 import { storageService } from "../../../shared/services/storage.service.js";
+import { emailQueue, isRedisAvailable } from "../../../shared/services/redis.service.js";
+import { renderWelcomeEmail } from "../../../shared/templates/welcome-email.template.js";
+import { logger } from "../../../shared/services/logger.js";
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
@@ -30,7 +33,7 @@ export const buildGeneralWeeklySchedule = (startTime = "09:00", endTime = "18:00
 export class AdminEmployeeService {
   private passwordService = new PasswordService();
 
-  constructor(private employeeRepo: AdminEmployeeRepository) {}
+  constructor(private employeeRepo: AdminEmployeeRepository) { }
 
   /**
    * Helper to format an employee model instance into the client-facing DTO
@@ -106,6 +109,75 @@ export class AdminEmployeeService {
   /**
    * Get single employee by ID
    */
+  /**
+   * Check if an email is already associated with an existing user in this tenant,
+   * distinguishing between current workspace (conflict) vs. other workspaces in tenant (warning).
+   */
+  async checkEmailAvailability(tenantId: string, email: string, currentWorkspaceId?: string) {
+    const user = await this.employeeRepo.findUserWithTenantWorkspaces(email, tenantId);
+
+    // If user does not exist or does not belong to this tenant, email is free/available
+    if (!user || !user.tenantMembers || user.tenantMembers.length === 0) {
+      return {
+        exists: false,
+      };
+    }
+
+    // Workspace memberships in this tenant
+    const workspaceMemberships = user.workspaceMembers || [];
+    const isInCurrentWorkspace = currentWorkspaceId
+      ? workspaceMemberships.some((wm) => wm.workspace.id === currentWorkspaceId)
+      : false;
+
+    // Collate existing workspace summaries
+    const existingWorkspaces = workspaceMemberships.map((wm) => {
+      const activeProfile = wm.employeeProfiles?.[0];
+      return {
+        workspaceId: wm.workspace.id,
+        workspaceName: wm.workspace.businessName,
+        employeeCode: activeProfile?.employeeCode || null,
+        designation: activeProfile?.designation || null,
+        department: activeProfile?.department || null,
+        role: activeProfile?.role || "employee",
+        phone: activeProfile?.phone || null,
+        avatarUrl: activeProfile?.biometricPhotoUrl || null,
+        isActive: activeProfile?.isActive ?? true,
+      };
+    });
+
+    const primaryProfile = existingWorkspaces.find((w) => w.isActive) || existingWorkspaces[0];
+
+    if (isInCurrentWorkspace) {
+      return {
+        exists: true,
+        status: "EXISTS_CURRENT_WORKSPACE" as const,
+        message: "An employee with this email already exists in this workspace.",
+        user: {
+          id: user.id,
+          name: user.fullName,
+          email: user.email,
+          phone: primaryProfile?.phone || null,
+          avatarUrl: primaryProfile?.avatarUrl || null,
+        },
+        existingWorkspaces,
+      };
+    }
+
+    return {
+      exists: true,
+      status: "EXISTS_OTHER_WORKSPACE" as const,
+      message: "This user is already registered in another workspace within your organization.",
+      user: {
+        id: user.id,
+        name: user.fullName,
+        email: user.email,
+        phone: primaryProfile?.phone || null,
+        avatarUrl: primaryProfile?.avatarUrl || null,
+      },
+      existingWorkspaces,
+    };
+  }
+
   async getEmployeeById(employeeId: string, tenantId: string) {
     const emp = await this.employeeRepo.findEmployeeById(employeeId, tenantId);
     if (!emp) {
@@ -182,14 +254,14 @@ export class AdminEmployeeService {
     tenantId: string,
     input: CreateEmployeeInput,
     avatarFile?: Express.Multer.File,
-    callerRole?: string
+    callerRole?: string,
+    workspaceId?: string,
   ) {
     const isOwner = (callerRole || "").toUpperCase() === "OWNER";
     if (input.role === "admin" && !isOwner) {
       throw new ForbiddenError("Admins have access to create Standard Employees only. Only organization owners can create administrators.");
     }
     // 1. Resolve workspace
-    let workspaceId = input.workspaceId;
     if (!workspaceId) {
       const defaultWorkspace = await this.employeeRepo.getFirstWorkspace(tenantId);
       if (!defaultWorkspace) {
@@ -204,21 +276,25 @@ export class AdminEmployeeService {
     }
 
     // 2. Validate Avatar
-    if (!avatarFile) {
+    let biometricPhotoUrl: string;
+    if (avatarFile) {
+      const uploadResult = await storageService.uploadAvatar({
+        tenantId,
+        file: avatarFile,
+      });
+      biometricPhotoUrl = uploadResult.url;
+    } else if (input.existingAvatarUrl) {
+      biometricPhotoUrl = input.existingAvatarUrl;
+    } else {
       throw new ValidationError("Corporate portrait photograph is mandatory for biometric face registration.");
     }
-
-    const { url: biometricPhotoUrl } = await storageService.uploadAvatar({
-      tenantId,
-      file: avatarFile,
-    });
 
     // 3. Determine employee code (user-provided or smart sequential e.g. EMP-GA004...)
     const employeeCode = await this.determineEmployeeCode(tenantId, workspaceId, input.employeeId);
 
     // 4. Generate secure readable temporary password and hash it with PasswordService (Argon2id)
     const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
-    const temporaryPassword = `GA#${randomSuffix}!2026`;
+    const temporaryPassword = `GA${randomSuffix}!2026`;
     const passwordHash = await this.passwordService.hash(temporaryPassword);
 
     // 5. Ensure weeklySchedule is populated as 7-day array
@@ -254,18 +330,46 @@ export class AdminEmployeeService {
         }),
       ]);
 
-      await emailService.sendEmployeeWelcomeEmail({
-        to: input.email,
-        employeeName: input.name,
-        employeeCode,
-        role: input.role,
-        temporaryPassword,
-        organizationName: tenant?.name,
-        workspaceName: ws?.businessName,
-      });
+      let queued = false;
+      if (isRedisAvailable()) {
+        try {
+          const loginUrl = process.env.PORTAL_LOGIN_URL || "http://localhost:5173/login";
+          const { subject, html, text } = renderWelcomeEmail({
+            to: input.email,
+            employeeName: input.name,
+            employeeCode,
+            temporaryPassword,
+            loginUrl,
+          });
+
+          await emailQueue.add("notification-email", {
+            to: input.email,
+            tag: "welcome-email",
+            subject,
+            html,
+            text,
+          });
+          queued = true;
+          logger.info({ to: input.email, employeeCode }, "Welcome credentials email queued to BullMQ");
+        } catch (queueErr) {
+          logger.warn({ err: queueErr }, "Failed to enqueue welcome email, falling back to direct send");
+        }
+      }
+
+      if (!queued) {
+        await emailService.sendEmployeeWelcomeEmail({
+          to: input.email,
+          employeeName: input.name,
+          employeeCode,
+          role: input.role,
+          temporaryPassword,
+          organizationName: tenant?.name,
+          workspaceName: ws?.businessName,
+        });
+      }
     } catch (emailErr) {
       // Non-blocking: Log warning if email fails, employee creation still succeeds
-      console.error("[AdminEmployeeService] Failed to dispatch welcome email:", emailErr);
+      logger.warn({ err: emailErr }, "[AdminEmployeeService] Failed to dispatch welcome email");
     }
 
     // Invalidate cached attendance analytics for tenant
@@ -275,6 +379,8 @@ export class AdminEmployeeService {
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`admin:report:${tenantId}`);
     memoryCache.invalidatePattern(`emp:by-user:${tenantId}`);
+    memoryCache.del(`cache:face:baseline:${newEmployee.id}`);
+    memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     return this.formatEmployeeDto(newEmployee);
   }
@@ -371,6 +477,8 @@ export class AdminEmployeeService {
     }
 
     await this.employeeRepo.deleteEmployee(employeeId, tenantId);
+    memoryCache.del(`cache:face:baseline:${employeeId}`);
+    memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     // Clean up avatar image
     if (existing.biometricPhotoUrl) {

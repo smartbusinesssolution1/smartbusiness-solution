@@ -11,11 +11,25 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [mode, setMode] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('checkpoint_theme');
-    return (saved as 'light' | 'dark') || 'light';
+    if (saved === 'light' || saved === 'dark') return saved;
+    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
   });
 
   useEffect(() => {
     localStorage.setItem('checkpoint_theme', mode);
+    const root = document.documentElement;
+    if (mode === 'dark') {
+      root.classList.add('dark');
+      root.setAttribute('data-theme', 'dark');
+      root.style.colorScheme = 'dark';
+    } else {
+      root.classList.remove('dark');
+      root.setAttribute('data-theme', 'light');
+      root.style.colorScheme = 'light';
+    }
   }, [mode]);
 
   const toggleTheme = () => {
@@ -36,14 +50,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           main: isLight ? '#0d9488' : '#2dd4bf', // Teal
         },
         background: {
-          default: isLight ? '#f8fafc' : '#0f172a', // Slate 50 / Slate 900
-          paper: isLight ? '#ffffff' : '#1e293b',   // White / Slate 800
+          default: isLight ? '#f8fafc' : '#090d16',
+          paper: isLight ? '#ffffff' : '#111827',
         },
         text: {
-          primary: isLight ? '#0f172a' : '#f8fafc',
-          secondary: isLight ? '#475569' : '#94a3b8',
+          primary: isLight ? '#0c1427' : '#f8fafc',
+          secondary: isLight ? '#5c6880' : '#94a3b8',
         },
-        divider: isLight ? '#e2e8f0' : '#334155',
+        divider: isLight ? '#e3e8f1' : '#1e293b',
         statusPresent: {
           main: '#10b981', // Emerald
           bg: isLight ? '#ecfdf5' : '#064e3b',
@@ -62,7 +76,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         },
       } as any,
       typography: {
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica", "Arial", sans-serif',
+        fontFamily: '"Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica", "Arial", sans-serif',
         h4: {
           fontWeight: 700,
           letterSpacing: '-0.025em',
@@ -115,7 +129,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
               boxShadow: isLight 
                 ? '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)'
                 : '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-              border: `1px solid ${isLight ? '#e2e8f0' : '#334155'}`,
+              border: `1px solid ${isLight ? '#e3e8f1' : '#1e293b'}`,
             },
           },
         },
@@ -131,7 +145,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             head: {
               fontWeight: 600,
               backgroundColor: isLight ? '#f1f5f9' : '#1e293b',
-              color: isLight ? '#475569' : '#94a3b8',
+              color: isLight ? '#5c6880' : '#94a3b8',
             },
           },
         },
@@ -156,4 +170,5 @@ export const useAppTheme = () => {
   }
   return context;
 };
+
 export default ThemeContext;

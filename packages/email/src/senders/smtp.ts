@@ -10,9 +10,9 @@ export interface SmtpSettings {
   port: number;
   // true: TLS from the first byte (port 465). false: plain connection upgraded with
   // STARTTLS when the server offers it (port 587, or Mailpit's 1025).
-  secure: boolean;
+  secure?: boolean;
   // Refuse to send unless the connection was upgraded to TLS (set for real providers).
-  requireTls: boolean;
+  requireTls?: boolean;
   user?: string;
   pass?: string;
 }
@@ -23,13 +23,16 @@ export class SmtpEmailSender implements EmailSender {
   constructor(
     private readonly from: string,
     settings: SmtpSettings,
-    private readonly log: (line: string) => void = () => {},
+    private readonly log: (line: string) => void = () => { },
   ) {
+    const isSecure = settings.secure ?? (settings.port === 465);
+    const requireTls = settings.requireTls ?? false;
+
     this.transporter = nodemailer.createTransport({
       host: settings.host,
       port: settings.port,
-      secure: settings.secure,
-      requireTLS: settings.requireTls,
+      secure: isSecure,
+      requireTLS: requireTls,
       auth: settings.user ? { user: settings.user, pass: settings.pass ?? "" } : undefined,
       // Fail fast instead of holding a queue worker for minutes on a dead server;
       // the job is retried later.
@@ -41,15 +44,21 @@ export class SmtpEmailSender implements EmailSender {
 
   async send(message: EmailMessage): Promise<void> {
     assertSendable(message);
-    const info = await this.transporter.sendMail({
-      from: this.from,
-      to: message.to,
-      subject: message.subject,
-      html: message.html,
-      text: message.text,
-      // Shows up in the provider's logs, so a bounce can be traced to the kind of email.
-      headers: { "X-SmartBusiness-Email": message.tag },
-    });
-    this.log(`Email "${message.tag}" to ${message.to} sent over SMTP (${info.messageId})`);
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+        attachments: message.attachments,
+      });
+
+      this.log?.(`[SMTP] Sent email "${message.tag}" to ${message.to} (MessageId: ${info.messageId})`);
+    } catch (err: any) {
+      this.log?.(`[SMTP ERROR] Failed to send email to ${message.to}: ${err?.message || err}`);
+      throw err;
+    }
   }
 }
