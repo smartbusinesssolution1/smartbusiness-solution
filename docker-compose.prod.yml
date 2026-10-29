@@ -64,6 +64,10 @@ services:
       - REDIS_URL=redis://redis:6379
       - FACE_RECOGNITION_API_URL=http://face-recognition:8000
       - AWS_S3_BUCKET_NAME=clockin-clockout-bucket
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/health || exit 1"]
       interval: 30s

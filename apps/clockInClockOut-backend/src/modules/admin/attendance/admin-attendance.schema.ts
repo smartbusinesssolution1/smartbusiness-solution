@@ -63,7 +63,6 @@ export interface FormattedAttendanceSession {
   status: "present" | "late" | "absent" | "half_day" | "auto_closed";
   workingHours: number;
   notes: string | null;
-  selfieUrl: string | null;
   clockInFaceMatchConfidence: number | null;
   clockInLatitude: number | null;
   clockInLongitude: number | null;
@@ -71,6 +70,9 @@ export interface FormattedAttendanceSession {
   clockOutLatitude: number | null;
   clockOutLongitude: number | null;
   isAutoClosed: boolean;
+  distanceMeters?: number | null;
+  locationName?: string | null;
+  punchType?: string | null;
 }
 
 export interface FormattedAttendanceItem {

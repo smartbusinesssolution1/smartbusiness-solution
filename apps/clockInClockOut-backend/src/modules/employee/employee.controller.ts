@@ -12,8 +12,11 @@ export class EmployeeController {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
     const role = req.tenant?.role;
+    const headerWorkspaceId =
+      (req.headers["x-workspace-id"] as string | undefined) ||
+      (req.query.workspaceId as string | undefined);
 
-    const profile = await this.employeeService.getEmployeeProfile(userId, tenantId, role);
+    const profile = await this.employeeService.getEmployeeProfile(userId, tenantId, role, headerWorkspaceId);
 
     res.status(200).json({
       success: true,

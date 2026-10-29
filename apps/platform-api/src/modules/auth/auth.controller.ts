@@ -1,4 +1,4 @@
-import type { Request, Response } from "express";
+﻿import type { Request, Response } from "express";
 import type { TypedQueue, EmailJobs } from "@smartbusiness/jobs";
 import type { AuthService } from "./auth.service.js";
 import type {
@@ -21,6 +21,7 @@ import {
   server,
   cookie,
   refreshToken as refreshTokenConfig,
+  cors as corsConfig,
 } from "../../config/index.js";
 import { logger } from "../../shared/services/logger.js";
 
@@ -166,18 +167,36 @@ export class AuthController {
   // does no lookup, so neither the answer nor its timing reveals whether the account
   // exists. The worker does the real work, with retries.
   forgotPassword = async (req: Request, res: Response): Promise<void> => {
-    const { email } = req.body as ForgotPasswordInput;
+    const { email, redirectUrl } = req.body as ForgotPasswordInput;
+
+    // Detect client app URL from redirectUrl, Origin, or Referer if it matches allowed CORS/trusted origins
+    let clientAppUrl: string | undefined;
+    const candidate = redirectUrl || (req.headers.origin as string) || (req.headers.referer ? new URL(req.headers.referer).origin : undefined);
+    if (candidate) {
+      try {
+        const parsedUrl = new URL(candidate);
+        const origin = parsedUrl.origin;
+        if (
+          parsedUrl.hostname === "localhost" ||
+          parsedUrl.hostname === "127.0.0.1" ||
+          parsedUrl.hostname.startsWith("192.168.") ||
+          parsedUrl.hostname.startsWith("10.") ||
+          (corsConfig.origin as readonly string[]).includes(origin)
+        ) {
+          clientAppUrl = origin.replace(/\/+$/, "");
+        }
+      } catch { }
+    }
 
     try {
-      await this.emailQueue.add("password-reset", { email, ipAddress: req.ip });
+      await this.emailQueue.add("password-reset", { email, ipAddress: req.ip, appUrl: clientAppUrl });
     } catch (err) {
-      // Happens equally for every email, so saying so reveals nothing.
-      logger.error({ err }, "Could not queue a password reset");
-      throw new AppError(
-        "We couldn't start the reset right now. Try again in a moment.",
-        503,
-        "SERVICE_UNAVAILABLE",
-      );
+      logger.warn({ err: (err as any)?.message }, "Could not queue password reset to Redis, running directly as fallback");
+      try {
+        await this.authService.processPasswordResetJob(email, { isRetry: false, ipAddress: req.ip, appUrl: clientAppUrl });
+      } catch (fallbackErr) {
+        logger.error({ err: fallbackErr }, "Direct password reset processing also failed");
+      }
     }
 
     sendSuccess(

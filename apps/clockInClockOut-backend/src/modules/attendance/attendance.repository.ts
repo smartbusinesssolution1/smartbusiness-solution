@@ -5,44 +5,82 @@ export class AttendanceRepository {
   /**
    * Find employee profile with workspace and attendance settings by User ID and Tenant ID
    */
-  async findEmployeeByUserId(userId: string, tenantId: string) {
-    const cacheKey = `emp:by-user:${tenantId}:${userId}`;
+  async findEmployeeByUserId(userId: string, tenantId: string, workspaceId?: string) {
+    const cacheKey = `emp:by-user:${tenantId}:${userId}:${workspaceId || "default"}`;
     const cached = memoryCache.get<any>(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const employee = await prisma.attendanceEmployeeDetails.findFirst({
-      where: {
-        deletedAt: null,
-        workspaceMember: {
-          userId,
+    let employee = null;
+    if (workspaceId) {
+      employee = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
           deletedAt: null,
-          workspace: {
-            tenantId,
+          workspaceMember: {
+            userId,
+            workspaceId,
             deletedAt: null,
-          },
-        },
-      },
-      include: {
-        workspaceMember: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                email: true,
-              },
-            },
             workspace: {
-              include: {
-                attendanceSettings: true,
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              workspace: {
+                include: {
+                  attendanceSettings: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+    }
+
+    if (!employee) {
+      employee = await prisma.attendanceEmployeeDetails.findFirst({
+        where: {
+          deletedAt: null,
+          workspaceMember: {
+            userId,
+            deletedAt: null,
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+          },
+        },
+        include: {
+          workspaceMember: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  email: true,
+                },
+              },
+              workspace: {
+                include: {
+                  attendanceSettings: true,
+                },
+              },
+            },
+          },
+        },
+      });
+    }
 
     if (employee) {
       memoryCache.set(cacheKey, employee, 60);
@@ -92,17 +130,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -119,17 +162,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "asc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -147,17 +195,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
     if (active) return active;
@@ -170,17 +223,22 @@ export class AttendanceRepository {
       orderBy: {
         clockInTime: "desc",
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }
@@ -191,7 +249,6 @@ export class AttendanceRepository {
   async createAttendanceRecord(params: {
     employeeId: string;
     status: AttendanceStatus;
-    selfieUrl?: string;
     clockInDate: Date;
     clockInTime: Date;
     clockInLatitude: number;
@@ -202,7 +259,6 @@ export class AttendanceRepository {
     const {
       employeeId,
       status,
-      selfieUrl,
       clockInDate,
       clockInTime,
       clockInLatitude,
@@ -215,7 +271,6 @@ export class AttendanceRepository {
       data: {
         employeeId,
         status,
-        selfieUrl: selfieUrl || null,
         clockInDate,
         clockInTime,
         clockInLatitude,
@@ -386,16 +441,16 @@ export class AttendanceRepository {
         ],
         skip,
         take,
-        include: {
-          employee: {
-            include: {
-              workspaceMember: {
-                include: {
-                  workspace: true,
-                },
-              },
-            },
-          },
+        select: {
+          id: true,
+          employeeId: true,
+          status: true,
+          clockInDate: true,
+          clockInTime: true,
+          clockOutDate: true,
+          clockOutTime: true,
+          workingHours: true,
+          notes: true,
         },
       }),
       prisma.attendanceRecord.count({ where }),
@@ -413,17 +468,22 @@ export class AttendanceRepository {
         id: recordId,
         employeeId,
       },
-      include: {
-        employee: {
-          include: {
-            workspaceMember: {
-              include: {
-                workspace: true,
-                user: true,
-              },
-            },
-          },
-        },
+      select: {
+        id: true,
+        employeeId: true,
+        status: true,
+        clockInDate: true,
+        clockInTime: true,
+        clockInLatitude: true,
+        clockInLongitude: true,
+        clockInFaceMatchConfidence: true,
+        clockOutDate: true,
+        clockOutTime: true,
+        clockOutLatitude: true,
+        clockOutLongitude: true,
+        clockOutFaceMatchConfidence: true,
+        workingHours: true,
+        notes: true,
       },
     });
   }

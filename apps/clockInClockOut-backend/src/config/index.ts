@@ -36,6 +36,10 @@ export const env = {
         from: parsedEnv.SMTP_FROM || (parsedEnv.SMTP_USER ? `SmartBusiness <${parsedEnv.SMTP_USER}>` : "noreply@smartbusiness.com"),
     },
 
+    redis: {
+        url: parsedEnv.REDIS_URL,
+    },
+
     portalLoginUrl: parsedEnv.PORTAL_LOGIN_URL,
     faceRecognitionApiUrl: parsedEnv.FACE_RECOGNITION_API_URL,
     aws: {

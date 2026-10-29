@@ -1,0 +1,28 @@
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Python byte code and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Git and repo files
+.git/
+.gitignore
+.dockerignore
+
+# Environment files
+.env
+.env.*
+
+# Local test outputs / temp files
+*.log
+tmp/
+.vscode/
+.idea/

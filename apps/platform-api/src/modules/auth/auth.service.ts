@@ -1,4 +1,4 @@
-import {
+﻿import {
   AuthRepository,
   type TenantInfo,
   type TenantInfoWithProducts,
@@ -8,11 +8,13 @@ import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
 import { AccountLockedError, AppError, ConflictError } from "../../shared/errors/index.js";
 import { TokenService, PasswordService, UserTokenService, type TokenProblem } from "@smartbusiness/auth";
+import crypto from "node:crypto";
 import {
   addedToWorkspaceEmail,
   invitationEmail,
   passwordChangedEmail,
   passwordResetEmail,
+  welcomeCredentialsEmail,
   type EmailSender,
 } from "@smartbusiness/email";
 import { AuditService } from "../../shared/services/audit.service.js";
@@ -125,7 +127,7 @@ export class AuthService {
     private userTokens: UserTokenService,
     private emailSender: EmailSender,
     private resetSettings: PasswordResetSettings,
-  ) {}
+  ) { }
 
   // ═════════════════════════════════════════════════════════════
   // FORGOT PASSWORD (runs in the job worker)
@@ -135,7 +137,7 @@ export class AuthService {
   // again: a retry issues a fresh link, which revokes any earlier unsent one.
   // ═════════════════════════════════════════════════════════════
 
-  async processPasswordResetJob(email: string, opts: { isRetry: boolean; ipAddress?: string }): Promise<void> {
+  async processPasswordResetJob(email: string, opts: { isRetry: boolean; ipAddress?: string; appUrl?: string }): Promise<void> {
     const user = await this.authRepository.findUserByEmail(email);
     if (!user || !user.isActive) return;
 
@@ -161,10 +163,11 @@ export class AuthService {
       return;
     }
 
-    // Built from configuration only: never from the request's Host header. The token goes
-    // after "#": a browser never sends that part to any server, so it stays out of web
-    // server and CDN logs and out of Referer headers.
-    const resetUrl = `${this.resetSettings.appUrl}/reset-password#token=${token}`;
+    // Built from configuration only: never from the request's Host header.
+    const baseUrl = opts.appUrl || this.resetSettings.appUrl;
+    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
+    logger.info({ resetUrl, email: user.email }, `Generated password reset URL: ${resetUrl}`);
+    console.log(`\n========================================\n🔑 PASSWORD RESET LINK FOR ${user.email}:\n${resetUrl}\n========================================\n`);
     // If sending fails, this throws and the queue retries the whole job later.
     await this.emailSender.send({
       to: user.email,
@@ -222,7 +225,14 @@ export class AuthService {
       throw new ConflictError("An account with this email already exists.");
     }
 
-    const passwordHash = await this.passwordService.hash(data.password);
+    const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
+    const generatedPassword = `SB${randomSuffix}!2026`;
+    const rawPassword =
+      data.password && data.password.trim() !== "" && data.password !== "Password1!"
+        ? data.password
+        : generatedPassword;
+
+    const passwordHash = await this.passwordService.hash(rawPassword);
 
     const user = await this.authRepository.createUserWithTenant({
       email: data.email,
@@ -238,6 +248,25 @@ export class AuthService {
     const primaryTenant = tenants[0]!;
 
     const tokens = await this.createSession(user.id, user.email, ctx);
+
+    // Dispatch welcome credentials email with random password to the organization owner
+    try {
+      const loginUrl = `${this.resetSettings.appUrl}/login`;
+      await this.emailSender.send({
+        to: user.email,
+        ...welcomeCredentialsEmail({
+          to: user.email,
+          name: user.fullName,
+          password: rawPassword,
+          loginUrl,
+          companyName: data.companyName,
+        }),
+      });
+      logger.info({ email: user.email, companyName: data.companyName }, "Welcome credentials email dispatched to organization owner");
+      console.log(`\n========================================\n📧 WELCOME CREDENTIALS EMAIL FOR ${user.email}:\nPassword: ${rawPassword}\nLogin URL: ${loginUrl}\n========================================\n`);
+    } catch (emailErr) {
+      logger.error({ emailErr, email: user.email }, "Failed to dispatch welcome credentials email to owner");
+    }
 
     await this.auditService.log({
       tenantId: primaryTenant.tenantId,

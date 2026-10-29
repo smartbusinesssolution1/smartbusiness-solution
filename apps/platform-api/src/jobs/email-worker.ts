@@ -20,6 +20,7 @@ export function startEmailWorker(): { worker: Worker; close: () => Promise<void>
           // cooldown that its own first attempt started.
           isRetry: job.attemptsMade > 0,
           ipAddress: data.ipAddress,
+          appUrl: data.appUrl,
         }),
       "workspace-invitation": (data) => authService.processWorkspaceInvitationJob(data),
       // Already built by the product; checked by the sender (one address, one-line subject).
