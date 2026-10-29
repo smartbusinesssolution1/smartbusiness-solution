@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { AdminAttendanceService } from "./admin-attendance.service.js";
 import { AdminAttendanceQuerySchema, AdminAttendanceExportSchema } from "./admin-attendance.schema.js";
+import { autoClockOutService } from "../../attendance/auto-clock-out.service.js";
 
 export class AdminAttendanceController {
   constructor(private readonly service: AdminAttendanceService) {}
@@ -118,6 +119,24 @@ export class AdminAttendanceController {
       }
 
       const result = await this.service.generateExportReport(tenantId, parseResult.data);
+      return res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  };
+  /**
+   * POST /api/v1/admin/attendance/auto-close-sweep
+   * Trigger manual auto-clock-out sweep for day or night shifts
+   */
+  triggerAutoCloseSweep = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const shiftType = req.body?.type === "night" ? "night" : "day";
+      const result = shiftType === "night"
+        ? await autoClockOutService.sweepNightShift()
+        : await autoClockOutService.sweepDayShift();
       return res.status(200).json({
         success: true,
         data: result,
