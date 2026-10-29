@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import BrandLoader from '../components/BrandLoader';
 
@@ -30,7 +30,9 @@ const PageLoader = ({ message = 'Loading workspace...' }: { message?: string }) 
 
 // Auth Route Guard
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, workspaces } = useAuth();
+  const hasWorkspaces = Boolean(workspaces && workspaces.length > 0);
+  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces?create=true';
 
   if (isLoading) {
     return <PageLoader message="Authenticating session..." />;
@@ -45,7 +47,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 // Admin Route Guard
 const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, isLoading, isSuperAdmin } = useAuth();
+  const { user, isLoading, isSuperAdmin, workspaces } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <PageLoader message="Verifying permissions..." />;
@@ -56,6 +59,13 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   const isAdmin = user.role === 'admin' || user.role === 'super_admin' || isSuperAdmin;
+  const isWorkspaceRoute =
+    location.pathname === '/admin/workspaces' || location.pathname === '/workspace/select';
+
+  if ((!workspaces || workspaces.length === 0) && !isWorkspaceRoute) {
+    return <Navigate to="/admin/workspaces?create=true" replace />;
+  }
+
   if (!isAdmin) {
     return <Navigate to="/login" replace />;
   }
@@ -64,7 +74,9 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 export const AppRoutes: React.FC = () => {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, workspaces } = useAuth();
+  const hasWorkspaces = Boolean(workspaces && workspaces.length > 0);
+  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces?create=true';
 
   if (isLoading) {
     return <PageLoader message="Initializing workspace..." />;
@@ -74,13 +86,13 @@ export const AppRoutes: React.FC = () => {
     <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* Public Routes */}
-        <Route path="/login" element={user ? <Navigate to="/admin/dashboard" replace /> : <LoginPage />} />
-        <Route path="/forgot-password" element={user ? <Navigate to="/admin/dashboard" replace /> : <ForgotPasswordPage />} />
+        <Route path="/login" element={user ? <Navigate to={defaultRedirect} replace /> : <LoginPage />} />
+        <Route path="/forgot-password" element={user ? <Navigate to={defaultRedirect} replace /> : <ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/subscription-expired" element={<SubscriptionExpiredPage />} />
         <Route path="/subscription-required" element={<Navigate to="/subscription-expired" replace />} />
-        <Route path="/create-workspace" element={user ? <Navigate to="/admin/dashboard" replace /> : <RegisterPage />} />
-        <Route path="/register" element={<Navigate to="/create-workspace" replace />} />
+        {/* <Route path="/create-workspace" element={user ? <Navigate to={defaultRedirect} replace /> : <RegisterPage />} /> */}
+        {/* <Route path="/register" element={<Navigate to="/create-workspace" replace />} /> */}
 
         {/* Protected Layout Routes */}
         <Route
@@ -94,7 +106,7 @@ export const AppRoutes: React.FC = () => {
           {/* Root Redirect */}
           <Route
             index
-            element={<Navigate to="/admin/dashboard" replace />}
+            element={<Navigate to={defaultRedirect} replace />}
           />
 
           {/* Admin Routes */}
