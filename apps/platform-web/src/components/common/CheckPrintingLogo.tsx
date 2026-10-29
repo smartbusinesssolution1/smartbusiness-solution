@@ -1,12 +1,12 @@
 import React, { useId } from 'react';
 
-// The Check Printing product mark (a white printer with a printed sheet on a blue tile).
-// Used wherever the portal shows Check Printing as a product; the SmartBusiness company
-// logo (SmartBusinessLogo) stays the portal's own brand. The same drawing is Check
-// Printing's BrandMark and favicon (apps/check-printing-frontend): change them together.
+// The Check Printing product mark on the portal: an outlined printer with a tick (Lucide
+// "printer-check", ISC) in white on a dark blue tile. Used wherever the portal shows Check
+// Printing as a product; the SmartBusiness company logo (SmartBusinessLogo) stays the
+// portal's own brand. Check Printing itself draws the same mark in blue on a pale tile
+// (apps/check-printing-frontend: BrandMark, favicon): change them together.
 export const CheckPrintingLogo: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = '' }) => {
   const id = useId();
-  const tile = `url(#${id}-tile)`;
   return (
     <svg
       width={size}
@@ -18,23 +18,24 @@ export const CheckPrintingLogo: React.FC<{ size?: number; className?: string }> 
     >
       <defs>
         <linearGradient id={`${id}-tile`} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#62a8f2" />
-          <stop offset="1" stopColor="#2156e8" />
-        </linearGradient>
-        <linearGradient id={`${id}-shine`} x1="0" y1="0" x2="0" y2="32" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#fff" stopOpacity="0.18" />
-          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          <stop offset="0" stopColor="#1a3a8f" />
+          <stop offset="1" stopColor="#0b1f4d" />
         </linearGradient>
       </defs>
-      <rect width="64" height="64" rx="15" fill={tile} />
-      <rect width="64" height="32" rx="15" fill={`url(#${id}-shine)`} />
-      {/* Paper tray, printer body, status light */}
-      <rect x="21" y="12.5" width="22" height="13" rx="3.5" fill="none" stroke="#fff" strokeWidth="4" />
-      <rect x="11" y="23" width="42" height="20" rx="5.5" fill="#fff" />
-      <circle cx="46" cy="29.5" r="2.3" fill={tile} />
-      {/* The printed sheet, set off from the body by a tile-coloured gap, with two lines */}
-      <rect x="19" y="35" width="26" height="17.5" rx="3" fill="#fff" stroke={tile} strokeWidth="3" />
-      <path d="M24.5 41.5h15M24.5 46.5h15" stroke={tile} strokeWidth="2.6" strokeLinecap="round" />
+      <rect width="64" height="64" rx="15" fill={`url(#${id}-tile)`} />
+      <g
+        transform="translate(16 16) scale(1.3333)"
+        fill="none"
+        stroke="#ffffff"
+        strokeWidth="2.1"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M13.5 22H7a1 1 0 0 1-1-1v-6a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v.5" />
+        <path d="m16 19 2 2 4-4" />
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2" />
+        <path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
+      </g>
     </svg>
   );
 };

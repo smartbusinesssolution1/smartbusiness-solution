@@ -9,6 +9,14 @@ export { StorageIntegrityError, buildKeyring, type Keyring } from "./envelope.js
 export { EncryptedStorage } from "./encrypted.js";
 export { LocalDiskStorage } from "./local-disk.js";
 export { S3Storage, type S3StorageConfig } from "./s3.js";
+export {
+  checkStorage,
+  explainStorageError,
+  refusesToStartOnStorageFailure,
+  verifyStorageAtStartup,
+  type StorageCheckResult,
+  type StorageLocation,
+} from "./startup-check.js";
 
 export interface StorageConfig {
   driver: "local" | "s3";
