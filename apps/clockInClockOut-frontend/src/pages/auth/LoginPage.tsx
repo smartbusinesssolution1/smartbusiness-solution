@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { platformAuthApi } from '../../services/apiClient';
+import { authService } from '../../services/authService';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -92,10 +93,10 @@ export const LoginPage: React.FC = () => {
     }
     setForgotPasswordLoading(true);
     try {
-      await platformAuthApi.post('/api/v1/auth/forgot-password', { email: forgotPasswordEmail });
+      await authService.forgotPassword(forgotPasswordEmail.trim());
       setForgotPasswordSuccess(true);
-    } catch {
-      // For security, present successful dispatch message regardless of existence
+    } catch (err: any) {
+      setInfoNotice(err?.message || 'Failed to dispatch reset email.');
       setForgotPasswordSuccess(true);
     } finally {
       setForgotPasswordLoading(false);
@@ -215,7 +216,7 @@ export const LoginPage: React.FC = () => {
                           Password
                         </label>
                         <span
-                          onClick={() => setForgotPasswordOpen(true)}
+                          onClick={() => navigate('/forgot-password')}
                           className="text-xs font-medium text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer transition hover:underline"
                         >
                           Forgot password?

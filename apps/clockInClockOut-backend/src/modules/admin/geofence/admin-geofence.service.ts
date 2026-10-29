@@ -1,5 +1,6 @@
 import { AdminGeofenceRepository } from "./admin-geofence.repository.js";
 import { NotFoundError, AppError } from "../../../shared/errors/index.js";
+import { memoryCache } from "../../../shared/services/cache.service.js";
 import type { UpdateGeofenceInput } from "./admin-geofence.schema.js";
 
 export class AdminGeofenceService {
@@ -64,6 +65,7 @@ export class AdminGeofenceService {
     }
 
     const saved = await this.geofenceRepo.upsertGeofence(workspaceId, input);
+    await memoryCache.delPattern(`cache:ws:settings:${tenantId}:*`);
 
     return {
       message: "Organization geofence perimeter and campus settings updated successfully.",

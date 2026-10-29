@@ -23,7 +23,7 @@ export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 export interface EmailJobs {
   // Forgot-password: added for EVERY request (known or unknown email), so adding it
   // takes the same time either way; the worker does the lookup.
-  "password-reset": { email: string; ipAddress?: string };
+  "password-reset": { email: string; ipAddress?: string; appUrl?: string };
   // Someone was given access to a workspace. The worker looks at them when it runs: no
   // password yet means an invitation link (created then, never stored in the job; a newer
   // link replaces older ones); otherwise a "you now have access" email. Checked again at

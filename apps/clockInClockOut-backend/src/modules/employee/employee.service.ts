@@ -2,6 +2,7 @@ import { EmployeeRepository } from "./employee.repository.js";
 import { AppError, NotFoundError, ValidationError } from "../../shared/errors/index.js";
 import { storageService } from "../../shared/services/storage.service.js";
 import { logger } from "../../shared/services/logger.js";
+import { memoryCache } from "../../shared/services/cache.service.js";
 import type { UpdateProfileInput, RegisterPushTokenInput } from "./employee.schema.js";
 
 /**
@@ -26,14 +27,105 @@ export class EmployeeService {
   /**
    * Resolve authenticated user's full employee profile and assigned workspaces
    */
-  async getEmployeeProfile(userId: string, tenantId: string, role?: string) {
+  async getEmployeeProfile(userId: string, tenantId: string, role?: string, workspaceId?: string) {
     // const employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
     const [employee, assignedMembers] = await Promise.all([
-      this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId),
+      this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId, workspaceId),
       this.employeeRepo.findAssignedWorkspaces(userId, tenantId),
     ]);
     if (!employee) {
-      throw new NotFoundError("Employee profile");
+      const isPrivileged = role === "OWNER" || role === "ADMIN";
+      if (!isPrivileged) {
+        throw new NotFoundError("Employee profile");
+      }
+
+      const user = await this.employeeRepo.findUserById(userId);
+      if (!user) {
+        throw new NotFoundError("User profile");
+      }
+
+      const assignedWorkspaces = assignedMembers.map((member) => {
+        const ws = member.workspace;
+        const words = ws.businessName.split(/\s+/).filter(Boolean);
+        const initials = words.slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+        const code = initials ? `WS-${initials}` : `WS-${ws.id.slice(0, 4).toUpperCase()}`;
+
+        return {
+          workspaceId: ws.id,
+          name: ws.businessName,
+          code,
+          isDefault: workspaceId ? ws.id === workspaceId : member === assignedMembers[0],
+          address: [ws.addressLine1, ws.city, ws.state].filter(Boolean).join(", "),
+          geofence: ws.attendanceSettings
+            ? {
+              latitude: Number(ws.attendanceSettings.latitude),
+              longitude: Number(ws.attendanceSettings.longitude),
+              radiusMeters: ws.attendanceSettings.radiusMeters,
+              officeStartTime: ws.attendanceSettings.defaultShiftStartTime,
+              officeEndTime: ws.attendanceSettings.defaultShiftEndTime,
+              graceMinutes: ws.attendanceSettings.graceMinutes,
+            }
+            : null,
+        };
+      });
+
+      const primaryMember =
+        assignedMembers.find((m) => m.workspaceId === workspaceId) || assignedMembers[0];
+      const defaultWorkspaceId = primaryMember?.workspaceId || workspaceId || "";
+      const defaultWorkspaceName =
+        primaryMember?.workspace?.businessName || "Main Campus";
+
+      const nameParts = user.fullName.trim().split(/\s+/).filter(Boolean);
+      const avatarInitials =
+        nameParts.length > 0
+          ? nameParts.slice(0, 2).map((p) => p[0].toUpperCase()).join("")
+          : "AD";
+
+      const formattedJoinedDate = user.createdAt
+        ? new Date(user.createdAt).toLocaleDateString("en-US", {
+          month: "long",
+          day: "numeric",
+          year: "numeric",
+        })
+        : "";
+
+      return {
+        id: user.id,
+        employeeCode: "",
+        corporateId: "",
+        name: user.fullName,
+        fullName: user.fullName,
+        email: user.email,
+        phone: "",
+        role: "ADMIN",
+        status: user.isActive ? "ACTIVE" : "INACTIVE",
+        employmentStatus: user.isActive ? "active" : "inactive",
+        isActive: user.isActive,
+        designation: role === "OWNER" ? "Organization Owner" : "Administrator",
+        jobTitle: role === "OWNER" ? "Organization Owner" : "Administrator",
+        department: "Management",
+        joinedDate: user.createdAt
+          ? new Date(user.createdAt).toISOString()
+          : new Date().toISOString(),
+        dateJoined: formattedJoinedDate,
+        avatarUrl: "",
+        biometricPhotoUrl: "",
+        avatarInitials,
+        avatarUpdatedAt: null,
+        mustChangePassword: false,
+        shiftType: "general",
+        shiftSchedule: "09:00 AM - 06:00 PM",
+        weeklySchedule: [],
+        workspaceId: defaultWorkspaceId,
+        workspaceName: defaultWorkspaceName,
+        user: {
+          id: user.id,
+          fullName: user.fullName,
+          email: user.email,
+        },
+        assignedWorkspaces,
+        tenantRole: role ?? "OWNER",
+      };
     }
 
     const user = employee.workspaceMember.user;
@@ -49,7 +141,7 @@ export class EmployeeService {
         workspaceId: ws.id,
         name: ws.businessName,
         code,
-        isDefault: ws.id === employee.workspaceMember.workspaceId,
+        isDefault: workspaceId ? ws.id === workspaceId : ws.id === employee.workspaceMember.workspaceId,
         address: [ws.addressLine1, ws.city, ws.state].filter(Boolean).join(", "),
         geofence: ws.attendanceSettings
           ? {
@@ -142,16 +234,54 @@ export class EmployeeService {
   /**
    * Update personal profile information (fullName, phone, avatarUrl)
    */
-  async updateEmployeeProfile(userId: string, tenantId: string, data: UpdateProfileInput) {
-    const employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
-
-    if (!employee) {
-      throw new NotFoundError("Employee profile");
-    }
+  async updateEmployeeProfile(userId: string, tenantId: string, data: UpdateProfileInput, role?: string) {
+    let employee = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
 
     const fullName = data.fullName || data.name;
     const phone = data.phone;
     const biometricPhotoUrl = data.biometricPhotoUrl || data.avatarUrl;
+
+    if (!employee) {
+      const isPrivileged = role === "OWNER" || role === "ADMIN";
+      if (!isPrivileged) {
+        throw new NotFoundError("Employee profile");
+      }
+
+      const assignedMembers = await this.employeeRepo.findAssignedWorkspaces(userId, tenantId);
+      if (assignedMembers.length === 0) {
+        throw new NotFoundError("No active workspace membership found for this account.");
+      }
+
+      const targetMember = assignedMembers[0];
+      const code = `ADM-${userId.slice(0, 4).toUpperCase()}`;
+
+      const result = await this.employeeRepo.createAdminEmployeeProfile({
+        workspaceMemberId: targetMember.id,
+        userId,
+        employeeCode: code,
+        fullName,
+        designation: role === "OWNER" ? "Organization Owner" : "Administrator",
+        department: "Management",
+        phone: phone || "",
+        biometricPhotoUrl: biometricPhotoUrl || "",
+        role: "admin",
+      });
+
+      if (biometricPhotoUrl) {
+        await memoryCache.del(`cache:face:baseline:${result.employee.id}`);
+      }
+      await memoryCache.delPattern(`cache:emp:${tenantId}:*`);
+      await memoryCache.delPattern(`active_employees:${tenantId}:*`);
+
+      return {
+        id: result.employee.id,
+        biometricPhotoUrl: result.employee.biometricPhotoUrl,
+        avatarUrl: result.employee.biometricPhotoUrl,
+        fullName: result.user?.fullName ?? result.employee.workspaceMember.user.fullName,
+        phone: result.employee.phone,
+        updatedAt: result.employee.updatedAt ? new Date(result.employee.updatedAt).toISOString() : new Date().toISOString(),
+      };
+    }
 
     const result = await this.employeeRepo.updateProfileTransaction({
       employeeId: employee.id,
@@ -160,6 +290,12 @@ export class EmployeeService {
       phone,
       biometricPhotoUrl,
     });
+
+    if (biometricPhotoUrl) {
+      await memoryCache.del(`cache:face:baseline:${employee.id}`);
+    }
+    await memoryCache.delPattern(`cache:emp:${tenantId}:*`);
+    await memoryCache.delPattern(`active_employees:${tenantId}:*`);
 
     return {
       id: employee.id,
@@ -193,6 +329,9 @@ export class EmployeeService {
     const updated = await this.employeeRepo.updateEmployeeProfile(employee.id, {
       biometricPhotoUrl: uploadResult.url,
     });
+
+    await memoryCache.del(`cache:face:baseline:${employee.id}`);
+    await memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
     return {
       avatarUrl: updated.biometricPhotoUrl,

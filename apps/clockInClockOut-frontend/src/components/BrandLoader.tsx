@@ -1,141 +1,60 @@
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { cn } from '../lib/utils';
 
 export interface BrandLoaderProps {
-  /** If true (default), solid #F8FAFC background; if false, frosted backdrop blur overlay centered on screen */
+  /** If true (default), solid full-page background; if false, frosted backdrop blur overlay centered on screen */
   fullScreen?: boolean;
   /** Custom descriptive message displayed below the progress bar */
   message?: string;
   /** If true (default), displays a subtle shimmer progress bar at the very top of the window */
   showTopBar?: boolean;
+  className?: string;
 }
 
 export const BrandLoader: React.FC<BrandLoaderProps> = ({
   fullScreen = true,
   message = 'Loading workspace...',
   showTopBar = true,
+  className,
 }) => {
   return (
-    <Box
-      sx={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100vw',
-        height: '100vh',
-        zIndex: 99999,
-        bgcolor: fullScreen ? '#F8FAFC' : 'rgba(248, 250, 252, 0.88)',
-        backdropFilter: fullScreen ? 'none' : 'blur(4px)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-        p: 3,
-        boxSizing: 'border-box',
-        userSelect: 'none',
-        pointerEvents: 'auto',
-      }}
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        'fixed inset-0 z-[99999] flex flex-col items-center justify-center p-4 transition-colors duration-200 select-none',
+        fullScreen
+          ? 'bg-canvas text-ink'
+          : 'bg-canvas/85 backdrop-blur-md text-ink',
+        className
+      )}
     >
       {/* Top slim animated gradient shimmer bar */}
       {showTopBar && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: '3px',
-            background: 'linear-gradient(90deg, #2563EB, #60A5FA, #2563EB)',
-            backgroundSize: '200% 100%',
-            animation: 'brandTopShimmer 1.8s ease-in-out infinite',
-            zIndex: 100000,
-            '@keyframes brandTopShimmer': {
-              '0%': { backgroundPosition: '200% 0' },
-              '100%': { backgroundPosition: '-200% 0' },
-            },
-          }}
-        />
+        <div className="fixed top-0 left-0 right-0 h-[3px] z-[100000] overflow-hidden bg-transparent">
+          <div className="h-full w-full bg-gradient-to-r from-primary-600 via-primary-300 to-primary-600 dark:from-primary-500 dark:via-primary-300 dark:to-primary-500 bg-[length:200%_100%] animate-[shimmer_1.8s_ease-in-out_infinite]" />
+        </div>
       )}
 
       {/* Center Brand Icon with Soft Pulse */}
-      <Box
-        sx={{
-          width: 64,
-          height: 64,
-          borderRadius: '18px',
-          bgcolor: '#EFF6FF',
-          border: '1px solid #DBEAFE',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.15)',
-          mb: 3,
-          animation: 'brandIconPulse 2s ease-in-out infinite',
-          '@keyframes brandIconPulse': {
-            '0%, 100%': { transform: 'scale(1)', opacity: 1 },
-            '50%': { transform: 'scale(1.05)', opacity: 0.9 },
-          },
-        }}
-      >
-        <Box
-          component="img"
-          src="/auth-icon.png"
-          alt="SmartBusiness"
-          sx={{
-            width: 36,
-            height: 36,
-            objectFit: 'contain',
-          }}
+      <div className="flex size-16 items-center justify-center rounded-2xl border border-line bg-panel p-2.5 shadow-pop animate-[pulse_2.2s_ease-in-out_infinite] mb-4">
+        <img
+          src="/favicon.png"
+          alt="SmartBusiness Clock-In"
+          className="size-10 object-contain rounded-xl"
         />
-      </Box>
+      </div>
 
       {/* Sleek Slim Linear Progress Bar */}
-      <Box
-        sx={{
-          width: 140,
-          height: 4,
-          borderRadius: '9999px',
-          bgcolor: '#E2E8F0',
-          overflow: 'hidden',
-          position: 'relative',
-          mb: 2,
-        }}
-      >
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 0,
-            bottom: 0,
-            left: 0,
-            width: '45%',
-            borderRadius: '9999px',
-            bgcolor: '#2563EB',
-            animation: 'brandSlideProgress 1.4s ease-in-out infinite',
-            '@keyframes brandSlideProgress': {
-              '0%': { left: '-45%' },
-              '50%': { left: '30%', width: '55%' },
-              '100%': { left: '100%', width: '45%' },
-            },
-          }}
-        />
-      </Box>
+      <div className="relative h-1.5 w-36 overflow-hidden rounded-full border border-line bg-subtle mb-3">
+        <div className="absolute top-0 bottom-0 left-0 w-[45%] rounded-full bg-primary-600 dark:bg-primary-500 animate-[brandSlideProgress_1.4s_ease-in-out_infinite]" />
+      </div>
 
       {/* Modern Microcopy */}
-      <Typography
-        sx={{
-          fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-          fontSize: '0.85rem',
-          fontWeight: 600,
-          color: '#64748B',
-          letterSpacing: '-0.01em',
-        }}
-      >
+      <p className="font-mono text-xs font-medium text-muted tracking-wide text-center">
         {message}
-      </Typography>
-    </Box>
+      </p>
+    </div>
   );
 };
 

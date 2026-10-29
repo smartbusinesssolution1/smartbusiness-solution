@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -18,8 +18,41 @@ import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownR
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
+import StarRoundedIcon from '@mui/icons-material/StarRounded';
 import { useAuth } from '../context/AuthContext';
 import { Workspace } from '../types';
+
+// ── Role badge helpers ──────────────────────────────────────────────────────
+type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
+
+const SWITCHER_ROLE_BADGES: Record<WorkspaceRole, { label: string; lightBg: string; lightColor: string; darkBg: string; darkColor: string }> = {
+  OWNER: { label: 'Owner', lightBg: '#FFF7ED', lightColor: '#C2410C', darkBg: 'rgba(251,146,60,0.22)', darkColor: '#FDBA74' },
+  ADMIN: { label: 'Admin', lightBg: '#EEF2FF', lightColor: '#3730A3', darkBg: 'rgba(129,140,248,0.22)', darkColor: '#C7D2FE' },
+  MEMBER: { label: 'Member', lightBg: '#F1F5F9', lightColor: '#475569', darkBg: 'rgba(255,255,255,0.08)', darkColor: '#94A3B8' },
+};
+
+const SwitcherRoleBadge: React.FC<{ role: WorkspaceRole; isDark: boolean }> = ({ role, isDark }) => {
+  const cfg = SWITCHER_ROLE_BADGES[role] ?? SWITCHER_ROLE_BADGES.MEMBER;
+  return (
+    <Box
+      sx={{
+        px: 0.75,
+        py: 0.2,
+        borderRadius: 1,
+        bgcolor: isDark ? cfg.darkBg : cfg.lightBg,
+        color: isDark ? cfg.darkColor : cfg.lightColor,
+        fontSize: '9px',
+        fontWeight: 700,
+        letterSpacing: '0.01em',
+        flexShrink: 0,
+        lineHeight: 1.5,
+      }}
+    >
+      {cfg.label}
+    </Box>
+  );
+};
 
 export const WorkspaceSwitcher: React.FC = () => {
   const theme = useTheme();
@@ -30,8 +63,29 @@ export const WorkspaceSwitcher: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Workspace switcher is strictly restricted to Super Admin / Organization Owner
-  if (!isSuperAdmin) {
+  const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
+  const isDark = theme.palette.mode === 'dark';
+
+  const getWorkspaceRole = (ws: Workspace): WorkspaceRole => {
+    const raw = (ws.role || ws.userRole || (isOwner ? 'OWNER' : 'MEMBER')).toUpperCase();
+    if (raw === 'OWNER') return 'OWNER';
+    if (raw === 'ADMIN') return 'ADMIN';
+    return 'MEMBER';
+  };
+
+  // Only consider workspaces where the user has an administrative role ('OWNER' or 'ADMIN')
+  const visibleWorkspaces = (workspaces || []).filter((ws) => {
+    const role = getWorkspaceRole(ws);
+    return role === 'OWNER' || role === 'ADMIN';
+  });
+
+  // Visibility Rule:
+  // - Organization Owner: show dropdown if they have workspaces
+  // - Admin: ONLY show dropdown if they have MULTIPLE workspaces as Admin. If only 1, do NOT show dropdown.
+  // - Member/Employee: never show dropdown.
+  const canShowDropdown = isOwner ? visibleWorkspaces.length > 0 : visibleWorkspaces.length > 1;
+
+  if (!canShowDropdown) {
     return null;
   }
 
@@ -280,7 +334,7 @@ export const WorkspaceSwitcher: React.FC = () => {
               flexShrink: 0,
             }}
           >
-            {workspaces.length} {workspaces.length === 1 ? 'Workspace' : 'Workspaces'}
+            {visibleWorkspaces.length} {visibleWorkspaces.length === 1 ? 'Workspace' : 'Workspaces'}
           </Box>
         </Box>
 
@@ -301,7 +355,7 @@ export const WorkspaceSwitcher: React.FC = () => {
 
         {/* Workspaces List (Only Workspaces / Branches!) */}
         <Box sx={{ maxHeight: 240, overflowY: 'auto', py: 0.5, px: 0.75 }}>
-          {workspaces.length === 0 ? (
+          {visibleWorkspaces.length === 0 ? (
             <Box sx={{ py: 2.5, px: 2, textAlign: 'center' }}>
               <StorefrontRoundedIcon
                 sx={{
@@ -319,8 +373,9 @@ export const WorkspaceSwitcher: React.FC = () => {
               </Typography>
             </Box>
           ) : (
-            workspaces.map((ws) => {
+            visibleWorkspaces.map((ws) => {
               const isSelected = ws.id === currentWorkspace?.id;
+              const wsRole = getWorkspaceRole(ws);
               return (
                 <MenuItem
                   key={ws.id}
@@ -361,22 +416,25 @@ export const WorkspaceSwitcher: React.FC = () => {
                       }}
                     />
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography
-                        sx={{
-                          fontSize: '12px',
-                          fontWeight: isSelected ? 700 : 500,
-                          color: isSelected
-                            ? theme.palette.mode === 'light'
-                              ? '#3730A3'
-                              : '#C7D2FE'
-                            : theme.palette.text.primary,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {ws.name}
-                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                        <Typography
+                          sx={{
+                            fontSize: '12px',
+                            fontWeight: isSelected ? 700 : 500,
+                            color: isSelected
+                              ? theme.palette.mode === 'light'
+                                ? '#3730A3'
+                                : '#C7D2FE'
+                              : theme.palette.text.primary,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {ws.name}
+                        </Typography>
+                        <SwitcherRoleBadge role={wsRole} isDark={isDark} />
+                      </Box>
                       <Typography
                         sx={{
                           fontSize: '10px',

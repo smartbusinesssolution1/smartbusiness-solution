@@ -42,7 +42,6 @@ export function requireProduct(productSlug: string) {
       where: {
         tenantId,
         product: { slug: productSlug },
-        status: { in: ["ACTIVE", "TRIALING"] },
       },
       include: { product: true },
     });
@@ -74,4 +73,3 @@ export function requireProduct(productSlug: string) {
     next();
   };
 }
-

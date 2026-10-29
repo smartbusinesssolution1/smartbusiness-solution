@@ -1,4 +1,4 @@
-import { prisma, Prisma, AttendanceStatus } from "@smartbusiness/database";
+import { prisma, Prisma, AttendanceStatus, TenantRole } from "@smartbusiness/database";
 import { memoryCache } from "../../../shared/services/cache.service.js";
 import type {
   AdminAttendanceQueryInput,
@@ -19,6 +19,16 @@ export class AdminAttendanceRepository {
         deletedAt: null,
         workspaceMember: {
           deletedAt: null,
+          user: {
+            deletedAt: null,
+            tenantMembers: {
+              none: {
+                tenantId,
+                role: TenantRole.OWNER,
+                deletedAt: null,
+              },
+            },
+          },
           workspace: {
             tenantId,
             deletedAt: null,
@@ -122,6 +132,16 @@ export class AdminAttendanceRepository {
             isActive: true,
             workspaceMember: {
               deletedAt: null,
+              user: {
+                deletedAt: null,
+                tenantMembers: {
+                  none: {
+                    tenantId,
+                    role: TenantRole.OWNER,
+                    deletedAt: null,
+                  },
+                },
+              },
               ...(workspaceId
                 ? { workspaceId }
                 : {
@@ -146,6 +166,13 @@ export class AdminAttendanceRepository {
                   select: {
                     id: true,
                     businessName: true,
+                    attendanceSettings: {
+                      select: {
+                        latitude: true,
+                        longitude: true,
+                        radiusMeters: true,
+                      },
+                    },
                   },
                 },
               },
@@ -422,7 +449,6 @@ export class AdminAttendanceRepository {
         id: true,
         employeeId: true,
         status: true,
-        selfieUrl: false,
         clockInDate: true,
         clockInTime: true,
         clockInLatitude: true,

@@ -41,18 +41,18 @@ export const app = {
 
 export const email = {
   transport: config.EMAIL_TRANSPORT,
-  from: config.EMAIL_FROM,
+  from: config.SMTP_FROM || config.EMAIL_FROM,
   fileDirectory: config.EMAIL_FILE_DIRECTORY,
   smtp: config.SMTP_HOST
     ? {
-        host: config.SMTP_HOST,
-        port: config.SMTP_PORT,
-        secure: config.SMTP_SECURE === "true",
-        // Production insists on TLS; Mailpit on this machine has none.
-        requireTls: config.NODE_ENV === "production",
-        user: config.SMTP_USER,
-        pass: config.SMTP_PASS,
-      }
+      host: config.SMTP_HOST,
+      port: config.SMTP_PORT,
+      secure: config.SMTP_SECURE === "true",
+      // Production insists on TLS; Mailpit on this machine has none.
+      requireTls: config.NODE_ENV === "production",
+      user: config.SMTP_USER,
+      pass: config.SMTP_PASS,
+    }
     : undefined,
 } as const;
 

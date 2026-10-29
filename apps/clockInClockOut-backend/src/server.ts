@@ -2,6 +2,8 @@ import { createApp } from "./app.js"
 import { env } from "./config/index.js"
 import { prisma } from "@smartbusiness/database"
 import { logger } from "./shared/services/logger.js"
+import { closeRedisConnection } from "./shared/services/redis.service.js"
+import { initAutoClockOutScheduler, stopAutoClockOutScheduler } from "./modules/attendance/auto-clock-out.scheduler.js"
 
 // Reload trigger: S3 storage active - Mumbai ap-south-1
 
@@ -16,6 +18,9 @@ async function startServer() {
         // Start Server
         const server = app.listen(env.server.port, () => {
             logger.info({ port: env.server.port, environment: env.server.nodeEnv }, "Server started" );
+
+            // Initialize Auto-Clock-Out dual cron jobs (Midnight Day-Shift & Midday Night-Shift)
+            initAutoClockOutScheduler();
 
             // Pre-warm caches in background so admin users experience instant 1ms response on first load
             setTimeout(async () => {
@@ -53,7 +58,7 @@ async function startServer() {
                 } catch {
                     // non-fatal keepalive
                 }
-            }, 45000);
+            }, 15000);
             dbKeepAlive.unref();
         })
 
@@ -93,6 +98,8 @@ async function startServer() {
                     // Disconnect database
                     await prisma.$disconnect()
                     logger.info("Database disconnected")
+                    await closeRedisConnection()
+                    stopAutoClockOutScheduler()
 
                     clearTimeout(forceShutdownTimer)
                     logger.info("Shutdown complete")

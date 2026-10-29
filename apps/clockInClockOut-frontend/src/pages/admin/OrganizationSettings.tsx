@@ -1,43 +1,41 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { settingsService } from '../../services/settingsService';
-import BrandLoader from '../../components/BrandLoader';
-import { useAuth } from '../../context/AuthContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import {
+  Building2,
+  Building,
+  MapPin,
+  Crosshair,
+  Compass,
+  Clock,
+  Save,
+  CheckCircle2,
+  AlertTriangle,
+  Loader2,
+  ShieldCheck,
+  Info,
+  Sparkles,
+  RotateCcw,
+  Check,
+  X,
+} from 'lucide-react';
+
+import { settingsService } from '../../services/settingsService';
+import { useAuth } from '../../context/AuthContext';
 import { ShiftTimePicker } from '../../components/ShiftTimePicker';
+import { cn } from '../../lib/utils';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  TextField,
   Button,
-  Grid,
-  Divider,
-  Paper,
-  Snackbar,
-  Alert,
-  CircularProgress,
-  Skeleton,
-  useTheme,
-  Chip,
-  InputAdornment,
+  Card,
+  Badge,
+  Input,
+  Label,
+  Separator,
   Tooltip,
-} from '@mui/material';
-import {
-  MyLocation as LocationIcon,
-  Schedule as ClockIcon,
-  Business as CompanyIcon,
-  Save as SaveIcon,
-  HelpOutlined as InfoIcon,
-  CheckCircleRounded as CheckCircleIcon,
-  WarningAmberRounded as WarningIcon,
-  GpsFixed as GpsFixedIcon,
-  ApartmentRounded as CampusIcon,
-} from '@mui/icons-material';
+} from '../../components/ui';
 
 // Form validation schema matching backend UpdateGeofenceSchema
 const schema = z.object({
@@ -46,11 +44,21 @@ const schema = z.object({
   latitude: z
     .union([z.number(), z.nan()])
     .refine((val) => typeof val === 'number' && !isNaN(val), 'Latitude is required')
-    .pipe(z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90')),
+    .pipe(
+      z
+        .number()
+        .min(-90, 'Latitude must be between -90 and 90')
+        .max(90, 'Latitude must be between -90 and 90')
+    ),
   longitude: z
     .union([z.number(), z.nan()])
     .refine((val) => typeof val === 'number' && !isNaN(val), 'Longitude is required')
-    .pipe(z.number().min(-180, 'Longitude must be between -180 and 180').max(180, 'Longitude must be between -180 and 180')),
+    .pipe(
+      z
+        .number()
+        .min(-180, 'Longitude must be between -180 and 180')
+        .max(180, 'Longitude must be between -180 and 180')
+    ),
   radiusMeters: z
     .number({ message: 'Radius is required' })
     .min(10, 'Geofence radius must be at least 10 meters')
@@ -71,10 +79,16 @@ const schema = z.object({
 type SettingsFormValues = z.infer<typeof schema>;
 
 export const OrganizationSettingsPage: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user, currentTenant, workspaces, currentWorkspace, isSuperAdmin, updateOrganizationAndWorkspace } = useAuth();
+  const {
+    user,
+    currentTenant,
+    workspaces,
+    currentWorkspace,
+    isSuperAdmin,
+    updateOrganizationAndWorkspace,
+  } = useAuth();
 
   // Helper to sanitize workspace ID
   const cleanId = (id?: string | null): string => {
@@ -99,14 +113,23 @@ export const OrganizationSettingsPage: React.FC = () => {
   // Track if current coordinates were auto-detected / live-captured but not yet saved in DB
   const [hasUnsavedAutoGps, setHasUnsavedAutoGps] = useState(false);
 
-  // Ref to prevent repeat auto-detection loops per workspace
-  const autoGpsAttemptedRef = useRef<string | null>(null);
-
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  // Feedback toast state
+  const [toast, setToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: 'success' | 'error';
+  }>({
     open: false,
     message: '',
     severity: 'success',
   });
+
+  const showToast = (message: string, severity: 'success' | 'error' = 'success') => {
+    setToast({ open: true, message, severity });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, open: false }));
+    }, 4500);
+  };
 
   // Fetch geofence settings for the active workspace
   const { data: settingsData, isLoading } = useQuery({
@@ -138,15 +161,11 @@ export const OrganizationSettingsPage: React.FC = () => {
 
   const watchedValues = watch();
 
-  // HTML5 Live Geolocation detector (supports manual click or automatic fallback)
+  // HTML5 Live Geolocation detector
   const handleDetectLiveLocation = (isAuto = false) => {
     if (!navigator.geolocation) {
       if (!isAuto) {
-        setSnackbar({
-          open: true,
-          message: 'Geolocation is not supported by your browser.',
-          severity: 'error',
-        });
+        showToast('Geolocation is not supported by your browser.', 'error');
       }
       return;
     }
@@ -164,29 +183,24 @@ export const OrganizationSettingsPage: React.FC = () => {
         setIsDetectingGps(false);
         setHasUnsavedAutoGps(true);
 
-        setSnackbar({
-          open: true,
-          message: isAuto
-            ? `No saved coordinates found. Auto-detected your current location (Accuracy: ±${acc}m)`
+        showToast(
+          isAuto
+            ? `No saved coordinates found. Auto-detected your location (Accuracy: ±${acc}m)`
             : `Live coordinates captured (Accuracy: ±${acc}m)`,
-          severity: 'success',
-        });
+          'success'
+        );
       },
       (err) => {
         setIsDetectingGps(false);
         if (!isAuto) {
-          setSnackbar({
-            open: true,
-            message: `Location access denied: ${err.message}`,
-            severity: 'error',
-          });
+          showToast(`Location access denied: ${err.message}`, 'error');
         }
       },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   };
 
-  // Populate form values when data is loaded or workspace switches in top header
+  // Populate form values when data is loaded or workspace switches
   useEffect(() => {
     if (settingsData) {
       const g = settingsData.geofence;
@@ -210,19 +224,19 @@ export const OrganizationSettingsPage: React.FC = () => {
       if (hasValidCoords) {
         setHasUnsavedAutoGps(false);
         if (activeWorkspaceId) {
-          localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
-        }
-        if (currentTenant?.id) {
-          localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+          localStorage.setItem(
+            'geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''),
+            'true'
+          );
         }
       }
 
       if (g?.defaultShiftStartTime && g?.defaultShiftEndTime) {
         if (activeWorkspaceId) {
-          localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
-        }
-        if (currentTenant?.id) {
-          localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+          localStorage.setItem(
+            'shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''),
+            'true'
+          );
         }
       }
     } else if (!isValidWorkspaceId) {
@@ -237,7 +251,15 @@ export const OrganizationSettingsPage: React.FC = () => {
         defaultShiftEndTime: '18:00',
       });
     }
-  }, [settingsData, reset, activeWorkspaceId, isValidWorkspaceId, currentTenant?.name, currentTenant?.id, activeWs?.name]);
+  }, [
+    settingsData,
+    reset,
+    activeWorkspaceId,
+    isValidWorkspaceId,
+    currentTenant?.name,
+    currentTenant?.id,
+    activeWs?.name,
+  ]);
 
   // Update Mutation
   const updateMutation = useMutation({
@@ -253,7 +275,7 @@ export const OrganizationSettingsPage: React.FC = () => {
         defaultShiftStartTime: data.defaultShiftStartTime,
         defaultShiftEndTime: data.defaultShiftEndTime,
       }),
-    onSuccess: (res, variables) => {
+    onSuccess: (_res, variables) => {
       setHasUnsavedAutoGps(false);
       updateOrganizationAndWorkspace(variables.corporateName, variables.workspaceName);
       queryClient.invalidateQueries({ queryKey: ['adminGeofence'] });
@@ -261,36 +283,29 @@ export const OrganizationSettingsPage: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'] });
 
       if (activeWorkspaceId) {
-        localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
-        localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
-      }
-      if (currentTenant?.id) {
-        localStorage.setItem('geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
-        localStorage.setItem('shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''), 'true');
+        localStorage.setItem(
+          'geofence_configured_' + (activeWorkspaceId || currentTenant?.id || ''),
+          'true'
+        );
+        localStorage.setItem(
+          'shifts_configured_' + (activeWorkspaceId || currentTenant?.id || ''),
+          'true'
+        );
       }
 
-      setSnackbar({
-        open: true,
-        message: 'Organization and workspace settings saved successfully!',
-        severity: 'success',
-      });
+      showToast('Organization and workspace settings saved successfully!', 'success');
     },
     onError: (err: any) => {
-      setSnackbar({
-        open: true,
-        message: err?.response?.data?.error?.message || err?.message || 'Failed to save settings.',
-        severity: 'error',
-      });
+      showToast(
+        err?.response?.data?.error?.message || err?.message || 'Failed to save settings.',
+        'error'
+      );
     },
   });
 
   const onSubmit = (data: SettingsFormValues) => {
     if (!isValidWorkspaceId) {
-      setSnackbar({
-        open: true,
-        message: 'Please select an office campus workspace first.',
-        severity: 'error',
-      });
+      showToast('Please select an office campus workspace first.', 'error');
       return;
     }
     updateMutation.mutate(data);
@@ -298,437 +313,545 @@ export const OrganizationSettingsPage: React.FC = () => {
 
   const isConfigured = Boolean(settingsData?.isConfigured);
 
-  return (
-    <Box sx={{ maxWidth: 1000, mx: 'auto', width: '100%' }}>
-      {/* Page Header */}
-      <Box sx={{ mb: 3.5 }}>
-        <Typography variant="h4" sx={{ fontWeight: 800 }}>
-          Organization
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Configure physical office boundaries, GPS check-in perimeters, and standard shift hours
-          {activeWs?.name ? (
-            <>
-              {' for '}
-              <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                {activeWs.name}
-              </Box>
-            </>
-          ) : ''}
-          .
-        </Typography>
-      </Box>
+  // Format 12-hour display helper
+  const format12h = (time24?: string) => {
+    if (!time24 || !time24.includes(':')) return time24 || '--';
+    const [hStr, mStr] = time24.split(':');
+    const h = parseInt(hStr, 10);
+    if (isNaN(h)) return time24;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12.toString().padStart(2, '0')}:${mStr || '00'} ${ampm}`;
+  };
 
-      {/* 0 Workspace Notice Banner */}
-      {(!isValidWorkspaceId || (workspaces && workspaces.length === 0)) && (
-        <Alert
-          severity="info"
-          icon={<CampusIcon sx={{ fontSize: 20 }} />}
-          sx={{ mb: 3, borderRadius: 2.5 }}
-          action={
+  return (
+    <div className="flex flex-col gap-6 max-w-6xl mx-auto w-full">
+      {/* ── 1. Page Header ── */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="eyebrow">GEOFENCE & SHIFT GOVERNANCE</span>
+            <div className="flex items-center gap-3">
+              <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-[-0.02em] leading-tight text-ink">
+                Organization Settings
+              </h1>
+              {activeWs?.name && (
+                <Badge variant="brand" className="gap-1 font-mono text-[0.6875rem]">
+                  <Building className="size-3" />
+                  <span>{activeWs.name}</span>
+                </Badge>
+              )}
+            </div>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted">
+              Configure physical office boundaries, GPS check-in perimeters, and standard shift hours
+              {activeWs?.name ? (
+                <>
+                  {' for '}
+                  <strong className="text-ink font-semibold">{activeWs.name}</strong>
+                </>
+              ) : null}
+              .
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
             <Button
-              color="primary"
-              variant="contained"
-              size="small"
-              onClick={() => navigate('/workspace/select')}
-              sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
+              type="button"
+              variant="outline"
+              size="default"
+              onClick={() => handleDetectLiveLocation(false)}
+              disabled={isDetectingGps || updateMutation.isPending}
+              className="gap-1.5"
             >
-              Create Workspace
+              {isDetectingGps ? (
+                <Loader2 className="size-4 animate-spin text-primary-600" />
+              ) : (
+                <Crosshair className="size-4 text-primary-600" />
+              )}
+              <span>{isDetectingGps ? 'Detecting GPS...' : 'Use My Live GPS'}</span>
             </Button>
-          }
-        >
-          <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-            No Active Workspace Found
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            To configure geographic perimeters and shift rules, start by creating your primary workspace location.
-          </Typography>
-        </Alert>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. No Active Workspace Warning Banner ── */}
+      {(!isValidWorkspaceId || (workspaces && workspaces.length === 0)) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/70 p-4 text-xs text-sky-800">
+          <div className="flex items-start gap-3">
+            <Building2 className="size-5 shrink-0 text-sky-600 mt-0.5" />
+            <div>
+              <p className="font-semibold text-ink">No Active Workspace Found</p>
+              <p className="text-muted leading-relaxed mt-0.5">
+                To configure geographic perimeters and shift rules, start by selecting or creating your primary workspace location.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="brand"
+            size="sm"
+            onClick={() => navigate('/workspace/select')}
+          >
+            Create Workspace
+          </Button>
+        </div>
       )}
 
+      {/* ── 3. Unsaved Live GPS Alert Banner ── */}
+      {hasUnsavedAutoGps && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50/80 p-3.5 text-xs text-amber-900 shadow-xs">
+          <div className="flex items-start gap-2.5">
+            <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+            <div>
+              <p className="font-bold text-amber-950">Unsaved Live Location Captured</p>
+              <p className="text-amber-800 leading-relaxed">
+                Coordinates were captured from your current location, but haven&apos;t been committed to the server yet.
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="brand"
+            size="sm"
+            onClick={handleSubmit(onSubmit)}
+            disabled={updateMutation.isPending}
+            className="gap-1.5 h-8 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white"
+          >
+            {updateMutation.isPending ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Save className="size-3.5" />
+            )}
+            <span>Save Location</span>
+          </Button>
+        </div>
+      )}
+
+      {/* ── 4. Main Two-Column Layout ── */}
       {isLoading ? (
-        <Card sx={{ borderRadius: 3 }}>
-          <BrandLoader fullScreen message="Loading organization settings..." />
+        <Card className="p-12 text-center">
+          <div className="flex flex-col items-center justify-center gap-3">
+            <Loader2 className="size-7 animate-spin text-primary-600" />
+            <p className="font-mono text-xs text-muted">Loading organization settings...</p>
+          </div>
         </Card>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)}>
-          <Grid container spacing={3}>
-            {/* Left Side: Parameters Form */}
-            <Grid size={{ xs: 12, md: 8 }}>
-              <Card sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-                <CardContent sx={{ p: { xs: 3, sm: 4 } }}>
-
-                  {/* 1. Identity & Campus Hierarchy */}
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CompanyIcon fontSize="small" />
-                    1. Corporate & Campus Scope
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2.5, display: 'block' }}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 items-start">
+            {/* Left Column (8 cols): Form Parameters */}
+            <div className="flex flex-col gap-5 lg:col-span-8">
+              {/* 1. Corporate & Campus Scope Card */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                    <Building2 className="size-4" />
+                    <span>1. Corporate & Campus Scope</span>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
                     Corporate tenant and physical site context associated with this geofence.
-                  </Typography>
+                  </p>
+                </div>
 
-                  <Grid container spacing={2} sx={{ mb: 3.5 }}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        label="Parent Corporate Organization"
-                        error={!!errors.corporateName}
-                        helperText={
-                          errors.corporateName?.message ||
-                          (isSuperAdmin
-                            ? 'Corporate entity name (Editable by Super Admin)'
-                            : 'Corporate entity (Tenant level)')
-                        }
-                        variant={isSuperAdmin ? 'outlined' : 'filled'}
-                        size="small"
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Parent Corporate Organization */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="corporateName" className="text-xs font-medium text-ink">
+                      Parent Corporate Organization
+                    </Label>
+                    <div className="relative">
+                      <Building2 className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-faint" />
+                      <input
+                        id="corporateName"
+                        type="text"
+                        readOnly={!isSuperAdmin}
                         disabled={updateMutation.isPending}
-                        slotProps={{
-                          input: {
-                            readOnly: !isSuperAdmin,
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <CompanyIcon fontSize="small" color={isSuperAdmin ? 'primary' : 'action'} />
-                              </InputAdornment>
-                            ),
-                          },
-                        }}
+                        className={cn(
+                          'h-9 w-full rounded-lg border border-line pl-9 pr-3 text-xs text-ink transition-colors',
+                          !isSuperAdmin
+                            ? 'bg-subtle/70 cursor-not-allowed text-muted'
+                            : 'bg-canvas focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                          errors.corporateName && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
+                        )}
                         {...register('corporateName')}
                       />
-                    </Grid>
+                    </div>
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.corporateName?.message ||
+                        (isSuperAdmin
+                          ? 'Corporate entity name (Editable by Super Admin)'
+                          : 'Corporate entity (Tenant level)')}
+                    </span>
+                  </div>
 
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        label="Active Campus / Site"
-                        placeholder={activeWs ? 'e.g. Main Branch' : 'No workspace created yet'}
-                        error={!!errors.workspaceName}
-                        helperText={
-                          errors.workspaceName?.message ||
-                          (activeWs
-                            ? isSuperAdmin
-                              ? 'Campus / Branch name (Editable by Super Admin)'
-                              : activeWs.address || 'Physical site configured in the top navigation bar'
-                            : '')
-                        }
-                        variant={isSuperAdmin && activeWs ? 'outlined' : 'filled'}
-                        size="small"
+                  {/* Active Campus / Site */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="workspaceName" className="text-xs font-medium text-ink">
+                      Active Campus / Site
+                    </Label>
+                    <div className="relative">
+                      <Building className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-faint" />
+                      <input
+                        id="workspaceName"
+                        type="text"
+                        readOnly={!isSuperAdmin || !activeWs}
                         disabled={updateMutation.isPending || !activeWs}
-                        slotProps={{
-                          input: {
-                            readOnly: !isSuperAdmin || !activeWs,
-                            startAdornment: (
-                              <InputAdornment position="start">
-                                <CampusIcon fontSize="small" color={activeWs ? (isSuperAdmin ? 'primary' : 'action') : 'disabled'} />
-                              </InputAdornment>
-                            ),
-                          },
-                        }}
+                        placeholder={activeWs ? 'e.g. Main Campus' : 'No workspace created yet'}
+                        className={cn(
+                          'h-9 w-full rounded-lg border border-line pl-9 pr-3 text-xs text-ink transition-colors',
+                          !isSuperAdmin || !activeWs
+                            ? 'bg-subtle/70 cursor-not-allowed text-muted'
+                            : 'bg-canvas focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                          errors.workspaceName && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
+                        )}
                         {...register('workspaceName')}
                       />
-                    </Grid>
-                  </Grid>
+                    </div>
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.workspaceName?.message ||
+                        (activeWs
+                          ? isSuperAdmin
+                            ? 'Campus / Branch name (Editable by Super Admin)'
+                            : activeWs.address || 'Physical site configured in workspace switcher'
+                          : 'No active workspace')}
+                    </span>
+                  </div>
+                </div>
+              </Card>
 
-                  <Divider sx={{ my: 3 }} />
+              {/* 2. Geographic Perimeter & Radius Card */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                      <MapPin className="size-4" />
+                      <span>2. Geographic Perimeter & Radius</span>
+                    </div>
+                    <p className="text-xs text-muted leading-relaxed">
+                      Coordinates define the center of this campus. Mobile punches must fall within the allowed radius.
+                    </p>
+                  </div>
 
-                  {/* 2. Geofencing Coordinates & Radius */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <LocationIcon fontSize="small" />
-                      2. Geographic Perimeter & Radius
-                    </Typography>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleDetectLiveLocation(false)}
+                    disabled={isDetectingGps || updateMutation.isPending}
+                    className="gap-1.5 text-xs h-7"
+                  >
+                    {isDetectingGps ? (
+                      <Loader2 className="size-3 animate-spin text-primary-600" />
+                    ) : (
+                      <Crosshair className="size-3 text-primary-600" />
+                    )}
+                    <span>{isDetectingGps ? 'Detecting...' : 'Detect GPS'}</span>
+                  </Button>
+                </div>
 
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="secondary"
-                      onClick={() => handleDetectLiveLocation(false)}
-                      disabled={isDetectingGps || updateMutation.isPending}
-                      startIcon={isDetectingGps ? <CircularProgress size={14} color="inherit" /> : <GpsFixedIcon fontSize="small" />}
-                      sx={{ textTransform: 'none', borderRadius: 2 }}
-                    >
-                      {isDetectingGps ? 'Detecting GPS...' : 'Use My Live GPS'}
-                    </Button>
-                  </Box>
-
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
-                    Coordinates define the center of this campus. Mobile punches must fall within the allowed radius.
-                  </Typography>
-
-                  {/* Unsaved Live/Auto-Detected GPS Warning Banner */}
-                  {hasUnsavedAutoGps && (
-                    <Alert
-                      severity="warning"
-                      variant="outlined"
-                      icon={<WarningIcon fontSize="small" color="warning" />}
-                      action={
-                        <Button
-                          color="warning"
-                          size="small"
-                          variant="contained"
-                          onClick={handleSubmit(onSubmit)}
-                          disabled={updateMutation.isPending}
-                          startIcon={updateMutation.isPending ? <CircularProgress size={12} color="inherit" /> : <SaveIcon sx={{ fontSize: 13 }} />}
-                          sx={{
-                            fontWeight: 700,
-                            textTransform: 'none',
-                            fontSize: '0.75rem',
-                            py: 0.4,
-                            px: 1.25,
-                            borderRadius: 1.5,
-                          }}
-                        >
-                          {updateMutation.isPending ? 'Saving...' : 'Save Location'}
-                        </Button>
-                      }
-                      sx={{
-                        mb: 2.5,
-                        borderRadius: 2,
-                        py: 0.5,
-                        px: 1.5,
-                        borderWidth: 1.5,
-                        bgcolor: (theme) =>
-                          theme.palette.mode === 'dark' ? 'rgba(237, 108, 2, 0.1)' : '#fff8e1',
-                        alignItems: 'center',
-                      }}
-                    >
-                      <Box>
-                        <Typography variant="caption" sx={{ fontWeight: 800, color: 'warning.dark', display: 'block', lineHeight: 1.3 }}>
-                          Unsaved Live Location Detected
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', lineHeight: 1.3 }}>
-                          Coordinates were captured from your current location, but haven't been saved yet.
-                        </Typography>
-                      </Box>
-                    </Alert>
-                  )}
-
-                  <Grid container spacing={2.5} sx={{ mb: 3.5 }}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        type="number"
-                        slotProps={{ htmlInput: { step: 'any' } }}
-                        label="Center Latitude"
-                        placeholder="e.g. 19.0760"
-                        error={!!errors.latitude}
-                        helperText={errors.latitude?.message || 'Decimal degrees (-90 to +90)'}
-                        disabled={updateMutation.isPending}
-                        {...register('latitude', { valueAsNumber: true })}
-                      />
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        type="number"
-                        slotProps={{ htmlInput: { step: 'any' } }}
-                        label="Center Longitude"
-                        placeholder="e.g. 72.8777"
-                        error={!!errors.longitude}
-                        helperText={errors.longitude?.message || 'Decimal degrees (-180 to +180)'}
-                        disabled={updateMutation.isPending}
-                        {...register('longitude', { valueAsNumber: true })}
-                      />
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Permitted Radius (Meters)"
-                        error={!!errors.radiusMeters}
-                        helperText={errors.radiusMeters?.message || 'Standard perimeter (e.g. 100m, 150m)'}
-                        disabled={updateMutation.isPending}
-                        {...register('radiusMeters', { valueAsNumber: true })}
-                        slotProps={{
-                          input: {
-                            endAdornment: <InputAdornment position="end">meters</InputAdornment>,
-                          },
-                        }}
-                      />
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <TextField
-                        fullWidth
-                        type="number"
-                        label="Late Punch Grace Window"
-                        error={!!errors.graceMinutes}
-                        helperText={errors.graceMinutes?.message || 'Minutes allowed past shift start before marked Late'}
-                        disabled={updateMutation.isPending}
-                        {...register('graceMinutes', { valueAsNumber: true })}
-                        slotProps={{
-                          input: {
-                            endAdornment: <InputAdornment position="end">mins</InputAdornment>,
-                          },
-                        }}
-                      />
-                    </Grid>
-                  </Grid>
-
-                  <Divider sx={{ my: 3 }} />
-
-                  {/* 3. Default Shift Standard Hours */}
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 0.5, color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ClockIcon fontSize="small" />
-                    3. Workspace Default Shift Hours
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mb: 2.5, display: 'block' }}>
-                    Baseline office schedule. Employees clocking in after start time + grace period will be tagged as "Late".
-                  </Typography>
-
-                  <Grid container spacing={2.5} sx={{ mb: 2 }}>
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <ShiftTimePicker
-                        label="Default Shift Start Time"
-                        value={watchedValues.defaultShiftStartTime || '09:00'}
-                        onChange={(val) => setValue('defaultShiftStartTime', val, { shouldValidate: true })}
-                        error={!!errors.defaultShiftStartTime}
-                        helperText={errors.defaultShiftStartTime?.message || 'Expected morning clock-in time'}
-                        disabled={updateMutation.isPending}
-                      />
-                    </Grid>
-
-                    <Grid size={{ xs: 12, sm: 6 }}>
-                      <ShiftTimePicker
-                        label="Default Shift End Time"
-                        value={watchedValues.defaultShiftEndTime || '18:00'}
-                        onChange={(val) => setValue('defaultShiftEndTime', val, { shouldValidate: true })}
-                        error={!!errors.defaultShiftEndTime}
-                        helperText={errors.defaultShiftEndTime?.message || 'Expected evening clock-out time'}
-                        disabled={updateMutation.isPending}
-                      />
-                    </Grid>
-                  </Grid>
-
-                  {/* Submit Button */}
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 4 }}>
-                    <Button
-                      type="submit"
-                      variant="contained"
-                      color="primary"
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {/* Center Latitude */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="latitude" className="text-xs font-medium text-ink">
+                      Center Latitude
+                    </Label>
+                    <input
+                      id="latitude"
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 19.0760"
                       disabled={updateMutation.isPending}
-                      startIcon={updateMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
-                      sx={{ py: 1.25, px: 4, borderRadius: 2, fontWeight: 700 }}
-                    >
-                      {updateMutation.isPending ? 'Saving Settings...' : 'Save Organization'}
-                    </Button>
-                  </Box>
-
-                </CardContent>
-              </Card>
-            </Grid>
-
-            {/* Right Side: Campus Geofence Status Card */}
-            <Grid size={{ xs: 12, md: 4 }}>
-              {/* Geofence Status Badge Card */}
-              <Card sx={{ borderRadius: 3, mb: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                      CAMPUS GEOFENCE STATUS
-                    </Typography>
-                    <Chip
-                      size="small"
-                      icon={hasUnsavedAutoGps ? <WarningIcon fontSize="small" /> : isConfigured ? <CheckCircleIcon fontSize="small" /> : <WarningIcon fontSize="small" />}
-                      label={hasUnsavedAutoGps ? 'Unsaved (Live GPS)' : isConfigured ? 'Configured' : 'Needs Setup'}
-                      color={hasUnsavedAutoGps ? 'warning' : isConfigured ? 'success' : 'default'}
-                      sx={{ fontWeight: 700, borderRadius: 1.5 }}
-                    />
-                  </Box>
-
-                  <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                    {activeWs?.name || 'No workspace selected'}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                    {activeWs?.address || 'No campus address'}
-                  </Typography>
-
-                  <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2, mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block' }}>
-                        ACTIVE GPS PERIMETER
-                      </Typography>
-                      {hasUnsavedAutoGps && (
-                        <Chip
-                          size="small"
-                          label="Pending Save"
-                          color="warning"
-                          variant="filled"
-                          sx={{ fontWeight: 700, fontSize: '0.68rem', height: 18 }}
-                        />
+                      className={cn(
+                        'h-9 w-full rounded-lg border border-line bg-canvas px-3 font-mono text-xs text-ink transition-colors focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                        errors.latitude && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
                       )}
-                    </Box>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Lat: {typeof watchedValues.latitude === 'number' && !isNaN(watchedValues.latitude) ? watchedValues.latitude : '—'}
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      Lon: {typeof watchedValues.longitude === 'number' && !isNaN(watchedValues.longitude) ? watchedValues.longitude : '—'}
-                    </Typography>
-                    <Typography variant="caption" color="primary.main" sx={{ fontWeight: 700, display: 'block', mt: 1 }}>
-                      Perimeter Radius: {watchedValues.radiusMeters || 100} meters
-                    </Typography>
-                  </Paper>
+                      {...register('latitude', { valueAsNumber: true })}
+                    />
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.latitude?.message || 'Decimal degrees (-90 to +90)'}
+                    </span>
+                  </div>
 
-                  <Paper variant="outlined" sx={{ p: 2, bgcolor: 'action.hover', borderRadius: 2 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
-                      STANDARD SHIFT WINDOW
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                      {watchedValues.defaultShiftStartTime || '09:00'} — {watchedValues.defaultShiftEndTime || '18:00'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      Late Punch Grace: {watchedValues.graceMinutes || 15} minutes
-                    </Typography>
-                  </Paper>
+                  {/* Center Longitude */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="longitude" className="text-xs font-medium text-ink">
+                      Center Longitude
+                    </Label>
+                    <input
+                      id="longitude"
+                      type="number"
+                      step="any"
+                      placeholder="e.g. 72.8777"
+                      disabled={updateMutation.isPending}
+                      className={cn(
+                        'h-9 w-full rounded-lg border border-line bg-canvas px-3 font-mono text-xs text-ink transition-colors focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                        errors.longitude && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
+                      )}
+                      {...register('longitude', { valueAsNumber: true })}
+                    />
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.longitude?.message || 'Decimal degrees (-180 to +180)'}
+                    </span>
+                  </div>
 
-                  {gpsAccuracy && (
-                    <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <GpsFixedIcon color="success" sx={{ fontSize: 16 }} />
-                      <Typography variant="caption" color="text.secondary">
-                        Last live GPS detection accuracy: ±{gpsAccuracy}m
-                      </Typography>
-                    </Box>
+                  {/* Permitted Radius */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="radiusMeters" className="text-xs font-medium text-ink">
+                      Permitted Radius (Meters)
+                    </Label>
+                    <div className="relative">
+                      <input
+                        id="radiusMeters"
+                        type="number"
+                        placeholder="100"
+                        disabled={updateMutation.isPending}
+                        className={cn(
+                          'h-9 w-full rounded-lg border border-line bg-canvas pl-3 pr-16 font-mono text-xs text-ink transition-colors focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                          errors.radiusMeters && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
+                        )}
+                        {...register('radiusMeters', { valueAsNumber: true })}
+                      />
+                      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                        meters
+                      </span>
+                    </div>
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.radiusMeters?.message || 'Standard perimeter (e.g. 100m, 150m)'}
+                    </span>
+                  </div>
+
+                  {/* Late Punch Grace Window */}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="graceMinutes" className="text-xs font-medium text-ink">
+                      Late Punch Grace Window
+                    </Label>
+                    <div className="relative">
+                      <input
+                        id="graceMinutes"
+                        type="number"
+                        placeholder="15"
+                        disabled={updateMutation.isPending}
+                        className={cn(
+                          'h-9 w-full rounded-lg border border-line bg-canvas pl-3 pr-14 font-mono text-xs text-ink transition-colors focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400',
+                          errors.graceMinutes && 'border-rose-400 focus:border-rose-400 focus:ring-rose-400'
+                        )}
+                        {...register('graceMinutes', { valueAsNumber: true })}
+                      />
+                      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                        mins
+                      </span>
+                    </div>
+                    <span className="font-mono text-[0.625rem] text-muted">
+                      {errors.graceMinutes?.message || 'Minutes allowed past shift start before marked Late'}
+                    </span>
+                  </div>
+                </div>
+              </Card>
+
+              {/* 3. Workspace Default Shift Hours Card */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                    <Clock className="size-4" />
+                    <span>3. Workspace Default Shift Hours</span>
+                  </div>
+                  <p className="text-xs text-muted leading-relaxed">
+                    Baseline office schedule. Employees clocking in after start time + grace period will be tagged as &quot;Late&quot;.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <ShiftTimePicker
+                    label="Default Shift Start Time"
+                    value={watchedValues.defaultShiftStartTime || '09:00'}
+                    onChange={(val) => setValue('defaultShiftStartTime', val, { shouldValidate: true })}
+                    error={!!errors.defaultShiftStartTime}
+                    helperText={errors.defaultShiftStartTime?.message || 'Expected morning clock-in time'}
+                    disabled={updateMutation.isPending}
+                  />
+
+                  <ShiftTimePicker
+                    label="Default Shift End Time"
+                    value={watchedValues.defaultShiftEndTime || '18:00'}
+                    onChange={(val) => setValue('defaultShiftEndTime', val, { shouldValidate: true })}
+                    error={!!errors.defaultShiftEndTime}
+                    helperText={errors.defaultShiftEndTime?.message || 'Expected evening clock-out time'}
+                    disabled={updateMutation.isPending}
+                  />
+                </div>
+              </Card>
+
+              {/* Submit Button Bar */}
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button
+                  type="submit"
+                  variant="brand"
+                  size="default"
+                  disabled={updateMutation.isPending || !isValidWorkspaceId}
+                  className="gap-2 px-6 shadow-sm"
+                >
+                  {updateMutation.isPending ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      <span>Saving Settings...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="size-4" />
+                      <span>Save Organization Settings</span>
+                    </>
                   )}
-                </CardContent>
+                </Button>
+              </div>
+            </div>
+
+            {/* Right Column (4 cols): Live Status & Haversine Info */}
+            <div className="flex flex-col gap-5 lg:col-span-4">
+              {/* Card 1: Campus Geofence Status */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <span className="eyebrow">CAMPUS GEOFENCE STATUS</span>
+                  <Badge
+                    variant={
+                      hasUnsavedAutoGps
+                        ? 'warning'
+                        : isConfigured
+                        ? 'success'
+                        : 'outline'
+                    }
+                    className="font-mono text-[0.6875rem] font-bold"
+                  >
+                    {hasUnsavedAutoGps ? (
+                      'Unsaved (Live GPS)'
+                    ) : isConfigured ? (
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="size-3" /> Configured
+                      </span>
+                    ) : (
+                      'Needs Setup'
+                    )}
+                  </Badge>
+                </div>
+
+                <div className="flex flex-col">
+                  <span className="text-sm font-semibold text-ink">
+                    {activeWs?.name || 'No workspace selected'}
+                  </span>
+                  <span className="text-xs text-muted leading-tight mt-0.5">
+                    {activeWs?.address || 'No campus address configured'}
+                  </span>
+                </div>
+
+                {/* Active GPS Perimeter Preview Box */}
+                <div className="rounded-xl border border-line bg-subtle/50 p-3.5 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[0.625rem] font-bold uppercase tracking-wider text-muted">
+                      ACTIVE GPS PERIMETER
+                    </span>
+                    {hasUnsavedAutoGps && (
+                      <Badge variant="warning" className="font-mono text-[0.625rem] px-1.5 py-0">
+                        Pending Save
+                      </Badge>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col gap-1 font-mono text-xs">
+                    <div className="flex justify-between items-center text-ink">
+                      <span className="text-muted">Latitude:</span>
+                      <strong className="num">
+                        {typeof watchedValues.latitude === 'number' && !isNaN(watchedValues.latitude)
+                          ? watchedValues.latitude
+                          : '—'}
+                      </strong>
+                    </div>
+                    <div className="flex justify-between items-center text-ink">
+                      <span className="text-muted">Longitude:</span>
+                      <strong className="num">
+                        {typeof watchedValues.longitude === 'number' && !isNaN(watchedValues.longitude)
+                          ? watchedValues.longitude
+                          : '—'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-line mt-1 pt-2 flex items-center justify-between font-mono text-xs">
+                    <span className="text-primary-700 font-medium">Radius:</span>
+                    <strong className="text-primary-700 font-bold num">
+                      {watchedValues.radiusMeters || 100} meters
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Standard Shift Window Preview Box */}
+                <div className="rounded-xl border border-line bg-subtle/50 p-3.5 flex flex-col gap-1.5">
+                  <span className="font-mono text-[0.625rem] font-bold uppercase tracking-wider text-muted">
+                    STANDARD SHIFT WINDOW
+                  </span>
+                  <div className="font-mono text-xs font-semibold text-ink">
+                    {format12h(watchedValues.defaultShiftStartTime || '09:00')} —{' '}
+                    {format12h(watchedValues.defaultShiftEndTime || '18:00')}
+                  </div>
+                  <span className="font-mono text-[0.6875rem] text-muted">
+                    Late Grace: <strong>{watchedValues.graceMinutes || 15} minutes</strong>
+                  </span>
+                </div>
+
+                {gpsAccuracy && (
+                  <div className="flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50/60 border border-emerald-200 rounded-lg p-2 font-mono">
+                    <Crosshair className="size-3.5 text-emerald-600 shrink-0" />
+                    <span>Last GPS detection accuracy: ±{gpsAccuracy}m</span>
+                  </div>
+                )}
               </Card>
 
-              {/* Haversine Proximity Explanation Card */}
-              <Card sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.06)' }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1.5, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <InfoIcon color="primary" sx={{ fontSize: 18 }} />
-                    Haversine Proximity Engine
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.6, fontSize: '0.85rem' }}>
-                    During check-in, the mobile app transmits the device's live GPS coordinates. The backend evaluates great-circle geodesic distance using the <strong>Haversine Formula</strong> against these office coordinates.
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6, fontSize: '0.85rem' }}>
-                    Employees within <strong>{watchedValues.radiusMeters || 100} meters</strong> proceed to facial recognition. Punches beyond this perimeter trigger an out-of-bounds warning.
-                  </Typography>
-                </CardContent>
+              {/* Card 2: Haversine Proximity Engine Info */}
+              <Card className="p-5 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                  <Compass className="size-4" />
+                  <span>Haversine Proximity Engine</span>
+                </div>
+
+                <p className="text-xs text-muted leading-relaxed">
+                  During check-in, the mobile app transmits the device&apos;s live GPS coordinates. The backend evaluates great-circle geodesic distance using the <strong className="text-ink">Haversine Formula</strong> against these office coordinates.
+                </p>
+
+                <p className="text-xs text-muted leading-relaxed">
+                  Employees within <strong className="text-ink font-mono">{watchedValues.radiusMeters || 100} meters</strong> proceed to facial recognition. Punches beyond this perimeter trigger an out-of-bounds warning.
+                </p>
+
+                <div className="flex items-center gap-2 border-t border-line pt-3 mt-1 text-[0.6875rem] text-muted font-mono">
+                  <ShieldCheck className="size-3.5 text-emerald-600 shrink-0" />
+                  <span>Geodesic great-circle math active</span>
+                </div>
               </Card>
-            </Grid>
-          </Grid>
+            </div>
+          </div>
         </form>
       )}
 
-      {/* Snackbar notification */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={5000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%', borderRadius: 2 }}
+      {/* Floating Toast Notification */}
+      {toast.open && (
+        <div
+          className={cn(
+            'fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl border p-3.5 text-xs font-medium shadow-pop animate-in slide-in-from-bottom-3',
+            toast.severity === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-rose-200 bg-rose-50 text-rose-900'
+          )}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          {toast.severity === 'success' ? (
+            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+          ) : (
+            <AlertTriangle className="size-4 text-rose-600 shrink-0" />
+          )}
+          <span>{toast.message}</span>
+          <button
+            type="button"
+            onClick={() => setToast((prev) => ({ ...prev, open: false }))}
+            className="ml-2 rounded p-0.5 hover:bg-black/5"
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 };
 

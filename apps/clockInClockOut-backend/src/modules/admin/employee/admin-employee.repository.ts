@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@smartbusiness/database";
+import { prisma, Prisma, TenantRole } from "@smartbusiness/database";
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
@@ -17,6 +17,13 @@ export class AdminEmployeeRepository {
       Prisma.sql`wm.deleted_at IS NULL`,
       Prisma.sql`w.deleted_at IS NULL`,
       Prisma.sql`w.tenant_id = ${tenantId}`,
+      Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM tenant_members tm
+        WHERE tm.tenant_id = ${tenantId}
+          AND tm.user_id = wm.user_id
+          AND tm.role::text = 'OWNER'
+          AND tm.deleted_at IS NULL
+      )`,
     ];
 
     if (callerUserId) {
@@ -175,6 +182,55 @@ export class AdminEmployeeRepository {
   /**
    * Find user by email
    */
+  /**
+   * Find user by email along with tenant and workspace memberships scoped to tenantId
+   */
+  async findUserWithTenantWorkspaces(email: string, tenantId: string) {
+    return prisma.user.findFirst({
+      where: {
+        email: { equals: email, mode: "insensitive" },
+        deletedAt: null,
+      },
+      include: {
+        tenantMembers: {
+          where: { tenantId },
+          select: { id: true, role: true },
+        },
+        workspaceMembers: {
+          where: {
+            workspace: {
+              tenantId,
+              deletedAt: null,
+            },
+            deletedAt: null,
+          },
+          include: {
+            workspace: {
+              select: {
+                id: true,
+                businessName: true,
+              },
+            },
+            employeeProfiles: {
+              where: { deletedAt: null },
+              select: {
+                id: true,
+                employeeCode: true,
+                designation: true,
+                department: true,
+                phone: true,
+                role: true,
+                shiftType: true,
+                biometricPhotoUrl: true,
+                isActive: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
   async findUserByEmail(email: string) {
     return prisma.user.findUnique({
       where: { email },
@@ -215,8 +271,20 @@ export class AdminEmployeeRepository {
       where: {
         deletedAt: null,
         workspaceMember: {
+          deletedAt: null,
           workspace: {
             tenantId,
+            deletedAt: null,
+          },
+          user: {
+            deletedAt: null,
+            tenantMembers: {
+              none: {
+                tenantId,
+                role: TenantRole.OWNER,
+                deletedAt: null,
+              },
+            },
           },
         },
       },
@@ -246,21 +314,30 @@ export class AdminEmployeeRepository {
         where: { email: input.email },
       });
 
-      if (!user) {
+      if (user) {
+        const existingWorkspaceMember =
+          await tx.workspaceMember.findUnique({
+            where: {
+              workspaceId_userId: {
+                workspaceId,
+                userId: user.id,
+              },
+            },
+          });
+        if (existingWorkspaceMember) {
+          throw new Error(
+            "An employee with this email already exists in this workspace."
+          );
+        }
+
+        // User exists, but belongs to a different workspace.
+        // Reuse the user without overwriting their global details.
+      } else {
         user = await tx.user.create({
           data: {
             fullName: input.name,
             email: input.email,
             passwordHash,
-            isActive: input.status === "active",
-          },
-        });
-      } else {
-        // Update user name/active
-        user = await tx.user.update({
-          where: { id: user.id },
-          data: {
-            fullName: input.name,
             isActive: input.status === "active",
           },
         });

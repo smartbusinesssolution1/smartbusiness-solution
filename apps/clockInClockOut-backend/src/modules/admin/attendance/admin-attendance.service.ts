@@ -5,6 +5,7 @@ import PDFDocument from "pdfkit";
 import { UPLOADS_DIR } from "../../../shared/utils/uploadDir.js";
 import { AdminAttendanceRepository } from "./admin-attendance.repository.js";
 import { memoryCache } from "../../../shared/services/cache.service.js";
+import { calculateHaversineDistanceMeters } from "../../attendance/attendance.service.js";
 import type {
   AdminAttendanceQueryInput,
   AdminAttendanceExportInput,
@@ -15,6 +16,53 @@ import type {
 export class AdminAttendanceService {
   constructor(private readonly repo: AdminAttendanceRepository) { }
 
+  private mapFormattedSessions(sessions: any[], workspace: any) {
+    const wsSettings = workspace?.attendanceSettings;
+    const wsLat = wsSettings?.latitude ? Number(wsSettings.latitude) : null;
+    const wsLng = wsSettings?.longitude ? Number(wsSettings.longitude) : null;
+    const wsRadius = wsSettings?.radiusMeters ? Number(wsSettings.radiusMeters) : 100;
+    const locationName = workspace?.businessName || "Campus Main Office";
+
+    return (sessions || []).map((s: any, idx: number) => {
+      let distanceMeters: number | null = null;
+      if (s.clockInLatitude && s.clockInLongitude && wsLat !== null && wsLng !== null) {
+        distanceMeters = Math.round(
+          calculateHaversineDistanceMeters(
+            Number(s.clockInLatitude),
+            Number(s.clockInLongitude),
+            wsLat,
+            wsLng
+          )
+        );
+      }
+
+      const punchType = distanceMeters !== null
+        ? (distanceMeters <= wsRadius ? "On-Site (Geofenced)" : "Remote / External")
+        : "On-Site (Geofenced)";
+
+      return {
+        id: s.id,
+        sessionNumber: idx + 1,
+        isFirstSession: idx === 0,
+        checkIn: this.formatTimeOnly(s.clockInTime),
+        checkOut: this.formatTimeOnly(s.clockOutTime),
+        status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
+        workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
+        notes: s.notes || null,
+        clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
+        clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
+        clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
+        clockOutFaceMatchConfidence: s.clockOutFaceMatchConfidence ? Number(s.clockOutFaceMatchConfidence) : null,
+        clockOutLatitude: s.clockOutLatitude ? Number(s.clockOutLatitude) : null,
+        clockOutLongitude: s.clockOutLongitude ? Number(s.clockOutLongitude) : null,
+        isAutoClosed: s.isAutoClosed || false,
+        distanceMeters,
+        locationName,
+        punchType,
+      };
+    });
+  }
+
   /**
    * Format a Date into YYYY-MM-DD
    */
@@ -24,6 +72,19 @@ export class AdminAttendanceService {
     const month = String(dt.getUTCMonth() + 1).padStart(2, "0");
     const day = String(dt.getUTCDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
+  }
+
+  /**
+   * Format a Date into DD, MMM YYYY (e.g. 27, Oct 2026)
+   */
+  private formatDisplayDate(date: Date | string): string {
+    const dt = new Date(date);
+    if (isNaN(dt.getTime())) return String(date ?? "");
+    const day = String(dt.getUTCDate()).padStart(2, "0");
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const month = monthNames[dt.getUTCMonth()];
+    const year = dt.getUTCFullYear();
+    return `${day}, ${month} ${year}`;
   }
 
   /**
@@ -125,7 +186,6 @@ export class AdminAttendanceService {
           status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
-          selfieUrl: s.selfieUrl || null,
           clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
           clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
           clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
@@ -223,7 +283,7 @@ export class AdminAttendanceService {
       const isAbsent = statusLower === "absent";
       return {
         id: rec.id,
-        date: this.formatDateOnly(rec.clockInDate),
+        date: this.formatDisplayDate(rec.clockInDate),
         employeeId: rec.employee.employeeCode,
         employeeName: rec.employee.workspaceMember.user.fullName,
         avatarUrl: rec.employee.biometricPhotoUrl || null,
@@ -244,7 +304,6 @@ export class AdminAttendanceService {
           status: idx === 0 ? s.status.toLowerCase() : (s.status.toLowerCase() === "late" ? "present" : s.status.toLowerCase()),
           workingHours: this.calculateWorkingHours(s.workingHours, s.clockInTime, s.clockOutTime),
           notes: s.notes || null,
-          selfieUrl: s.selfieUrl || null,
           clockInFaceMatchConfidence: s.clockInFaceMatchConfidence ? Number(s.clockInFaceMatchConfidence) : null,
           clockInLatitude: s.clockInLatitude ? Number(s.clockInLatitude) : null,
           clockInLongitude: s.clockInLongitude ? Number(s.clockInLongitude) : null,
@@ -257,9 +316,7 @@ export class AdminAttendanceService {
     });
 
     const reportsDir = path.join(UPLOADS_DIR, "reports");
-    if (!fs.existsSync(reportsDir)) {
-      fs.mkdirSync(reportsDir, { recursive: true });
-    }
+    await fs.promises.mkdir(reportsDir, { recursive: true });
 
     const timestamp = Date.now();
     const dateStamp = this.formatDateOnly(new Date());
@@ -269,9 +326,9 @@ export class AdminAttendanceService {
     const targetFilePath = path.join(reportsDir, filename);
 
     if (format === "csv") {
-      this.writeCsvFile(formattedItems, targetFilePath);
+      await this.writeCsvFile(formattedItems, targetFilePath);
     } else if (format === "xlsx") {
-      this.writeXlsxFile(formattedItems, targetFilePath);
+      await this.writeXlsxFile(formattedItems, targetFilePath);
     } else if (format === "pdf") {
       await this.writePdfFile(formattedItems, targetFilePath);
     }
@@ -286,7 +343,7 @@ export class AdminAttendanceService {
     };
   }
 
-  private writeCsvFile(items: FormattedAttendanceItem[], filePath: string): void {
+  private async writeCsvFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
     const headers = [
       "Date",
       "Employee ID",
@@ -314,10 +371,10 @@ export class AdminAttendanceService {
     ]);
 
     const content = "\uFEFF" + [headers.map(escapeCsv).join(","), ...rows.map((r) => r.join(","))].join("\r\n");
-    fs.writeFileSync(filePath, content, "utf-8");
+    await fs.promises.writeFile(filePath, content, "utf-8");
   }
 
-  private writeXlsxFile(items: FormattedAttendanceItem[], filePath: string): void {
+  private async writeXlsxFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
     const headers = [
       "Date",
       "Employee ID",
@@ -345,7 +402,7 @@ export class AdminAttendanceService {
     const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
 
     worksheet["!cols"] = [
-      { wch: 12 },
+      { wch: 16 },
       { wch: 14 },
       { wch: 22 },
       { wch: 12 },
@@ -358,7 +415,8 @@ export class AdminAttendanceService {
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Audit");
-    XLSX.writeFile(workbook, filePath);
+    const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+    await fs.promises.writeFile(filePath, buffer);
   }
 
   private writePdfFile(items: FormattedAttendanceItem[], filePath: string): Promise<void> {
@@ -388,8 +446,8 @@ export class AdminAttendanceService {
 
         // Table Header
         let y = 88;
-        const colX = [36, 105, 185, 305, 375, 445, 525, 595];
-        const colWidths = [65, 75, 115, 65, 65, 75, 65, 205];
+        const colX = [36, 120, 195, 315, 385, 455, 535, 605];
+        const colWidths = [80, 70, 115, 65, 65, 75, 65, 195];
         const headers = ["Date", "Emp ID", "Employee Name", "Check-In", "Check-Out", "Status", "Hours", "Audit Notes"];
 
         const drawTableHeader = (posY: number) => {

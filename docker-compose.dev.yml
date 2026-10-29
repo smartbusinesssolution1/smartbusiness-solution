@@ -8,11 +8,11 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     # Append-only file: queued jobs survive a container restart, as they would in production.
-    command: ["redis-server", "--appendonly", "yes"]
+    command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
       - redis-dev-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 2s
       timeout: 3s
       retries: 30

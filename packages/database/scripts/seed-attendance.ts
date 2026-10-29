@@ -336,9 +336,6 @@ async function seedAttendanceRecords() {
         clockOutLatitude: LOCATION.latitude,
         clockOutLongitude: LOCATION.longitude,
         clockOutFaceMatchConfidence: record.confidenceOut,
-        selfieUrl: isAbsent
-          ? null
-          : `https://example.com/attendance/${record.employeeId}/${record.daysAgo}.jpg`,
       },
     });
   }

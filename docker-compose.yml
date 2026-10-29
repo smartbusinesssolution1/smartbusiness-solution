@@ -111,8 +111,8 @@ services:
   # ── Chatbot Admin Console Frontend (Nginx Alpine) ──
   chatbot-frontend:
     build:
-      context: apps/chatbot-frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/chatbot-frontend/Dockerfile
     image: chatbot-frontend:latest
     container_name: smartbusiness-chatbot-frontend
     restart: always

@@ -19,6 +19,7 @@ import {
   Grid,
   Alert,
   Tooltip,
+  Collapse,
 } from '@mui/material';
 import {
   AssignmentTurnedIn as ChecklistIcon,
@@ -32,6 +33,8 @@ import {
   Close as CloseIcon,
   Check as CheckIcon,
   Add as AddIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
@@ -71,10 +74,19 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
 
   const tenantId = currentTenant?.id || 'default_tenant';
   const dismissStorageKey = `checkpoint_onboarding_dismissed_${tenantId}`;
+  const sessionDismissKey = `checkpoint_onboarding_dismissed_session_${tenantId}`;
 
-  const [isDismissed, setIsDismissed] = useState<boolean>(() => {
-    return localStorage.getItem(dismissStorageKey) === 'true';
+  // Session-only dismissal: only hides for current session when user explicitly presses close.
+  // NEVER permanently hides unless 100% complete.
+  const [isSessionDismissed, setIsSessionDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(sessionDismissKey) === 'true';
+    } catch {
+      return false;
+    }
   });
+
+  const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
 
   // Modal State for Step 1 (Create Workspace)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -177,22 +189,51 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
   const progressPercent = Math.round((completedCount / steps.length) * 100);
   const isAllComplete = completedCount === steps.length;
 
-  // Automatically dismiss and remove guide permanently when 100% complete
+  // Automatically dismiss permanently only when 100% complete.
+  // If not 100% complete, ensure localStorage does NOT permanently hide it!
   useEffect(() => {
-    if (isAllComplete) {
-      localStorage.setItem(dismissStorageKey, 'true');
+    try {
+      if (isAllComplete) {
+        localStorage.setItem(dismissStorageKey, 'true');
+      } else {
+        localStorage.removeItem(dismissStorageKey);
+        localStorage.removeItem('checkpoint_onboarding_dismissed');
+      }
+    } catch {
+      // Storage unavailable
     }
   }, [isAllComplete, dismissStorageKey]);
 
   const handleDismiss = () => {
-    setIsDismissed(true);
-    localStorage.setItem(dismissStorageKey, 'true');
+    if (isAllComplete) {
+      try {
+        localStorage.setItem(dismissStorageKey, 'true');
+      } catch {}
+    } else {
+      // Only dismiss for this session; will reappear after logout/login or via "Show Checklist"
+      setIsSessionDismissed(true);
+      try {
+        sessionStorage.setItem(sessionDismissKey, 'true');
+      } catch {}
+    }
+  };
+
+  const handleReopen = () => {
+    setIsSessionDismissed(false);
+    try {
+      sessionStorage.removeItem(sessionDismissKey);
+    } catch {}
   };
 
   const handleCreateWorkspaceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wsName.trim()) {
       setWsError('Workspace name is required (e.g. Main Headquarters).');
+      return;
+    }
+
+    if (zipCode.trim() && !/^\d{5}(-\d{4})?$/.test(zipCode.trim())) {
+      setWsError('ZIP code must be 5 digits (e.g. 78701) or ZIP+4 (e.g. 78701-1234).');
       return;
     }
 
@@ -220,8 +261,67 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
     }
   };
 
-  if (isDismissed || isAllComplete) {
+  // If 100% complete, permanently remove from view
+  if (isAllComplete) {
     return null;
+  }
+
+  // If dismissed for current session, show compact banner so admin can easily reopen
+  if (isSessionDismissed) {
+    return (
+      <Card
+        sx={{
+          borderRadius: 3,
+          border: (t) => `1px dashed ${t.palette.divider}`,
+          p: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          bgcolor: 'background.paper',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Box
+            sx={{
+              width: 26,
+              height: 26,
+              borderRadius: 1.5,
+              bgcolor: 'primary.light',
+              color: 'primary.main',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <ChecklistIcon sx={{ fontSize: 16 }} />
+          </Box>
+          <Box>
+            <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.primary', display: 'block', lineHeight: 1.2 }}>
+              Tenant Onboarding Guide ({progressPercent}%)
+            </Typography>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', fontWeight: 500 }}>
+              {completedCount} of {steps.length} milestones complete • Visible until 100%
+            </Typography>
+          </Box>
+        </Box>
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={handleReopen}
+          sx={{
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            textTransform: 'none',
+            py: 0.35,
+            px: 1.25,
+            borderRadius: 1.5,
+          }}
+        >
+          Show Checklist
+        </Button>
+      </Card>
+    );
   }
 
   return (
@@ -275,7 +375,12 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
                 border: (t) => `1px solid ${isAllComplete ? '#a7f3d0' : t.palette.primary.light}`,
               }}
             />
-            <Tooltip title="Hide Guide">
+            <Tooltip title={isCollapsed ? 'Expand Steps' : 'Collapse Steps'}>
+              <IconButton size="small" onClick={() => setIsCollapsed(!isCollapsed)} sx={{ color: 'text.disabled', p: 0.5 }}>
+                {isCollapsed ? <ExpandMoreIcon sx={{ fontSize: 18 }} /> : <ExpandLessIcon sx={{ fontSize: 18 }} />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Minimize for this session (will reappear on next login until 100% complete)">
               <IconButton size="small" onClick={handleDismiss} sx={{ color: 'text.disabled', p: 0.5 }}>
                 <CloseIcon sx={{ fontSize: 16 }} />
               </IconButton>
@@ -301,7 +406,8 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
         </Box>
 
         {/* Steps List */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+        <Collapse in={!isCollapsed}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           {steps.map((step) => {
             const isNextStep = !step.isCompleted && (step.id === 1 || steps[step.id - 2]?.isCompleted);
 
@@ -419,7 +525,8 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
               </ButtonBase>
             );
           })}
-        </Box>
+          </Box>
+        </Collapse>
       </Card>
 
       {/* Modal Dialog for Step 1: Create Workspace */}

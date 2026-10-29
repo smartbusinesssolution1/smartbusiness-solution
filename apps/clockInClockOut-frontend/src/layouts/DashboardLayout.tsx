@@ -1,488 +1,500 @@
 import React, { useState, Suspense } from 'react';
+import { useNavigate, useLocation, Outlet, NavLink } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Users,
+  BarChart3,
+  Building2,
+  UserCheck,
+  Search,
+  ShieldCheck,
+  LogOut,
+  Sun,
+  Moon,
+  Menu as MenuIcon,
+  X as CloseIcon,
+  Clock,
+  ChevronsUpDown,
+  Check as CheckIcon,
+  User as UserIcon,
+  Plus,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAppTheme } from '../context/ThemeContext';
-import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import { getAvatarUrl } from '../utils/imageUrl';
 import BrandLoader from '../components/BrandLoader';
+import { cn } from '../lib/utils';
 import {
-  Box,
-  Drawer,
-  AppBar,
-  Toolbar,
-  List,
-  Typography,
-  Divider,
-  IconButton,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Avatar,
-  Menu,
-  MenuItem,
-  Tooltip,
-  useTheme,
-  useMediaQuery,
   Button,
-} from '@mui/material';
-import {
-  Menu as MenuIcon,
-  ChevronLeft as ChevronLeftIcon,
-  Dashboard as DashboardIcon,
-  History as HistoryIcon,
-  Person as PersonIcon,
-  People as PeopleIcon,
-  Assessment as AssessmentIcon,
-  Settings as SettingsIcon,
-  Brightness4 as Brightness4Icon,
-  Brightness7 as Brightness7Icon,
-  ExitToApp as ExitToAppIcon,
-  AdminPanelSettings as AdminIcon,
-  Fingerprint as FingerprintIcon,
-} from '@mui/icons-material';
-import WorkspaceSwitcher from '../components/WorkspaceSwitcher';
+  Badge,
+  Input,
+  Menu,
+  MenuTrigger,
+  MenuContent,
+  MenuItem,
+  MenuLabel,
+  MenuSeparator,
+  Tooltip,
+  TooltipProvider,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+} from '../components/ui';
 
-const DRAWER_WIDTH = 270;
-const COLLAPSED_WIDTH = 76;
+interface NavItemDef {
+  text: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+  preload?: () => void;
+}
 
 export const DashboardLayout: React.FC = () => {
-  const { user, isSuperAdmin, logout } = useAuth();
+  const { user, isSuperAdmin, currentTenant, logout, currentWorkspace, workspaces, switchWorkspace } = useAuth();
+  const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
   const { mode, toggleTheme } = useAppTheme();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
   const location = useLocation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const collapsed = !isMobile && isCollapsed;
-  const currentDrawerWidth = isMobile ? 0 : (isCollapsed ? COLLAPSED_WIDTH : DRAWER_WIDTH);
-
-  const handleDrawerToggle = () => {
-    if (isMobile) {
-      setMobileOpen(!mobileOpen);
-    } else {
-      setIsCollapsed(!isCollapsed);
+  const handleConfirmLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+      setShowLogoutConfirm(false);
+      navigate('/login');
     }
   };
 
-  const handleProfileMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
-    setAnchorEl(event.currentTarget);
+  // Exact 5 sidebar menu items requested
+  const menuItems: NavItemDef[] = [
+    {
+      text: 'Admin Dashboard',
+      path: '/admin/dashboard',
+      icon: LayoutDashboard,
+      preload: () => import('../pages/admin/AdminDashboard'),
+    },
+    {
+      text: 'Employee Directory',
+      path: '/admin/employees',
+      icon: Users,
+      preload: () => import('../pages/admin/EmployeeList'),
+    },
+    {
+      text: 'Attendance Reports',
+      path: '/admin/reports',
+      icon: BarChart3,
+      preload: () => import('../pages/admin/AttendanceReport'),
+    },
+    {
+      text: 'Organization',
+      path: '/admin/settings',
+      icon: Building2,
+      preload: () => import('../pages/admin/OrganizationSettings'),
+    },
+    {
+      text: 'My Profile',
+      path: '/admin/profile',
+      icon: UserCheck,
+    },
+  ];
+
+  const initials = (name?: string) => {
+    if (!name) return 'SB';
+    return name
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
   };
 
-  const handleProfileMenuClose = () => {
-    setAnchorEl(null);
-  };
+  const activeWorkspaceName = currentWorkspace?.name || 'Main Organization';
 
-  const handleLogoutClick = async () => {
-    handleProfileMenuClose();
-    await logout();
-    navigate('/login');
-  };
-
-  const isAdminOrSuperAdmin = user?.role === 'admin' || user?.role === 'super_admin' || isSuperAdmin;
-
-  const handleProfileNavigate = () => {
-    handleProfileMenuClose();
-    if (isAdminOrSuperAdmin) {
-      navigate('/admin/profile');
-    } else {
-      navigate('/employee/profile');
-    }
-  };
-
-  // Define sidebar navigation items based on user role
-  const menuItems = isAdminOrSuperAdmin
-    ? [
-      { text: 'Admin Dashboard', icon: <DashboardIcon />, path: '/admin/dashboard' },
-      { text: 'Employee Directory', icon: <PeopleIcon />, path: '/admin/employees' },
-      { text: 'Attendance Reports', icon: <AssessmentIcon />, path: '/admin/reports' },
-      { text: 'Organization', icon: <SettingsIcon />, path: '/admin/settings' },
-      { text: 'My Profile', icon: <PersonIcon />, path: '/admin/profile' },
-    ]
-    : [
-      { text: 'My Dashboard', icon: <DashboardIcon />, path: '/employee/dashboard' },
-      { text: 'Attendance History', icon: <HistoryIcon />, path: '/employee/history' },
-      { text: 'My Profile', icon: <PersonIcon />, path: '/employee/profile' },
-    ];
-
-  const drawerContent = (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', overflowX: 'hidden' }}>
-      <Toolbar
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'space-between',
-          px: collapsed ? 1 : 2,
-          py: 1.5,
-          minHeight: '64px !important',
-        }}
-      >
-        <Box
-          onClick={() => navigate(isAdminOrSuperAdmin ? '/admin/dashboard' : '/employee/dashboard')}
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.25,
-            cursor: 'pointer',
-            overflow: 'hidden',
-          }}
-        >
-          <Box
-            component="img"
-            src="/icon.png"
-            alt="Clock-in Clock-Out"
-            sx={{
-              width: 36,
-              height: 36,
-              borderRadius: 2,
-              objectFit: 'contain',
-              flexShrink: 0,
+  const sidebarContent = (
+    <div className="flex h-full flex-col justify-between overflow-y-auto px-3.5 py-4 select-none">
+      <div className="flex flex-col gap-3.5">
+        {/* Brand Header */}
+        <div className="flex items-center justify-between px-1.5 pt-0.5">
+          <div
+            onClick={() => {
+              navigate('/admin/dashboard');
+              setMobileOpen(false);
             }}
-          />
-          {!collapsed && (
-            <Typography
-              variant="subtitle1"
-              noWrap
-              sx={{
-                fontWeight: 800,
-                color: 'text.primary',
-                whiteSpace: 'nowrap',
-                letterSpacing: '-0.3px',
-                fontSize: '1rem',
-              }}
-            >
-              Clock-in Clock-Out
-            </Typography>
-          )}
-        </Box>
-
-        {!collapsed && !isMobile && (
-          <IconButton
-            size="small"
-            onClick={() => setIsCollapsed(true)}
-            sx={{
-              color: 'text.secondary',
-              p: 0.5,
-              '&:hover': { color: 'text.primary' },
-            }}
+            className="group flex cursor-pointer items-center gap-2.5 transition-opacity hover:opacity-90"
           >
-            <ChevronLeftIcon fontSize="small" />
-          </IconButton>
-        )}
-      </Toolbar>
-      <Divider />
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl overflow-hidden shadow-xs border border-line bg-panel p-0.5">
+              <img
+                src="/favicon.png"
+                alt="SmartBusiness Clock-In"
+                className="size-8 object-contain rounded-lg"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[0.9375rem] font-bold tracking-tight text-ink">SmartBusiness</span>
+              <span className="font-mono text-[0.625rem] font-bold tracking-[0.12em] text-primary-600 uppercase">
+                CLOCK IN / OUT
+              </span>
+            </div>
+          </div>
+          {/* Mobile close button */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setMobileOpen(false)}
+            className="lg:hidden"
+            aria-label="Close menu"
+          >
+            <CloseIcon className="size-4" />
+          </Button>
+        </div>
 
-      {/* Current User Quick Info */}
-      <Box
-        sx={{
-          p: collapsed ? 1.5 : 2.5,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          gap: 1.5,
-        }}
-      >
-        <Tooltip title={collapsed ? (user?.name || '') : ''} placement="right">
-          <Avatar
-            src={getAvatarUrl(user?.avatarUrl)}
-            alt={user?.name}
-            sx={{
-              width: collapsed ? 40 : 48,
-              height: collapsed ? 40 : 48,
-              border: `2px solid ${theme.palette.primary.main}`,
-            }}
-          />
-        </Tooltip>
-        {!collapsed && (
-          <Box sx={{ overflow: 'hidden' }}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {user?.name}
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {isAdminOrSuperAdmin ? (
-                <AdminIcon sx={{ fontSize: 14, color: theme.palette.secondary.main }} />
-              ) : null}
-              <Typography variant="caption" sx={{ color: theme.palette.text.secondary, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
-                {isSuperAdmin ? 'Super Administrator' : user?.role === 'admin' ? 'Administrator' : user?.designation || 'Employee'}
-              </Typography>
-            </Box>
-          </Box>
-        )}
-      </Box>
+        {/* Workspace Switcher using shadcn DropdownMenu */}
+        <Menu>
+          <MenuTrigger asChild>
+            <button
+              type="button"
+              className="group flex w-full items-center gap-2.5 rounded-xl border border-line bg-panel p-2 text-left shadow-card transition-all hover:border-line-strong hover:bg-subtle/40 focus:outline-none focus:ring-2 focus:ring-primary-500/20 data-[state=open]:border-primary-500/50 data-[state=open]:ring-2 data-[state=open]:ring-primary-500/20 cursor-pointer"
+            >
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary-50 font-mono text-xs font-semibold text-primary-700 ring-1 ring-primary-100 ring-inset dark:bg-primary-950 dark:text-primary-300 dark:ring-primary-800/60">
+                {initials(activeWorkspaceName)}
+              </span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[0.8125rem] font-semibold text-ink group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                  {activeWorkspaceName}
+                </span>
+                <span className="truncate font-mono text-[0.6875rem] text-muted">
+                  {isSuperAdmin ? 'Super Administrator' : 'Admin Console'}
+                </span>
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0 text-faint group-hover:text-muted transition-colors" />
+            </button>
+          </MenuTrigger>
+          <MenuContent
+            align="start"
+            sideOffset={6}
+            className="w-[calc(16.25rem-1.75rem)] min-w-[240px] max-w-[280px] p-1.5 shadow-pop border border-line bg-panel rounded-xl"
+          >
+            {/* Header with Title and Total Count Badge */}
+            <div className="flex items-center justify-between px-2 py-1.5 mb-1 border-b border-line">
+              <span className="font-mono text-[0.625rem] font-semibold tracking-wider text-muted uppercase">
+                Workspaces
+              </span>
+              <span className="rounded-full bg-subtle px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted">
+                {workspaces?.length || 0}
+              </span>
+            </div>
 
-      <Divider />
+            {/* Scrollable Workspace List */}
+            <div className="max-h-60 overflow-y-auto flex flex-col gap-1 pr-0.5">
+              {workspaces && workspaces.length > 0 ? (
+                workspaces.map((ws) => {
+                  const isCurrent = ws.id === currentWorkspace?.id;
+                  return (
+                    <MenuItem
+                      key={ws.id}
+                      onClick={() => switchWorkspace(ws.id)}
+                      className={cn(
+                        'group flex items-center gap-2.5 rounded-lg p-2 text-xs transition-colors cursor-pointer',
+                        isCurrent
+                          ? 'bg-primary-50/90 text-primary-950 border border-primary-200 shadow-xs font-semibold dark:bg-primary-950/70 dark:text-primary-100 dark:border-primary-800/80 data-[highlighted]:bg-primary-100/80 dark:data-[highlighted]:bg-primary-900/60'
+                          : 'text-ink hover:bg-subtle/80 data-[highlighted]:bg-subtle border border-transparent'
+                      )}
+                    >
+                      {/* Avatar Square */}
+                      <span
+                        className={cn(
+                          'flex size-7 shrink-0 items-center justify-center rounded-md font-mono text-[11px] font-bold transition-colors',
+                          isCurrent
+                            ? 'bg-primary-600 text-white shadow-xs'
+                            : 'bg-subtle text-muted group-hover:bg-primary-50 group-hover:text-primary-700 dark:group-hover:bg-primary-950 dark:group-hover:text-primary-300'
+                        )}
+                      >
+                        {initials(ws.name)}
+                      </span>
 
-      <List sx={{ px: collapsed ? 1 : 1.5, py: 2, flexGrow: 1 }}>
-        {menuItems.map((item) => {
-          const isActive = location.pathname === item.path || (item.path !== '/' && location.pathname.startsWith(item.path + '/'));
-          return (
-            <ListItem key={item.text} disablePadding sx={{ mb: 0.5 }}>
-              <Tooltip title={collapsed ? item.text : ''} placement="right">
-                <ListItemButton
+                      {/* Workspace Name & Subtitle */}
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span
+                          className={cn(
+                            'truncate leading-tight',
+                            isCurrent
+                              ? 'text-primary-950 dark:text-primary-100 font-semibold'
+                              : 'text-ink font-medium'
+                          )}
+                        >
+                          {ws.name}
+                        </span>
+                        <span
+                          className={cn(
+                            'truncate font-mono text-[10px] leading-tight mt-0.5',
+                            isCurrent
+                              ? 'text-primary-700 dark:text-primary-300'
+                              : 'text-muted'
+                          )}
+                        >
+                          {ws.city || ws.address || (ws.isDefault ? 'Default' : 'Active Location')}
+                        </span>
+                      </div>
+
+                      {/* Active Indicator Checkmark */}
+                      {isCurrent && (
+                        <CheckIcon className="size-4 shrink-0 text-primary-600 dark:text-primary-400 stroke-[2.5]" />
+                      )}
+                    </MenuItem>
+                  );
+                })
+              ) : (
+                <div className="px-2.5 py-2 text-xs text-muted">No workspaces available</div>
+              )}
+            </div>
+
+            {/* Owner Action: + Add New Workspace */}
+            {isOwner && (
+              <>
+                <MenuSeparator className="my-1.5" />
+                <MenuItem
                   onClick={() => {
-                    navigate(item.path);
+                    navigate('/workspace/select');
                     setMobileOpen(false);
                   }}
-                  onMouseEnter={() => {
-                    // Preload route chunk on hover for instant 0ms transition
-                    if (item.path === '/admin/employees') import('../pages/admin/EmployeeList');
-                    else if (item.path === '/admin/dashboard') import('../pages/admin/AdminDashboard');
-                    else if (item.path === '/admin/reports') import('../pages/admin/AttendanceReport');
-                    else if (item.path === '/admin/settings') import('../pages/admin/OrganizationSettings');
-                    else if (item.path === '/employee/dashboard') import('../pages/employee/EmployeeDashboard');
-                    else if (item.path === '/employee/history') import('../pages/employee/AttendanceHistory');
-                  }}
-                  sx={{
-                    borderRadius: 2,
-                    py: 1.25,
-                    px: collapsed ? 1.25 : 2,
-                    justifyContent: collapsed ? 'center' : 'flex-start',
-                    transition: 'all 0.15s ease-in-out',
-                    backgroundColor: isActive
-                      ? (theme.palette.mode === 'light' ? '#EEF2FF' : 'rgba(99, 102, 241, 0.16)')
-                      : 'transparent',
-                    color: isActive
-                      ? (theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE')
-                      : theme.palette.text.primary,
-                    '&:hover': {
-                      backgroundColor: isActive
-                        ? (theme.palette.mode === 'light' ? '#E0E7FF' : 'rgba(99, 102, 241, 0.24)')
-                        : (theme.palette.mode === 'light' ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)'),
-                    },
-                  }}
+                  className="group flex items-center justify-between rounded-lg p-2 text-xs font-semibold text-primary-700 bg-primary-50 border border-primary-200/90 hover:bg-primary-100 hover:border-primary-300 data-[highlighted]:bg-primary-100 data-[highlighted]:text-primary-800 dark:bg-primary-950/50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-900/60 dark:data-[highlighted]:bg-primary-900/70 dark:data-[highlighted]:text-primary-100 transition-colors cursor-pointer shadow-xs"
                 >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: collapsed ? 'auto' : 40,
-                      justifyContent: 'center',
-                      color: isActive
-                        ? (theme.palette.mode === 'light' ? '#4F46E5' : '#818CF8')
-                        : theme.palette.text.secondary,
-                      transition: 'color 0.15s ease',
-                    }}
-                  >
-                    {item.icon}
-                  </ListItemIcon>
-                  {!collapsed && (
-                    <ListItemText
-                      primary={
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontSize: '0.875rem',
-                            fontWeight: isActive ? 700 : 500,
-                            color: 'inherit',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {item.text}
-                        </Typography>
-                      }
-                    />
+                  <div className="flex items-center gap-2">
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-primary-600 text-white shadow-xs group-hover:bg-primary-700 dark:group-hover:bg-primary-500 transition-colors">
+                      <Plus className="size-3.5 stroke-[2.5]" />
+                    </span>
+                    <span>Manage Workspaces</span>
+                  </div>
+                  <span className="rounded bg-primary-100 border border-primary-200/80 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider text-primary-700 dark:bg-primary-900/70 dark:border-primary-800/80 dark:text-primary-300">
+                    Owner
+                  </span>
+                </MenuItem>
+              </>
+            )}
+          </MenuContent>
+        </Menu>
+
+        {/* Quick Action Button (shadcn brand variant) */}
+        <Button
+          variant="brand"
+          size="default"
+          onClick={() => navigate('/admin/employees/new')}
+          className="w-full"
+        >
+          <UserIcon className="size-3.5" />
+          <span>+ Onboard Staff</span>
+        </Button>
+
+        {/* Navigation Items (The exact 5 items) */}
+        <nav className="flex flex-col gap-1 pt-1" aria-label="Main Navigation">
+          {menuItems.map((item) => {
+            const Icon = item.icon;
+            const isActive =
+              location.pathname === item.path ||
+              (item.path !== '/admin/dashboard' && location.pathname.startsWith(item.path));
+
+            return (
+              <NavLink
+                key={item.text}
+                to={item.path}
+                onMouseEnter={item.preload}
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  'relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 text-xs font-medium transition-all',
+                  isActive
+                    ? 'bg-theme-gradient text-white shadow-theme-pill font-semibold'
+                    : 'text-ink-soft hover:bg-subtle hover:text-ink'
+                )}
+              >
+                <Icon
+                  className={cn(
+                    'size-4 shrink-0 transition-colors',
+                    isActive ? 'text-white' : 'text-muted'
                   )}
-                </ListItemButton>
-              </Tooltip>
-            </ListItem>
-          );
-        })}
-      </List>
+                />
+                <span className="truncate">{item.text}</span>
+              </NavLink>
+            );
+          })}
+        </nav>
+      </div>
 
-      <Divider />
-
-      <Box sx={{ p: collapsed ? 1 : 2 }}>
-        <Tooltip title={collapsed ? 'Sign Out' : ''} placement="right">
+      {/* Bottom Area: 2FA / Geofence Card & User Profile */}
+      <div className="flex flex-col gap-2.5 pt-3">
+        {/* Security / Geofence Status Card */}
+        <div className="flex items-center justify-between rounded-xl border border-line bg-panel p-2.5 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="flex size-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 ring-inset">
+              <ShieldCheck className="size-4" />
+            </span>
+            <div className="flex flex-col">
+              <span className="text-[0.75rem] font-semibold text-ink">Geofence Guard</span>
+              <span className="font-mono text-[0.625rem] text-emerald-600">Active & Enforced</span>
+            </div>
+          </div>
           <Button
-            fullWidth
-            variant="outlined"
-            color="inherit"
-            startIcon={collapsed ? undefined : <ExitToAppIcon />}
-            onClick={handleLogoutClick}
-            sx={{
-              borderColor: theme.palette.divider,
-              color: theme.palette.text.secondary,
-              py: 1,
-              minWidth: collapsed ? 'auto' : undefined,
-              px: collapsed ? 1 : 2,
-              justifyContent: 'center',
-              '&:hover': {
-                borderColor: theme.palette.error.main,
-                color: theme.palette.error.main,
-                backgroundColor: theme.palette.mode === 'light' ? '#fef2f2' : 'rgba(239, 68, 68, 0.08)',
-              }
-            }}
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/admin/settings')}
+            className="h-6 px-2 text-[0.6875rem] font-medium text-primary-600 hover:text-primary-700 hover:bg-primary-50"
           >
-            {collapsed ? <ExitToAppIcon fontSize="small" /> : 'Sign Out'}
+            Config
           </Button>
-        </Tooltip>
-      </Box>
-    </Box>
+        </div>
+
+        {/* User Profile Card */}
+        <div className="flex items-center justify-between rounded-xl border border-line bg-panel p-2 shadow-sm">
+          <div
+            onClick={() => navigate('/admin/profile')}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 overflow-hidden"
+          >
+            {user?.avatarUrl ? (
+              <img
+                src={getAvatarUrl(user.avatarUrl)}
+                alt={user?.name || 'User'}
+                className="size-8 shrink-0 rounded-full border border-primary-200 object-cover"
+              />
+            ) : (
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-600 font-mono text-xs font-semibold text-white">
+                {initials(user?.name)}
+              </div>
+            )}
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-xs font-semibold text-ink">{user?.name || 'Admin'}</span>
+              <span className="truncate text-[0.6875rem] text-muted">
+                {isSuperAdmin ? 'Super Admin' : user?.role === 'admin' ? 'Administrator' : 'Admin'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            <Tooltip content={`Switch to ${mode === 'light' ? 'Dark' : 'Light'} Mode`}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+              >
+                {mode === 'light' ? <Moon className="size-3.5" /> : <Sun className="size-3.5" />}
+              </Button>
+            </Tooltip>
+            <Tooltip content="Sign Out">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setShowLogoutConfirm(true)}
+                className="hover:bg-rose-50 hover:text-rose-600"
+                aria-label="Sign Out"
+              >
+                <LogOut className="size-3.5" />
+              </Button>
+            </Tooltip>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 
   return (
-    <Box id="checkpoint-app" sx={{ display: 'flex', minHeight: '100vh', bgcolor: 'background.default' }}>
-      {/* AppBar */}
-      <AppBar
-        position="fixed"
-        sx={{
-          width: { md: `calc(100% - ${currentDrawerWidth}px)` },
-          ml: { md: `${currentDrawerWidth}px` },
-          boxShadow: 'none',
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          bgcolor: 'background.paper',
-          color: 'text.primary',
-          transition: theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-        }}
-      >
-        <Toolbar sx={{ justifyContent: 'space-between', px: { xs: 2, sm: 3 } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 1.5 } }}>
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              edge="start"
-              onClick={handleDrawerToggle}
-              sx={{ mr: { xs: 0.5, sm: 1 }, display: { md: isCollapsed ? 'inline-flex' : 'none' } }}
-            >
-              <MenuIcon />
-            </IconButton>
-            <Box
-              component="img"
-              src="/icon.png"
-              alt="Clock In Clock Out"
-              sx={{ height: 32, width: 32, objectFit: 'contain', display: { xs: 'none', sm: 'block', md: 'none' } }}
+    <TooltipProvider delayDuration={150}>
+      <div className="flex min-h-screen bg-canvas text-ink">
+        {/* Desktop Sticky Sidebar */}
+        <aside className="sticky top-0 hidden h-screen w-[16.25rem] shrink-0 border-r border-line bg-sidebar lg:block">
+          {sidebarContent}
+        </aside>
+
+        {/* Mobile Drawer Backdrop and Panel */}
+        {mobileOpen && (
+          <div className="fixed inset-0 z-50 flex lg:hidden">
+            <div
+              className="fixed inset-0 bg-ink/25 backdrop-blur-[2px] transition-opacity"
+              onClick={() => setMobileOpen(false)}
             />
-            {/* Workspace / Tenant Switcher - Strictly restricted to Super Admin / Organization Owner */}
-            {isSuperAdmin && <WorkspaceSwitcher />}
-          </Box>
+            <div className="relative z-10 w-[17rem] max-w-[85vw] border-r border-line bg-sidebar shadow-pop">
+              {sidebarContent}
+            </div>
+          </div>
+        )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            {/* Theme Toggle */}
-            <Tooltip title={`Toggle ${mode === 'light' ? 'Dark' : 'Light'} Mode`}>
-              <IconButton onClick={toggleTheme} color="inherit" sx={{ border: `1px solid ${theme.palette.divider}`, p: 1 }}>
-                {mode === 'light' ? <Brightness4Icon /> : <Brightness7Icon />}
-              </IconButton>
-            </Tooltip>
-
-            {/* User Dropdown */}
-            <Tooltip title="Account settings">
-              <IconButton onClick={handleProfileMenuOpen} size="small" sx={{ p: 0.5 }}>
-                <Avatar src={getAvatarUrl(user?.avatarUrl)} alt={user?.name} sx={{ width: 36, height: 36 }} />
-              </IconButton>
-            </Tooltip>
-
-            <Menu
-              anchorEl={anchorEl}
-              open={Boolean(anchorEl)}
-              onClose={handleProfileMenuClose}
-              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-              slotProps={{
-                paper: {
-                  sx: {
-                    mt: 1.5,
-                    minWidth: 180,
-                    boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
-                    border: `1px solid ${theme.palette.divider}`,
-                  },
-                },
-              }}
+        {/* Main Content Stage */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Mobile Header */}
+          <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-panel/90 px-4 backdrop-blur-md lg:hidden">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setMobileOpen(true)}
+              aria-label="Open navigation menu"
             >
-              <MenuItem onClick={handleProfileNavigate}>
-                <ListItemIcon>
-                  <PersonIcon fontSize="small" />
-                </ListItemIcon>
-                My Profile
-              </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleLogoutClick} sx={{ color: 'error.main' }}>
-                <ListItemIcon>
-                  <ExitToAppIcon fontSize="small" color="error" />
-                </ListItemIcon>
-                Sign Out
-              </MenuItem>
-            </Menu>
-          </Box>
-        </Toolbar>
-      </AppBar>
+              <MenuIcon className="size-5" />
+            </Button>
+            <div className="flex items-center gap-2">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-lg overflow-hidden border border-line bg-panel p-0.5">
+                <img
+                  src="/favicon.png"
+                  alt="SmartBusiness Clock-In"
+                  className="size-6 object-contain rounded-md"
+                />
+              </div>
+              <span className="text-sm font-bold tracking-tight text-ink">SmartBusiness</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+            >
+              {mode === 'light' ? <Moon className="size-4" /> : <Sun className="size-4" />}
+            </Button>
+          </header>
 
-      {/* Navigation Drawer */}
-      <Box
-        component="nav"
-        sx={{
-          width: { md: currentDrawerWidth },
-          flexShrink: { md: 0 },
-          transition: theme.transitions.create('width', {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-        }}
-        aria-label="mailbox folders"
-      >
-        {/* Mobile Drawer */}
-        <Drawer
-          variant="temporary"
-          open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{ keepMounted: true }}
-          sx={{
-            display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DRAWER_WIDTH, borderRight: `1px solid ${theme.palette.divider}` },
-          }}
-        >
-          {drawerContent}
-        </Drawer>
-
-        {/* Desktop Drawer */}
-        <Drawer
-          variant="permanent"
-          sx={{
-            display: { xs: 'none', md: 'block' },
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: currentDrawerWidth,
-              borderRight: `1px solid ${theme.palette.divider}`,
-              overflowX: 'hidden',
-              transition: theme.transitions.create('width', {
-                easing: theme.transitions.easing.sharp,
-                duration: theme.transitions.duration.enteringScreen,
-              }),
-            },
-          }}
-          open
-        >
-          {drawerContent}
-        </Drawer>
-      </Box>
-
-      {/* Main Content Stage */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: { xs: 2.5, sm: 4 },
-          width: { md: `calc(100% - ${currentDrawerWidth}px)` },
-          minHeight: '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: theme.transitions.create(['width', 'margin'], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
+          {/* Content Body */}
+          <main className="flex-1 p-4 sm:p-6 lg:p-8">
+            <Suspense fallback={<BrandLoader fullScreen message="Loading dashboard view..." />}>
+              <Outlet />
+            </Suspense>
+          </main>
+        </div>
+      </div>
+          {/* Logout Confirmation Dialog */}
+      <Dialog
+        open={showLogoutConfirm}
+        onOpenChange={(open) => {
+          if (!isLoggingOut) setShowLogoutConfirm(open);
         }}
       >
-        <Toolbar /> {/* Spacer for top AppBar */}
-        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <Suspense fallback={<BrandLoader fullScreen message="Loading workspace view..." />}>
-            <Outlet />
-          </Suspense>
-        </Box>
-      </Box>
-    </Box>
+        <DialogContent className="max-w-md">
+          <DialogHeader
+            title="Confirm Logout"
+            description="Are you sure you want to log out? You will need to sign in again to access your account."
+            icon={<LogOut className="size-4 text-rose-600" />}
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowLogoutConfirm(false)}
+              disabled={isLoggingOut}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmLogout}
+              loading={isLoggingOut}
+            >
+              {isLoggingOut ? 'Logging out...' : 'Log Out'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </TooltipProvider>
   );
 };
 

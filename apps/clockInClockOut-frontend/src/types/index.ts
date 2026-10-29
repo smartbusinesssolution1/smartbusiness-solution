@@ -21,6 +21,8 @@ export interface Workspace {
   phone?: string;
   isDefault?: boolean;
   employeeCount?: number;
+  role?: string;
+  userRole?: string;
   createdAt?: string;
 }
 
@@ -64,7 +66,6 @@ export interface AttendanceSessionLog {
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
   workingHours: number;
   notes?: string | null;
-  selfieUrl?: string | null;
   clockInFaceMatchConfidence?: number | null;
   clockInLatitude?: number | null;
   clockInLongitude?: number | null;
@@ -72,6 +73,9 @@ export interface AttendanceSessionLog {
   clockOutLatitude?: number | null;
   clockOutLongitude?: number | null;
   isAutoClosed?: boolean;
+  distanceMeters?: number | null;
+  locationName?: string | null;
+  punchType?: string | null;
 }
 
 export interface AttendanceRecord {
@@ -85,7 +89,6 @@ export interface AttendanceRecord {
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
   workingHours: number; // in hours (Total sum)
   notes?: string;
-  selfieUrl?: string;
   workspaceId?: string;
   workspaceName?: string;
   totalSessions?: number;
@@ -191,26 +194,4 @@ export interface AdminDashboardMetrics {
     absent: number;
   }[];
   departmentStats?: DepartmentAttendanceStat[];
-}
-
-export interface TodaySessionInfo {
-  id: string;
-  sessionNumber: number;
-  checkIn: string;
-  checkOut: string | null;
-  workingHours: number;
-  status: string;
-  isActive: boolean;
-}
-
-export interface EmployeeDashboardMetrics {
-  todayAttendance: AttendanceRecord | null;
-  totalPresent: number;
-  totalLate: number;
-  totalWorkingHours: number;
-  attendanceRate: number;
-  recentAttendance: AttendanceRecord[];
-  hasActiveSession?: boolean;
-  activeSessionId?: string | null;
-  todaySessions?: TodaySessionInfo[];
 }

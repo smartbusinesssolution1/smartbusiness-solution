@@ -1,63 +1,54 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import {
+  Users,
+  UserPlus,
+  Search,
+  RotateCcw,
+  Pencil,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
+  AlertTriangle,
+  Mail,
+  Phone,
+  Building2,
+  Inbox,
+  User as UserIcon,
+} from 'lucide-react';
+
 import { employeeService } from '../../services/employeeService';
 import { User } from '../../types';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import { useAuth } from '../../context/AuthContext';
 import BrandLoader from '../../components/BrandLoader';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  Paper,
-  Button,
-  IconButton,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Grid,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Snackbar,
-  Alert,
-  Avatar,
-  Chip,
-  Skeleton,
-  useTheme,
-  Tooltip,
-  CircularProgress,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Search as SearchIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  FilterList as FilterIcon,
-  Cancel as CancelIcon,
-  CheckCircle as ActiveIcon,
-  Person as PersonIcon,
-  RestartAlt as ResetIcon,
-} from '@mui/icons-material';
 import { useDebounce } from '../../hooks/useDebounce';
 import { STANDARD_DEPARTMENTS } from '../../constants/departments';
+import { cn } from '../../lib/utils';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Badge,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  Tooltip,
+  Input,
+  Select,
+  SelectItem,
+} from '../../components/ui';
 
 export const EmployeeList: React.FC = () => {
   const navigate = useNavigate();
-  const theme = useTheme();
   const queryClient = useQueryClient();
   const { currentTenant, isSuperAdmin, user, currentWorkspace, workspaces } = useAuth();
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
@@ -79,10 +70,10 @@ export const EmployeeList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [roleFilter, setRoleFilter] = useState('all');
 
-  // Debounced search term for server-side query
+  // Debounced search term for server query
   const debouncedSearch = useDebounce(searchTerm, 350);
 
-  // Pagination (0-indexed for MUI TablePagination)
+  // Pagination (0-indexed)
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
@@ -90,14 +81,21 @@ export const EmployeeList: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<User | null>(null);
 
-  // Snackbars
-  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+  // Toast feedback
+  const [toast, setToast] = useState<{ open: boolean; message: string; type: 'success' | 'error' }>({
     open: false,
     message: '',
-    severity: 'success',
+    type: 'success',
   });
 
-  // Fetch employees from backend with active filters, workspace, and pagination
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ open: true, message, type });
+    setTimeout(() => {
+      setToast((prev) => ({ ...prev, open: false }));
+    }, 4000);
+  };
+
+  // Fetch employees from backend
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       'adminEmployees',
@@ -126,7 +124,7 @@ export const EmployeeList: React.FC = () => {
     placeholderData: (previousData) => previousData,
   });
 
-  // Filter out self user as an extra guarantee (also excluded on the backend)
+  // Filter out self user
   const rawItems = data?.items || [];
   const employees = rawItems.filter(
     (emp) =>
@@ -154,19 +152,11 @@ export const EmployeeList: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminEmployees'], refetchType: 'all' });
       queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'], refetchType: 'all' });
-      setSnackbar({
-        open: true,
-        message: 'Employee record deleted successfully.',
-        severity: 'success',
-      });
+      showToast('Employee profile deleted successfully.', 'success');
       setDeleteDialogOpen(false);
     },
     onError: (err: any) => {
-      setSnackbar({
-        open: true,
-        message: err?.message || 'Failed to delete employee.',
-        severity: 'error',
-      });
+      showToast(err?.message || 'Failed to delete employee profile.', 'error');
       setDeleteDialogOpen(false);
     },
   });
@@ -182,341 +172,445 @@ export const EmployeeList: React.FC = () => {
     }
   };
 
-  const handlePageChange = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
+  const activeCount = employees.filter((e) => e.status === 'active').length;
+  const adminCount = employees.filter((e) => e.role === 'admin').length;
 
-  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
+  const totalPages = Math.ceil(totalEmployees / rowsPerPage) || 1;
+
+  if (isLoading && !data) {
+    return <BrandLoader fullScreen message="Loading employee directory..." />;
+  }
 
   return (
-    <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 2, mb: 3 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 800 }}>
-            Employee Directory
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage corporate personnel accounts, review corporate identities, and update status.
-          </Typography>
-        </Box>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={() => navigate('/admin/employees/new')}
-          sx={{ borderRadius: 2, py: 1, px: 2.5 }}
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      {/* Toast Banner */}
+      {toast.open && (
+        <div
+          className={cn(
+            'fixed bottom-6 right-6 z-50 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-xs font-medium shadow-pop transition-all animate-in fade-in slide-in-from-bottom-3',
+            toast.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : 'border-rose-200 bg-rose-50 text-rose-800'
+          )}
         >
-          Add
-        </Button>
-      </Box>
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="size-4 text-emerald-600" />
+          ) : (
+            <AlertTriangle className="size-4 text-rose-600" />
+          )}
+          <span>{toast.message}</span>
+        </div>
+      )}
 
-      {/* Filters */}
-      <Card sx={{ borderRadius: 3, mb: 3 }}>
-        <CardContent sx={{ p: 2.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <FilterIcon color="primary" sx={{ fontSize: 20 }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-              Search & Filter Directory
-            </Typography>
-          </Box>
+      {/* Header */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="eyebrow">PERSONNEL MANAGEMENT</span>
+            <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-[-0.02em] leading-tight text-ink">
+              Employee Directory
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted">
+              Manage corporate personnel accounts, review work status, and assign organization roles.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button variant="brand" size="default" asChild>
+              <Link to="/admin/employees/new" className="gap-1.5">
+                <UserPlus className="size-4" />
+                <span>+ Onboard Staff</span>
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
 
-          <Grid container spacing={2} sx={{ alignItems: 'center' }}>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Search employees..."
-                placeholder="ID, name, email..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setPage(0);
-                }}
-                slotProps={{
-                  input: {
-                    startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 20 }} />,
-                  },
-                }}
-              />
-            </Grid>
+      {/* 4 Summary Stat Pills (shadcn Card style) */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="p-3.5 flex flex-col gap-1">
+          <span className="text-[0.75rem] font-medium text-muted">Total Roster</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-ink num">{totalEmployees}</span>
+            <span className="font-mono text-xs text-muted">members</span>
+          </div>
+        </Card>
 
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="dept-filter-label">Department</InputLabel>
-                <Select
-                  labelId="dept-filter-label"
-                  id="dept-filter"
-                  value={deptFilter}
-                  label="Department"
-                  onChange={(e) => {
-                    setDeptFilter(e.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <MenuItem value="all">All Departments</MenuItem>
-                  {STANDARD_DEPARTMENTS.map((d) => (
-                    <MenuItem key={d} value={d}>
-                      {d}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
+        <Card className="p-3.5 flex flex-col gap-1">
+          <span className="text-[0.75rem] font-medium text-muted">Active Accounts</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-emerald-600 num">{activeCount}</span>
+            <span className="font-mono text-xs text-emerald-700/80">deployed</span>
+          </div>
+        </Card>
 
-            <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="status-filter-label">Status</InputLabel>
-                <Select
-                  labelId="status-filter-label"
-                  id="status-filter"
-                  value={statusFilter}
-                  label="Status"
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="active">Active</MenuItem>
-                  <MenuItem value="inactive">Inactive</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
+        <Card className="p-3.5 flex flex-col gap-1">
+          <span className="text-[0.75rem] font-medium text-muted">Administrators</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-primary-600 num">{adminCount}</span>
+            <span className="font-mono text-xs text-primary-700/80">privileged</span>
+          </div>
+        </Card>
 
-            <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="role-filter-label">Role</InputLabel>
-                <Select
-                  labelId="role-filter-label"
-                  id="role-filter"
-                  value={roleFilter}
-                  label="Role"
-                  onChange={(e) => {
-                    setRoleFilter(e.target.value);
-                    setPage(0);
-                  }}
-                >
-                  <MenuItem value="all">All Roles</MenuItem>
-                  <MenuItem value="admin">Administrator</MenuItem>
-                  <MenuItem value="employee">Standard Employee</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
+        <Card className="p-3.5 flex flex-col gap-1">
+          <span className="text-[0.75rem] font-medium text-muted">Departments</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-ink num">{STANDARD_DEPARTMENTS.length}</span>
+            <span className="font-mono text-xs text-muted">divisions</span>
+          </div>
+        </Card>
+      </div>
 
-            <Grid size={{ xs: 12, sm: 12, md: 2 }}>
-              <Button
-                fullWidth
-                size="medium"
-                variant="outlined"
-                color="secondary"
-                disabled={!isFiltered}
-                onClick={handleResetFilters}
-                startIcon={<ResetIcon />}
-                sx={{ height: 40, textTransform: 'none', borderRadius: 1.5 }}
-              >
-                Reset
-              </Button>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Table Card */}
-      <Card sx={{ borderRadius: 3 }}>
-        {isLoading ? (
-          <BrandLoader fullScreen message="Loading employee directory..." />
-        ) : (
-          <Box>
-            <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 0 }}>
-              <Table sx={{ minWidth: 650 }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name</TableCell>
-                    <TableCell>Email</TableCell>
-                    <TableCell>Phone</TableCell>
-                    <TableCell>Role</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {employees.length > 0 ? (
-                    employees.map((emp) => (
-                      <TableRow
-                        key={emp.id}
-                        sx={{
-                          '&:last-child td, &:last-child th': { border: 0 },
-                          '&:hover': { bgcolor: 'action.hover' },
-                        }}
-                      >
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Avatar 
-                              src={getAvatarUrl(emp.avatarUrl)} 
-                              alt={emp.name} 
-                              sx={{ width: 32, height: 32 }}
-                              slotProps={{ img: { loading: 'lazy', decoding: 'async' } }}
-                            />
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                                {emp.name}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                {emp.employeeId} • {emp.designation} • {emp.department}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        </TableCell>
-                        <TableCell sx={{ fontWeight: 500 }}>{emp.email}</TableCell>
-                        <TableCell sx={{ color: 'text.secondary', fontWeight: 500 }}>{emp.phone || '--'}</TableCell>
-                        <TableCell>
-                          <Chip
-                            label={emp.role}
-                            size="small"
-                            variant="outlined"
-                            sx={{
-                              textTransform: 'capitalize',
-                              fontWeight: 600,
-                              borderColor: emp.role === 'admin' ? theme.palette.secondary.main : theme.palette.divider,
-                              color: emp.role === 'admin' ? theme.palette.secondary.main : theme.palette.text.primary,
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={emp.status === 'active' ? 'Active' : 'Inactive'}
-                            size="small"
-                            color={emp.status === 'active' ? 'success' : 'default'}
-                            icon={emp.status === 'active' ? <ActiveIcon /> : <CancelIcon />}
-                            sx={{ fontWeight: 700 }}
-                          />
-                        </TableCell>
-                        <TableCell align="right">
-                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-                            <Tooltip title="Edit Profile">
-                              <IconButton
-                                size="small"
-                                onClick={() => navigate(`/admin/employees/edit/${emp.id}`)}
-                                color="primary"
-                              >
-                                <EditIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-
-                            <Tooltip
-                              title={
-                                emp.id === user?.id
-                                  ? "Cannot delete your own account"
-                                  : emp.role === 'admin' && !isOwner
-                                    ? "Only organization owners can delete administrator accounts"
-                                    : "Delete Employee"
-                              }
-                            >
-                              <span>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => handleDeleteClick(emp)}
-                                  color="error"
-                                  disabled={
-                                    emp.id === user?.id ||
-                                    (emp.role === 'admin' && !isOwner)
-                                  }
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </span>
-                            </Tooltip>
-                          </Box>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                          <PersonIcon sx={{ fontSize: 40, color: 'text.secondary' }} />
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, mt: 1 }}>
-                            No Employees Found
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Try adjusting your search filters or add a new personnel record.
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-
-            {/* Pagination */}
-            <TablePagination
-              rowsPerPageOptions={[5, 10, 25]}
-              component="div"
-              count={totalEmployees}
-              rowsPerPage={rowsPerPage}
-              page={page}
-              onPageChange={handlePageChange}
-              onRowsPerPageChange={handleRowsPerPageChange}
-              sx={{ borderTop: `1px solid ${theme.palette.divider}` }}
+      {/* Filter Toolbar (shadcn Card) */}
+      <Card className="p-3.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-12 items-center">
+          {/* Search box using shadcn Input */}
+          <div className="sm:col-span-5">
+            <Input
+              type="text"
+              placeholder="Search by ID, name, email..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(0);
+              }}
+              leading={<Search className="size-3.5" />}
+              className="h-9 text-xs"
             />
-          </Box>
+          </div>
+
+          {/* Department dropdown using shadcn Select */}
+          <div className="sm:col-span-3">
+            <Select
+              value={deptFilter}
+              onValueChange={(val) => {
+                setDeptFilter(val);
+                setPage(0);
+              }}
+            >
+              <SelectItem value="all">All Departments</SelectItem>
+              {STANDARD_DEPARTMENTS.map((dept) => (
+                <SelectItem key={dept} value={dept}>
+                  {dept}
+                </SelectItem>
+              ))}
+            </Select>
+          </div>
+
+          {/* Status dropdown using shadcn Select */}
+          <div className="sm:col-span-2">
+            <Select
+              value={statusFilter}
+              onValueChange={(val) => {
+                setStatusFilter(val);
+                setPage(0);
+              }}
+            >
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </Select>
+          </div>
+
+          {/* Role dropdown using shadcn Select */}
+          <div className="sm:col-span-2">
+            <Select
+              value={roleFilter}
+              onValueChange={(val) => {
+                setRoleFilter(val);
+                setPage(0);
+              }}
+            >
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="admin">Administrator</SelectItem>
+              <SelectItem value="employee">Standard Staff</SelectItem>
+            </Select>
+          </div>
+        </div>
+
+        {isFiltered && (
+          <div className="flex items-center justify-between border-t border-line mt-3 pt-2.5 text-xs text-muted">
+            <span>Filtered results active</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-6 gap-1 px-2 text-xs text-muted hover:text-ink"
+            >
+              <RotateCcw className="size-3" />
+              Reset filters
+            </Button>
+          </div>
         )}
       </Card>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteDialogOpen}
-        onClose={() => setDeleteDialogOpen(false)}
-        aria-labelledby="alert-dialog-title"
-        aria-describedby="alert-dialog-description"
-        slotProps={{ paper: { sx: { borderRadius: 3, p: 1 } } }}
-      >
-        <DialogTitle id="alert-dialog-title" sx={{ fontWeight: 700 }}>
-          {"Confirm Record Deletion"}
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText id="alert-dialog-description">
-            Are you sure you want to permanently delete the profile of{' '}
-            <strong style={{ color: theme.palette.text.primary }}>{selectedEmployee?.name}</strong> (ID: {selectedEmployee?.employeeId})? This action will remove all historical logs and cannot be undone.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setDeleteDialogOpen(false)} color="inherit">
-            Cancel
-          </Button>
-          <Button
-            onClick={confirmDelete}
-            color="error"
-            variant="contained"
-            disabled={deleteMutation.isPending}
-            startIcon={deleteMutation.isPending && <CircularProgress size={16} color="inherit" />}
-          >
-            {deleteMutation.isPending ? 'Deleting...' : 'Delete Employee'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Directory Table (shadcn Card) */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-line bg-subtle/50 text-faint">
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Employee
+                </th>
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Contact
+                </th>
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Department & Role
+                </th>
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Status
+                </th>
+                <th className="py-3 px-4 text-right font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {employees.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-12 text-center">
+                    <div className="dot-grid mx-auto max-w-sm rounded-xl border border-dashed border-line-strong p-6 text-center">
+                      <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-primary-100 bg-panel text-primary-600 shadow-sm">
+                        <Inbox className="size-5" />
+                      </div>
+                      <p className="mt-3 font-semibold text-ink">No personnel records found</p>
+                      <p className="mt-1 text-xs text-muted leading-relaxed">
+                        No employees match the current filters. Adjust your search or add a new team member.
+                      </p>
+                      <Button variant="brand" size="sm" asChild className="mt-3">
+                        <Link to="/admin/employees/new" className="gap-1.5">
+                          <UserPlus className="size-3.5" /> Onboard Staff
+                        </Link>
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                employees.map((emp) => {
+                  const isActive = emp.status === 'active';
+                  const isAdmin = emp.role === 'admin';
+                  const isSelf = emp.id === user?.id;
+                  const canDelete = !isSelf && (!isAdmin || isOwner);
 
-      {/* Snackbar Feedbacks */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={5000}
-        onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <Alert
-          onClose={() => setSnackbar({ ...snackbar, open: false })}
-          severity={snackbar.severity}
-          sx={{ width: '100%', borderRadius: 2 }}
-        >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+                  return (
+                    <tr
+                      key={emp.id}
+                      className="transition-colors hover:bg-subtle/40"
+                    >
+                      {/* Name & ID */}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          {emp.avatarUrl ? (
+                            <img
+                              src={getAvatarUrl(emp.avatarUrl)}
+                              alt={emp.name}
+                              className="size-8 shrink-0 rounded-full border border-primary-200 object-cover"
+                              loading="lazy"
+                            />
+                          ) : (
+                            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary-100 font-mono text-xs font-semibold text-primary-700">
+                              {emp.name.substring(0, 2).toUpperCase()}
+                            </span>
+                          )}
+                          <div className="flex min-w-0 flex-col">
+                            <span className="truncate font-semibold text-ink text-sm">
+                              {emp.name}
+                            </span>
+                            <span className="font-mono text-[0.6875rem] text-muted num">
+                              {emp.employeeId || emp.id.substring(0, 8)}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Contact */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5 text-ink-soft">
+                            <Mail className="size-3 text-muted shrink-0" />
+                            <span className="truncate">{emp.email}</span>
+                          </div>
+                          {emp.phone && (
+                            <div className="flex items-center gap-1.5 font-mono text-[0.6875rem] text-muted num">
+                              <Phone className="size-3 text-muted shrink-0" />
+                              <span>{emp.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Department & Role */}
+                      <td className="py-3 px-4">
+                        <div className="flex flex-col gap-1 items-start">
+                          <span className="text-xs font-medium text-ink">
+                            {emp.department || 'General'}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {emp.designation && (
+                              <span className="text-[0.6875rem] text-muted truncate max-w-[140px]">
+                                {emp.designation}
+                              </span>
+                            )}
+                            <Badge
+                              variant={isAdmin ? 'brand' : 'secondary'}
+                              className="font-mono text-[0.625rem] py-0 px-1.5"
+                            >
+                              {isAdmin ? 'Admin' : 'Staff'}
+                            </Badge>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3 px-4">
+                        <Badge
+                          variant={isActive ? 'success' : 'secondary'}
+                          className="gap-1 font-mono text-[0.6875rem] num"
+                        >
+                          <span
+                            className={cn(
+                              'size-1.5 rounded-full',
+                              isActive ? 'bg-emerald-500' : 'bg-muted'
+                            )}
+                          />
+                          {isActive ? 'Active' : 'Inactive'}
+                        </Badge>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 px-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Tooltip content="Edit profile">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => navigate(`/admin/employees/edit/${emp.id}`)}
+                              aria-label="Edit Profile"
+                            >
+                              <Pencil className="size-3.5 text-muted hover:text-ink" />
+                            </Button>
+                          </Tooltip>
+
+                          <Tooltip
+                            content={
+                              isSelf
+                                ? 'Cannot delete own account'
+                                : isAdmin && !isOwner
+                                ? 'Only owners can delete admins'
+                                : 'Delete personnel record'
+                            }
+                          >
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={!canDelete}
+                              onClick={() => handleDeleteClick(emp)}
+                              className="hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30"
+                              aria-label="Delete Profile"
+                            >
+                              <Trash2 className="size-3.5 text-muted hover:text-rose-600" />
+                            </Button>
+                          </Tooltip>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Footer Pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 text-xs text-muted">
+          <div className="flex items-center gap-2">
+            <span>Rows per page:</span>
+            <div className="w-18">
+              <Select
+                value={String(rowsPerPage)}
+                onValueChange={(val) => {
+                  setRowsPerPage(Number(val));
+                  setPage(0);
+                }}
+                size="sm"
+              >
+                {[5, 10, 25].map((count) => (
+                  <SelectItem key={count} value={String(count)}>
+                    {count}
+                  </SelectItem>
+                ))}
+              </Select>
+            </div>
+            <span className="font-mono text-xs num">
+              {employees.length > 0 ? page * rowsPerPage + 1 : 0}-
+              {Math.min((page + 1) * rowsPerPage, totalEmployees)} of {totalEmployees}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="font-mono text-xs num mr-2">
+              Page {page + 1} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon-sm"
+              disabled={page >= totalPages - 1}
+              onClick={() => setPage((p) => p + 1)}
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* shadcn Dialog for Delete Confirmation */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader
+            title="Confirm Record Deletion"
+            description={
+              selectedEmployee ? (
+                <>
+                  Are you sure you want to permanently delete the profile of{' '}
+                  <strong className="text-ink font-semibold">{selectedEmployee.name}</strong> (ID:{' '}
+                  {selectedEmployee.employeeId})? This action will remove all historical attendance
+                  punches and cannot be undone.
+                </>
+              ) : (
+                'Are you sure you want to permanently delete this personnel profile?'
+              )
+            }
+            icon={<AlertTriangle className="size-4 text-rose-600" />}
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete Employee'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

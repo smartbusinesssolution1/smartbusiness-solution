@@ -23,4 +23,7 @@ router.get("/summary", controller.summary);
 // POST /api/v1/admin/attendance/export - Generate and download audit reports (XLSX, CSV, PDF) on explicit user request
 router.post("/export", controller.exportReport);
 
+// POST /api/v1/admin/attendance/auto-close-sweep - Manual trigger for sweep
+router.post("/auto-close-sweep", controller.triggerAutoCloseSweep);
+
 export default router;

@@ -1,35 +1,23 @@
 import React from 'react';
-import dayjs, { Dayjs } from 'dayjs';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import {
-  Box,
-  Paper,
-  Typography,
-  Switch,
-  Button,
-  Chip,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  TableContainer,
-  Stack,
-  useTheme,
-  Tooltip,
-  Divider,
-} from '@mui/material';
-import {
-  AccessTime as AccessTimeIcon,
-  ContentCopy as CopyIcon,
-  EventAvailable as WorkIcon,
-  NightlightRound as NightIcon,
-  WbSunny as DayIcon,
-  Schedule as ClockIcon,
-} from '@mui/icons-material';
+  Clock,
+  Copy,
+  Sun,
+  Moon,
+  Calendar,
+  Sparkles,
+  Info,
+  Check,
+} from 'lucide-react';
 import { DayOfWeek, DayShiftConfig, WeeklySchedule } from '../types';
+import { cn } from '../lib/utils';
+import {
+  Button,
+  Card,
+  Badge,
+  Switch,
+  Tooltip,
+} from './ui';
 
 export const DAYS_OF_WEEK: {
   key: DayOfWeek;
@@ -72,7 +60,7 @@ export const calcDuration = (start: string, end: string): { text: string; hoursN
   const [h2, m2] = (end || '18:00').split(':').map(Number);
   let diff = (h2 * 60 + m2) - (h1 * 60 + m1);
   const isOvernight = diff < 0;
-  if (isOvernight) diff += 24 * 60; // Next-day morning shift math
+  if (isOvernight) diff += 24 * 60;
   const hours = Math.floor(diff / 60);
   const mins = diff % 60;
   return {
@@ -82,86 +70,15 @@ export const calcDuration = (start: string, end: string): { text: string; hoursN
   };
 };
 
-/**
- * Compact Time Input Picker for table rows
- */
-interface CompactTimePickerProps {
-  value: string; // HH:mm
-  onChange: (val: string) => void;
-  disabled?: boolean;
-}
-
-const CompactTimePicker: React.FC<CompactTimePickerProps> = ({ value, onChange, disabled }) => {
-  const dayjsValue: Dayjs | null = React.useMemo(() => {
-    if (!value || !value.includes(':')) return null;
-    const [h, m] = value.split(':');
-    return dayjs().hour(Number(h)).minute(Number(m)).second(0);
-  }, [value]);
-
-  const handleTimeChange = (newValue: Dayjs | null) => {
-    if (newValue && newValue.isValid()) {
-      onChange(newValue.format('HH:mm'));
-    }
-  };
-
-  return (
-    <TimePicker
-      value={dayjsValue}
-      onChange={handleTimeChange}
-      disabled={disabled}
-      ampm
-      format="hh:mm A"
-      views={['hours', 'minutes']}
-      slotProps={{
-        textField: {
-          size: 'small',
-          sx: {
-            width: 146,
-            bgcolor: 'background.paper',
-            '& .MuiInputBase-root': {
-              height: 34,
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              borderRadius: 1.5,
-              pr: 0.5,
-            },
-            '& .MuiInputBase-input': {
-              py: 0.5,
-              pl: 1.25,
-              pr: 0,
-              fontSize: '0.82rem',
-              fontWeight: 600,
-            },
-            '& .MuiIconButton-root': {
-              p: '2px',
-              mr: 0.25,
-            },
-            '& .MuiSvgIcon-root': {
-              fontSize: '1.15rem',
-              color: 'text.secondary',
-            },
-            '& .MuiOutlinedInput-notchedOutline': {
-              borderColor: 'divider',
-            },
-          },
-        },
-        popper: {
-          sx: {
-            zIndex: 1400,
-            '& .MuiPaper-root': {
-              borderRadius: '16px !important',
-              boxShadow: (theme) =>
-                theme.palette.mode === 'dark'
-                  ? '0 16px 40px -4px rgba(0, 0, 0, 0.7)'
-                  : '0 16px 40px -4px rgba(0, 0, 0, 0.16)',
-              border: '1px solid',
-              borderColor: 'divider',
-            },
-          },
-        },
-      }}
-    />
-  );
+// Formats "14:30" to "02:30 PM"
+export const format12h = (time24?: string) => {
+  if (!time24 || !time24.includes(':')) return time24 || '--';
+  const [hStr, mStr] = time24.split(':');
+  const h = parseInt(hStr, 10);
+  if (isNaN(h)) return time24;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = h % 12 || 12;
+  return `${h12.toString().padStart(2, '0')}:${mStr || '00'} ${ampm}`;
 };
 
 interface DayWiseShiftPickerProps {
@@ -175,9 +92,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
   onChange,
   disabled = false,
 }) => {
-  const theme = useTheme();
-
-  // Convert incoming value (array or legacy map) into internal dictionary for quick O(1) row lookups
+  // Convert incoming value into internal dictionary
   const scheduleMap = React.useMemo(() => {
     const map: Record<DayOfWeek, DayShiftConfig> = {
       MON: { day: 'MON', isWorkDay: true, startTime: '09:00', endTime: '18:00' },
@@ -238,7 +153,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
     });
   };
 
-  // Quick Action: Copy Monday to weekdays (Tue - Fri)
+  // Preset: Copy Monday to weekdays (Tue - Fri)
   const handleCopyMondayToWeekdays = () => {
     const mondayConfig = scheduleMap.MON || { day: 'MON', isWorkDay: true, startTime: '09:00', endTime: '18:00' };
     const updated: Record<DayOfWeek, DayShiftConfig> = { ...scheduleMap };
@@ -254,7 +169,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
     emitSchedule(updated);
   };
 
-  // Quick Preset: Standard Day Shift (09:00 - 18:00)
+  // Preset: Standard Day Shift (09:00 - 18:00)
   const handlePresetDayShift = () => {
     const updated: Record<DayOfWeek, DayShiftConfig> = { ...scheduleMap };
     (['MON', 'TUE', 'WED', 'THU', 'FRI'] as DayOfWeek[]).forEach((d) => {
@@ -263,7 +178,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
     emitSchedule(updated);
   };
 
-  // Quick Preset: Night Shift (22:00 - 06:00 / 10 PM - 6 AM)
+  // Preset: Night Shift (22:00 - 06:00)
   const handlePresetNightShift = () => {
     const updated: Record<DayOfWeek, DayShiftConfig> = { ...scheduleMap };
     (['MON', 'TUE', 'WED', 'THU', 'FRI'] as DayOfWeek[]).forEach((d) => {
@@ -272,7 +187,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
     emitSchedule(updated);
   };
 
-  // Quick Preset: Sat & Sun as Off
+  // Preset: Sat & Sun as Off
   const handleSetWeekendOff = () => {
     emitSchedule({
       ...scheduleMap,
@@ -281,7 +196,7 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
     });
   };
 
-  // Calculate stats
+  // Calculate statistics
   const activeWorkingDays = DAYS_OF_WEEK.filter((d) => scheduleMap[d.key]?.isWorkDay);
   const overnightShifts = activeWorkingDays.filter((d) =>
     checkIsOvernight(scheduleMap[d.key]?.startTime, scheduleMap[d.key]?.endTime)
@@ -292,377 +207,263 @@ export const DayWiseShiftPicker: React.FC<DayWiseShiftPickerProps> = ({
   }, 0);
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDayjs}>
-      <Box sx={{ width: '100%' }}>
-        {/* Top Summary Bar & Quick Actions */}
-        <Paper
-          elevation={0}
-          sx={{
-            p: 2,
-            mb: 2,
-            borderRadius: 2.5,
-            bgcolor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.08)' : 'rgba(99, 102, 241, 0.04)',
-            border: '1px solid',
-            borderColor: (theme) =>
-              theme.palette.mode === 'dark' ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.15)',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: { xs: 'flex-start', sm: 'center' },
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: 1.5,
-              mb: 1.5,
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <ClockIcon sx={{ color: 'primary.main', fontSize: 22 }} />
-              <Box>
-                <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                  Weekly Shift Schedule
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Configure working days, daytime, or overnight night shifts individually
-                </Typography>
-              </Box>
-            </Box>
+    <div className="flex w-full flex-col gap-3">
+      {/* Top Summary Banner & Quick Preset Controls */}
+      <Card className="border-primary-100 bg-primary-50/30 p-4">
+        <div className="flex flex-col gap-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary-100 text-primary-700">
+                <Clock className="size-4" />
+              </span>
+              <div>
+                <p className="text-xs font-semibold text-ink">Weekly Custom Shift Schedule</p>
+                <p className="text-[0.6875rem] text-muted">
+                  Configure working days, core office hours, and overnight night shifts per weekday.
+                </p>
+              </div>
+            </div>
 
-            {/* Summary Chips */}
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
-              <Chip
-                icon={<WorkIcon sx={{ fontSize: 15 }} />}
-                label={`${activeWorkingDays.length} Working Days`}
-                color="primary"
-                size="small"
-                sx={{ fontWeight: 700, fontSize: '0.75rem', height: 26 }}
-              />
-              <Chip
-                icon={<AccessTimeIcon sx={{ fontSize: 15 }} />}
-                label={`Total ${totalWeeklyHours.toFixed(1)} hrs/wk`}
-                variant="outlined"
-                color="primary"
-                size="small"
-                sx={{ fontWeight: 700, fontSize: '0.75rem', height: 26 }}
-              />
+            {/* Metric Pills */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge variant="brand" className="font-mono text-[0.6875rem] num">
+                {activeWorkingDays.length} Working Days
+              </Badge>
+              <Badge variant="outline" className="font-mono text-[0.6875rem] bg-panel num">
+                {totalWeeklyHours.toFixed(1)} hrs / week
+              </Badge>
               {overnightShifts.length > 0 && (
-                <Chip
-                  icon={<NightIcon sx={{ fontSize: 15 }} />}
-                  label={`${overnightShifts.length} Night Shifts`}
-                  color="secondary"
-                  size="small"
-                  sx={{
-                    fontWeight: 700,
-                    fontSize: '0.75rem',
-                    height: 26,
-                    bgcolor: (theme) =>
-                      theme.palette.mode === 'dark' ? 'rgba(168, 85, 247, 0.25)' : 'rgba(168, 85, 247, 0.15)',
-                    color: 'secondary.main',
-                    border: '1px solid',
-                    borderColor: 'secondary.main',
-                  }}
-                />
+                <Badge variant="secondary" className="gap-1 font-mono text-[0.6875rem] bg-indigo-100 text-indigo-800">
+                  <Moon className="size-3" />
+                  <span>{overnightShifts.length} Night Shifts</span>
+                </Badge>
               )}
-            </Stack>
-          </Box>
+            </div>
+          </div>
 
-          <Divider sx={{ my: 1.25, borderStyle: 'dashed' }} />
-
-          {/* Quick Action Buttons */}
-          <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mr: 0.5 }}>
-              Quick Presets:
-            </Typography>
+          <div className="flex flex-wrap items-center gap-1.5 border-t border-primary-200/50 pt-2.5">
+            <span className="font-mono text-[0.625rem] font-semibold text-muted tracking-wider uppercase mr-1">
+              Quick presets:
+            </span>
             <Button
-              size="small"
-              variant="outlined"
-              startIcon={<CopyIcon fontSize="small" />}
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handleCopyMondayToWeekdays}
               disabled={disabled}
-              sx={{
-                fontSize: '0.75rem',
-                py: 0.35,
-                px: 1.2,
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
+              className="h-7 text-xs gap-1 px-2.5 bg-panel hover:bg-subtle"
             >
-              Copy Mon to Mon–Fri
+              <Copy className="size-3 text-muted" />
+              <span>Copy Mon to Mon–Fri</span>
             </Button>
             <Button
-              size="small"
-              variant="outlined"
-              startIcon={<DayIcon fontSize="small" />}
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handlePresetDayShift}
               disabled={disabled}
-              sx={{
-                fontSize: '0.75rem',
-                py: 0.35,
-                px: 1.2,
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
+              className="h-7 text-xs gap-1 px-2.5 bg-panel hover:bg-subtle"
             >
-              Day Shift (9 AM - 6 PM)
+              <Sun className="size-3 text-amber-500" />
+              <span>Day Shift (9 AM – 6 PM)</span>
             </Button>
             <Button
-              size="small"
-              variant="outlined"
-              color="secondary"
-              startIcon={<NightIcon fontSize="small" />}
+              type="button"
+              variant="outline"
+              size="sm"
               onClick={handlePresetNightShift}
               disabled={disabled}
-              sx={{
-                fontSize: '0.75rem',
-                py: 0.35,
-                px: 1.2,
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 600,
-              }}
+              className="h-7 text-xs gap-1 px-2.5 bg-panel hover:bg-subtle"
             >
-              Night Shift (10 PM - 6 AM)
+              <Moon className="size-3 text-indigo-500" />
+              <span>Night Shift (10 PM – 6 AM)</span>
             </Button>
             <Button
-              size="small"
-              variant="text"
+              type="button"
+              variant="ghost"
+              size="sm"
               onClick={handleSetWeekendOff}
               disabled={disabled}
-              sx={{
-                fontSize: '0.75rem',
-                py: 0.35,
-                px: 1,
-                borderRadius: 1.5,
-                textTransform: 'none',
-                color: 'text.secondary',
-              }}
+              className="h-7 text-xs px-2 text-muted hover:text-ink"
             >
-              Set Sat & Sun Off
+              Set Weekend Off
             </Button>
-          </Box>
-        </Paper>
+          </div>
+        </div>
+      </Card>
 
-        {/* Compact Table View */}
-        <TableContainer
-          component={Paper}
-          elevation={0}
-          sx={{
-            borderRadius: 2.5,
-            border: '1px solid',
-            borderColor: 'divider',
-            overflowX: 'auto',
-            width: '100%',
-          }}
-        >
-          <Table size="small" sx={{ minWidth: 780, width: '100%' }}>
-            <TableHead>
-              <TableRow sx={{ bgcolor: (theme) => (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)') }}>
-                <TableCell sx={{ fontWeight: 700, width: 140, minWidth: 140, py: 1.25, px: 2, whiteSpace: 'nowrap' }}>
+      {/* Schedule Table (shadcn Card) */}
+      <Card className="overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-line bg-subtle/50 text-faint">
+                <th className="py-2.5 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem] w-36">
                   Day
-                </TableCell>
-                <TableCell sx={{ fontWeight: 700, width: 110, minWidth: 110, py: 1.25, px: 1, whiteSpace: 'nowrap' }}>
+                </th>
+                <th className="py-2.5 px-3 font-mono font-medium tracking-wider uppercase text-[0.6875rem] w-28">
                   Status
-                </TableCell>
-                <TableCell sx={{ fontWeight: 700, width: 160, minWidth: 160, py: 1.25, px: 1, whiteSpace: 'nowrap' }}>
+                </th>
+                <th className="py-2.5 px-3 font-mono font-medium tracking-wider uppercase text-[0.6875rem] w-48">
                   Shift Start
-                </TableCell>
-                <TableCell sx={{ fontWeight: 700, width: 220, minWidth: 220, py: 1.25, px: 1, whiteSpace: 'nowrap' }}>
+                </th>
+                <th className="py-2.5 px-3 font-mono font-medium tracking-wider uppercase text-[0.6875rem] w-56">
                   Shift End
-                </TableCell>
-                <TableCell sx={{ fontWeight: 700, minWidth: 150, py: 1.25, px: 2, whiteSpace: 'nowrap' }}>
-                  Duration / Shift
-                </TableCell>
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
+                </th>
+                <th className="py-2.5 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Duration & Classification
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
               {DAYS_OF_WEEK.map(({ key, label, shortLabel, nextDayName, isWeekend }) => {
-                const dayConfig = scheduleMap[key] || { day: key, isWorkDay: !isWeekend, startTime: '09:00', endTime: '18:00' };
+                const dayConfig = scheduleMap[key] || {
+                  day: key,
+                  isWorkDay: !isWeekend,
+                  startTime: '09:00',
+                  endTime: '18:00',
+                };
                 const dur = calcDuration(dayConfig.startTime, dayConfig.endTime);
 
                 return (
-                  <TableRow
+                  <tr
                     key={key}
-                    sx={{
-                      bgcolor: dayConfig.isWorkDay
-                        ? 'background.paper'
-                        : (theme) =>
-                            theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.015)' : 'rgba(0, 0, 0, 0.015)',
-                      opacity: dayConfig.isWorkDay ? 1 : 0.65,
-                      '&:hover': {
-                        bgcolor: (theme) =>
-                          theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)',
-                      },
-                      transition: 'background-color 0.15s ease',
-                    }}
+                    className={cn(
+                      'transition-colors',
+                      dayConfig.isWorkDay ? 'hover:bg-subtle/40' : 'bg-subtle/20 opacity-60'
+                    )}
                   >
-                    {/* Day Badge & Name */}
-                    <TableCell sx={{ py: 1.1, px: 2, width: 140, minWidth: 140, whiteSpace: 'nowrap' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                        <Chip
-                          label={shortLabel}
-                          size="small"
-                          color={dayConfig.isWorkDay ? (isWeekend ? 'secondary' : 'primary') : 'default'}
-                          variant={dayConfig.isWorkDay ? 'filled' : 'outlined'}
-                          sx={{
-                            width: 42,
-                            fontWeight: 800,
-                            fontSize: '0.72rem',
-                            height: 22,
-                            borderRadius: 1.25,
-                          }}
-                        />
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            fontWeight: 600,
-                            fontSize: '0.84rem',
-                            color: dayConfig.isWorkDay ? 'text.primary' : 'text.disabled',
-                          }}
+                    {/* Day Column */}
+                    <td className="py-2.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'flex size-6 items-center justify-center rounded-md font-mono text-[10px] font-bold num',
+                            dayConfig.isWorkDay
+                              ? isWeekend
+                                ? 'bg-indigo-100 text-indigo-700'
+                                : 'bg-primary-100 text-primary-700'
+                              : 'bg-line text-muted'
+                          )}
+                        >
+                          {shortLabel}
+                        </span>
+                        <span
+                          className={cn(
+                            'font-medium text-xs',
+                            dayConfig.isWorkDay ? 'text-ink' : 'text-muted'
+                          )}
                         >
                           {label}
-                        </Typography>
-                      </Box>
-                    </TableCell>
+                        </span>
+                      </div>
+                    </td>
 
-                    {/* Status Toggle Switch */}
-                    <TableCell sx={{ py: 1.1, px: 1, width: 110, minWidth: 110, whiteSpace: 'nowrap' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {/* Status Switch */}
+                    <td className="py-2.5 px-3">
+                      <div className="flex items-center gap-2">
                         <Switch
-                          size="small"
                           checked={dayConfig.isWorkDay}
-                          onChange={(e) => handleDayToggle(key, e.target.checked)}
+                          onCheckedChange={(checked) => handleDayToggle(key, checked)}
                           disabled={disabled}
-                          color={dur.isOvernight ? 'secondary' : 'primary'}
                         />
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            fontWeight: 600,
-                            fontSize: '0.74rem',
-                            color: dayConfig.isWorkDay ? (dur.isOvernight ? 'secondary.main' : 'primary.main') : 'text.disabled',
-                            userSelect: 'none',
-                          }}
+                        <span
+                          className={cn(
+                            'font-mono text-[0.6875rem] font-semibold',
+                            dayConfig.isWorkDay ? 'text-emerald-600' : 'text-muted'
+                          )}
                         >
                           {dayConfig.isWorkDay ? 'Work' : 'Off'}
-                        </Typography>
-                      </Box>
-                    </TableCell>
+                        </span>
+                      </div>
+                    </td>
 
-                    {/* Start Time Picker */}
-                    <TableCell sx={{ py: 1.1, px: 1, width: 160, minWidth: 160, whiteSpace: 'nowrap' }}>
+                    {/* Shift Start */}
+                    <td className="py-2.5 px-3">
                       {dayConfig.isWorkDay ? (
-                        <CompactTimePicker
-                          value={dayConfig.startTime || '09:00'}
-                          onChange={(val) => handleTimeChange(key, 'startTime', val)}
-                          disabled={disabled}
-                        />
-                      ) : (
-                        <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic', px: 1 }}>
-                          —
-                        </Typography>
-                      )}
-                    </TableCell>
-
-                    {/* End Time Picker (+1 Day overnight badge) */}
-                    <TableCell sx={{ py: 1.1, px: 1, width: 220, minWidth: 220, whiteSpace: 'nowrap' }}>
-                      {dayConfig.isWorkDay ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                          <CompactTimePicker
-                            value={dayConfig.endTime || '18:00'}
-                            onChange={(val) => handleTimeChange(key, 'endTime', val)}
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={dayConfig.startTime || '09:00'}
+                            onChange={(e) => handleTimeChange(key, 'startTime', e.target.value)}
                             disabled={disabled}
+                            className="h-8 rounded-lg border border-line bg-canvas px-2.5 font-mono text-xs text-ink focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
                           />
-                          {dur.isOvernight && (
-                            <Tooltip title={`Crosses midnight · Shift ends on ${nextDayName} morning`}>
-                              <Chip
-                                label="+1d"
-                                size="small"
-                                color="secondary"
-                                sx={{
-                                  height: 22,
-                                  fontSize: '0.68rem',
-                                  fontWeight: 800,
-                                  cursor: 'help',
-                                  px: 0.5,
-                                  borderRadius: 1,
-                                }}
-                              />
-                            </Tooltip>
-                          )}
-                        </Box>
+                          <span className="font-mono text-[0.6875rem] text-muted num hidden sm:inline">
+                            {format12h(dayConfig.startTime)}
+                          </span>
+                        </div>
                       ) : (
-                        <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic', px: 1 }}>
-                          —
-                        </Typography>
+                        <span className="text-muted font-mono text-xs italic">—</span>
                       )}
-                    </TableCell>
+                    </td>
 
-                    {/* Duration / Shift Type Tag */}
-                    <TableCell sx={{ py: 1.1, px: 2, minWidth: 150, whiteSpace: 'nowrap' }}>
+                    {/* Shift End */}
+                    <td className="py-2.5 px-3">
                       {dayConfig.isWorkDay ? (
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          {dur.isOvernight ? (
-                            <Tooltip title={`🌙 Night Shift: Starts ${dayConfig.startTime}, ends ${dayConfig.endTime} on ${nextDayName} morning`}>
-                              <Chip
-                                icon={<NightIcon sx={{ fontSize: 13, color: '#a855f7 !important' }} />}
-                                label={`${dur.text} · Overnight`}
-                                size="small"
-                                sx={{
-                                  fontWeight: 700,
-                                  fontSize: '0.72rem',
-                                  height: 24,
-                                  whiteSpace: 'nowrap',
-                                  bgcolor: (theme) =>
-                                    theme.palette.mode === 'dark' ? 'rgba(168, 85, 247, 0.16)' : 'rgba(168, 85, 247, 0.08)',
-                                  color: (theme) =>
-                                    theme.palette.mode === 'dark' ? '#c084fc' : '#7e22ce',
-                                  border: '1px solid',
-                                  borderColor: (theme) =>
-                                    theme.palette.mode === 'dark' ? 'rgba(168, 85, 247, 0.35)' : 'rgba(168, 85, 247, 0.25)',
-                                  cursor: 'help',
-                                }}
-                              />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={dayConfig.endTime || '18:00'}
+                            onChange={(e) => handleTimeChange(key, 'endTime', e.target.value)}
+                            disabled={disabled}
+                            className="h-8 rounded-lg border border-line bg-canvas px-2.5 font-mono text-xs text-ink focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                          />
+                          <span className="font-mono text-[0.6875rem] text-muted num hidden sm:inline">
+                            {format12h(dayConfig.endTime)}
+                          </span>
+                          {dur.isOvernight && (
+                            <Tooltip content={`Crosses midnight into ${nextDayName} morning`}>
+                              <Badge
+                                variant="secondary"
+                                className="bg-indigo-100 text-indigo-700 font-mono text-[9px] px-1 py-0"
+                              >
+                                +1d
+                              </Badge>
                             </Tooltip>
-                          ) : (
-                            <Chip
-                              icon={<DayIcon sx={{ fontSize: 13, color: '#d97706 !important' }} />}
-                              label={`${dur.text} · Day Shift`}
-                              size="small"
-                              sx={{
-                                fontWeight: 600,
-                                fontSize: '0.72rem',
-                                height: 24,
-                                whiteSpace: 'nowrap',
-                                bgcolor: (theme) =>
-                                  theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.14)' : 'rgba(245, 158, 11, 0.08)',
-                                color: (theme) =>
-                                  theme.palette.mode === 'dark' ? '#fbbf24' : '#b45309',
-                                border: '1px solid',
-                                borderColor: (theme) =>
-                                  theme.palette.mode === 'dark' ? 'rgba(245, 158, 11, 0.35)' : 'rgba(245, 158, 11, 0.25)',
-                              }}
-                            />
                           )}
-                        </Box>
+                        </div>
                       ) : (
-                        <Typography variant="caption" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                          — Scheduled Off —
-                        </Typography>
+                        <span className="text-muted font-mono text-xs italic">—</span>
                       )}
-                    </TableCell>
-                  </TableRow>
+                    </td>
+
+                    {/* Duration / Tag */}
+                    <td className="py-2.5 px-4">
+                      {dayConfig.isWorkDay ? (
+                        <div className="flex items-center gap-2">
+                          {dur.isOvernight ? (
+                            <Badge
+                              variant="secondary"
+                              className="gap-1 bg-indigo-50 text-indigo-700 border-indigo-200 font-mono text-[0.6875rem] num"
+                            >
+                              <Moon className="size-3 text-indigo-600" />
+                              <span>{dur.text} · Night Shift</span>
+                            </Badge>
+                          ) : (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 border-amber-200 bg-amber-50 text-amber-800 font-mono text-[0.6875rem] num"
+                            >
+                              <Sun className="size-3 text-amber-500" />
+                              <span>{dur.text} · Day Shift</span>
+                            </Badge>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[0.6875rem] text-faint italic font-mono">
+                          — Scheduled Off —
+                        </span>
+                      )}
+                    </td>
+                  </tr>
                 );
               })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-    </LocalizationProvider>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
   );
 };
 

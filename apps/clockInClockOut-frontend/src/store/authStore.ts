@@ -125,7 +125,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await authService.login(email, password, rememberDevice);
-      const liveWorkspaces = await authService.fetchWorkspaces();
+      let liveWorkspaces: Workspace[] = [];
+      let isSubscriptionError = false;
+
+      try {
+        liveWorkspaces = await authService.fetchWorkspaces();
+      } catch (wsErr: any) {
+        const errorMsg = wsErr?.response?.data?.error?.message || wsErr?.message || '';
+        if (
+          wsErr?.response?.status === 403 &&
+          (errorMsg.toLowerCase().includes('subscription') || errorMsg.toLowerCase().includes('active subscription'))
+        ) {
+          isSubscriptionError = true;
+        } else {
+          console.warn('Could not fetch live workspaces during login:', wsErr);
+        }
+      }
       const currentWorkspace = authService.getActiveWorkspace();
       const tenant = response.tenant;
       const user = response.user;
@@ -139,6 +154,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isSuperAdmin: computeIsSuperAdmin(tenant, user),
         isLoading: false,
       });
+
+      if (isSubscriptionError) {
+        if (window.location.pathname !== '/subscription-expired') {
+          window.location.href = '/subscription-expired';
+        }
+      }
 
       return user;
     } catch (err) {
@@ -177,25 +198,31 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: async (queryClient?: QueryClient): Promise<void> => {
-    set({ isLoading: true });
-    try {
-      if (queryClient) {
+    // 1. Reset client store and queries immediately so UI transitions with 0ms delay
+    if (queryClient) {
+      try {
         queryClient.cancelQueries();
         queryClient.clear();
+      } catch (e) {
+        console.warn('Error clearing queries on logout:', e);
       }
+    }
+
+    set({
+      user: null,
+      token: null,
+      currentTenant: null,
+      workspaces: [],
+      currentWorkspace: null,
+      isSuperAdmin: false,
+      isLoading: false,
+    });
+
+    // 2. Clear local storage and dispatch server session invalidation
+    try {
       await authService.logout();
-      set({
-        user: null,
-        token: null,
-        currentTenant: null,
-        workspaces: [],
-        currentWorkspace: null,
-        isSuperAdmin: false,
-        isLoading: false,
-      });
     } catch (err) {
       console.error('Failed to log out:', err);
-      set({ isLoading: false });
     }
   },
 
@@ -222,10 +249,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     try {
-      const [currentUser, liveWorkspaces] = await Promise.all([
-        authService.getCurrentUser(),
-        authService.fetchWorkspaces(),
-      ]);
+      let currentUser: User | null = null;
+      let liveWorkspaces: Workspace[] = [];
+      let isSubscriptionError = false;
+
+      try {
+        currentUser = await authService.getCurrentUser();
+      } catch (userErr) {
+        console.warn('Failed to retrieve current user:', userErr);
+      }
+
+      if (currentUser) {
+        try {
+          liveWorkspaces = await authService.fetchWorkspaces();
+        } catch (wsErr: any) {
+          const errorMsg = wsErr?.response?.data?.error?.message || wsErr?.message || '';
+          if (
+            wsErr?.response?.status === 403 &&
+            (errorMsg.toLowerCase().includes('subscription') || errorMsg.toLowerCase().includes('active subscription'))
+          ) {
+            isSubscriptionError = true;
+          }
+        }
+      }
+
+
+
 
       if (currentUser) {
         const tenant = authService.getCurrentTenant();
@@ -239,6 +288,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           isSuperAdmin: computeIsSuperAdmin(tenant, currentUser),
           isLoading: false,
         });
+
+        if (isSubscriptionError && window.location.pathname !== '/subscription-expired') {
+          window.location.href = '/subscription-expired';
+        }
       } else {
         set({
           user: null,

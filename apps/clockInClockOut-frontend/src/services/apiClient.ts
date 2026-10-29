@@ -1,17 +1,18 @@
 import axios, { AxiosError } from 'axios';
 import { notify } from '../context/NotificationContext';
 
-const isBrowser = typeof window !== 'undefined';
-const currentHost = isBrowser && window.location.hostname ? window.location.hostname : 'localhost';
 
-export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || `http://${currentHost}:3001`;
-export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || `http://${currentHost}:3000`;
+export const PLATFORM_API_URL =
+  import.meta.env.PROD ? '' : (import.meta.env.VITE_PLATFORM_API_URL || 'http://localhost:3001');
+export const CLOCKIN_API_URL =
+  import.meta.env.PROD ? '' : (import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000');
 
 function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
   if (!data) return fallback;
   if (typeof data === 'string') return data;
   if (data.error) {
     if (typeof data.error === 'string') return data.error;
+    if (data.error.originalMessage) return data.error.originalMessage;
     if (data.error.message) return data.error.message;
   }
   if (data.message) return data.message;
@@ -68,6 +69,16 @@ export function isSignedIn(): boolean {
   }
 }
 
+export function isPublicAuthRoute(url: string): boolean {
+  return (
+    url.includes('/auth/login') ||
+    url.includes('/auth/register') ||
+    url.includes('/auth/refresh') ||
+    url.includes('/auth/forgot-password') ||
+    url.includes('/auth/reset-password')
+  );
+}
+
 // Central Axios instance for ClockInClockOut backend (Port 3000)
 export const clockInApi = axios.create({
   baseURL: CLOCKIN_API_URL,
@@ -89,10 +100,7 @@ export const platformAuthApi = axios.create({
 // Request interceptor: attach X-Tenant-Id and X-Workspace-Id headers (the session cookie goes by itself)
 clockInApi.interceptors.request.use((config) => {
   const url = config.url || '';
-  const isAuthRoute =
-    url.includes('/auth/login') ||
-    url.includes('/auth/register') ||
-    url.includes('/auth/refresh');
+  const isAuthRoute = isPublicAuthRoute(url);
 
   // Do not hit network for protected routes when signed out
   if (!isSignedIn() && !isAuthRoute) {
@@ -118,10 +126,7 @@ clockInApi.interceptors.request.use((config) => {
 // Request interceptor for platformAuthApi: attach the X-Tenant-Id header (the session cookie goes by itself)
 platformAuthApi.interceptors.request.use((config) => {
   const url = config.url || '';
-  const isAuthRoute =
-    url.includes('/auth/login') ||
-    url.includes('/auth/register') ||
-    url.includes('/auth/refresh');
+  const isAuthRoute = isPublicAuthRoute(url);
 
   // Do not hit network for protected routes when signed out
   if (!isSignedIn() && !isAuthRoute) {
@@ -174,10 +179,7 @@ clockInApi.interceptors.response.use(
     }
 
     // Never intercept auth endpoints (login, register, refresh)
-    const isAuthRoute =
-      url.includes('/auth/login') ||
-      url.includes('/auth/register') ||
-      url.includes('/auth/refresh');
+    const isAuthRoute = isPublicAuthRoute(url);
 
     // BUG-08: Check if 401 was due to missing tenant header rather than expired JWT session
     const errorData = error.response?.data as any;
@@ -206,6 +208,18 @@ clockInApi.interceptors.response.use(
     }
 
     if (isAuthRoute) {
+      return Promise.reject(error);
+    }
+
+    const isSubscriptionError =
+      error.response?.status === 403 &&
+      (errorMsg.toLowerCase().includes('subscription') ||
+        errorMsg.toLowerCase().includes('active subscription'));
+
+    if (isSubscriptionError) {
+      if (window.location.pathname !== '/subscription-expired') {
+        window.location.href = '/subscription-expired';
+      }
       return Promise.reject(error);
     }
 

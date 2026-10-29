@@ -1,3 +1,12 @@
+// One email attachment for inline CID or downloadable files.
+export interface EmailAttachment {
+  filename: string;
+  content: any;
+  cid?: string;
+  contentType?: string;
+  contentDisposition?: "inline" | "attachment";
+}
+
 // One email, ready to send. Every email has an HTML and a plain-text body.
 export interface EmailMessage {
   to: string;
@@ -6,6 +15,7 @@ export interface EmailMessage {
   text: string;
   // What kind of email this is ("password-reset", "invitation"…): for logs, tests and analytics.
   tag: string;
+  attachments?: EmailAttachment[];
 }
 
 // An email as it was handed to a sender, with the sender's From address and the time.
