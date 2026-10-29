@@ -1,7 +1,7 @@
 import * as React from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Check, Clock, PenLine, Printer } from "lucide-react";
-import { Brand } from "@/components/app/brand";
+import { BrandCard } from "@/components/app/brand";
 import { CheckFace } from "@/components/app/check-face";
 import { cn } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ export function AuthLayout({ title, subtitle, children, footer }: { title: strin
   return (
     <div className="grid min-h-dvh lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <div className="flex flex-col px-5 py-6 sm:px-10">
-        <Brand />
+        <BrandCard />
         <div className="flex flex-1 items-center justify-center py-10">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
