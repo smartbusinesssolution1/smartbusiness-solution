@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '../../store/authStore';
 import { platformAuthApi } from '../../services/apiClient';
 import { authService } from '../../services/authService';
 import { useForm } from 'react-hook-form';
@@ -74,7 +75,12 @@ export const LoginPage: React.FC = () => {
     try {
       const user = await login(data.email, data.password, rememberDevice);
       if (user) {
-        navigate('/admin/dashboard', { replace: true });
+        const storeWorkspaces = useAuthStore.getState().workspaces;
+        if (!storeWorkspaces || storeWorkspaces.length === 0) {
+          navigate('/admin/workspaces?create=true', { replace: true });
+        } else {
+          navigate('/admin/dashboard', { replace: true });
+        }
       }
     } catch (err: any) {
       const msg = err?.message || 'Login failed. Please verify your credentials.';
@@ -353,18 +359,6 @@ export const LoginPage: React.FC = () => {
                       )}
                     </Button>
                   </form>
-
-                </div>
-
-                {/* Card Footer */}
-                <div className="rounded-b-2xl border-t border-slate-100 bg-slate-50/70 px-7 py-4 text-center text-xs text-slate-500 sm:px-9">
-                  Setting up a new organization?{' '}
-                  <span
-                    onClick={() => navigate('/create-workspace')}
-                    className="font-semibold text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer hover:underline transition"
-                  >
-                    Create a workspace
-                  </span>
                 </div>
               </div>
             </div>

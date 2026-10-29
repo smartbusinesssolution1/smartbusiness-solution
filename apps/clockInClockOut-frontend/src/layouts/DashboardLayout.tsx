@@ -50,7 +50,7 @@ interface NavItemDef {
 }
 
 export const DashboardLayout: React.FC = () => {
-  const { user, isSuperAdmin, currentTenant, logout, currentWorkspace, workspaces, switchWorkspace } = useAuth();
+  const { user, isLoading, isSuperAdmin, currentTenant, logout, currentWorkspace, workspaces, switchWorkspace } = useAuth();
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
   const { mode, toggleTheme } = useAppTheme();
   const navigate = useNavigate();
@@ -59,6 +59,18 @@ export const DashboardLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  React.useEffect(() => {
+    if (
+      !isLoading &&
+      workspaces &&
+      workspaces.length === 0 &&
+      location.pathname !== '/admin/workspaces' &&
+      location.pathname !== '/workspace/select'
+    ) {
+      navigate('/admin/workspaces?create=true', { replace: true });
+    }
+  }, [isLoading, workspaces, location.pathname, navigate]);
 
   const handleConfirmLogout = async () => {
     setIsLoggingOut(true);
