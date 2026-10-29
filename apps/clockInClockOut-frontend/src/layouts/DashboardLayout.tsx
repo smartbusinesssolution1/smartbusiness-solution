@@ -36,6 +36,10 @@ import {
   MenuSeparator,
   Tooltip,
   TooltipProvider,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
 } from '../components/ui';
 
 interface NavItemDef {
@@ -53,11 +57,16 @@ export const DashboardLayout: React.FC = () => {
   const location = useLocation();
 
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
-  const handleLogout = async () => {
+  const handleConfirmLogout = async () => {
+    setIsLoggingOut(true);
     try {
       await logout();
     } finally {
+      setIsLoggingOut(false);
+      setShowLogoutConfirm(false);
       navigate('/login');
     }
   };
@@ -380,7 +389,7 @@ export const DashboardLayout: React.FC = () => {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={handleLogout}
+                onClick={() => setShowLogoutConfirm(true)}
                 className="hover:bg-rose-50 hover:text-rose-600"
                 aria-label="Sign Out"
               >
@@ -454,6 +463,37 @@ export const DashboardLayout: React.FC = () => {
           </main>
         </div>
       </div>
+          {/* Logout Confirmation Dialog */}
+      <Dialog
+        open={showLogoutConfirm}
+        onOpenChange={(open) => {
+          if (!isLoggingOut) setShowLogoutConfirm(open);
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader
+            title="Confirm Logout"
+            description="Are you sure you want to log out? You will need to sign in again to access your account."
+            icon={<LogOut className="size-4 text-rose-600" />}
+          />
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowLogoutConfirm(false)}
+              disabled={isLoggingOut}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmLogout}
+              loading={isLoggingOut}
+            >
+              {isLoggingOut ? 'Logging out...' : 'Log Out'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </TooltipProvider>
   );
 };

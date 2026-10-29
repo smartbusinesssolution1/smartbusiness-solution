@@ -209,6 +209,18 @@ clockInApi.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const isSubscriptionError =
+      error.response?.status === 403 &&
+      (errorMsg.toLowerCase().includes('subscription') ||
+       errorMsg.toLowerCase().includes('active subscription'));
+
+    if (isSubscriptionError) {
+      if (window.location.pathname !== '/subscription-expired') {
+        window.location.href = '/subscription-expired';
+      }
+      return Promise.reject(error);
+    }
+
     if (isTenantHeaderError) {
       notify('Organization / Tenant identifier is required for this operation.', 'warning');
       return Promise.reject(error);

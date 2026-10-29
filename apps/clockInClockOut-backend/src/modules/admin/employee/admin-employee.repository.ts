@@ -1,4 +1,4 @@
-import { prisma, Prisma } from "@smartbusiness/database";
+import { prisma, Prisma, TenantRole } from "@smartbusiness/database";
 import type {
   CreateEmployeeInput,
   UpdateEmployeeInput,
@@ -17,6 +17,13 @@ export class AdminEmployeeRepository {
       Prisma.sql`wm.deleted_at IS NULL`,
       Prisma.sql`w.deleted_at IS NULL`,
       Prisma.sql`w.tenant_id = ${tenantId}`,
+      Prisma.sql`NOT EXISTS (
+        SELECT 1 FROM tenant_members tm
+        WHERE tm.tenant_id = ${tenantId}
+          AND tm.user_id = wm.user_id
+          AND tm.role::text = 'OWNER'
+          AND tm.deleted_at IS NULL
+      )`,
     ];
 
     if (callerUserId) {
@@ -264,8 +271,20 @@ export class AdminEmployeeRepository {
       where: {
         deletedAt: null,
         workspaceMember: {
+          deletedAt: null,
           workspace: {
             tenantId,
+            deletedAt: null,
+          },
+          user: {
+            deletedAt: null,
+            tenantMembers: {
+              none: {
+                tenantId,
+                role: TenantRole.OWNER,
+                deletedAt: null,
+              },
+            },
           },
         },
       },
