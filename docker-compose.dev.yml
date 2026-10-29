@@ -1,6 +1,6 @@
 # Local development services.
-#   docker compose -f docker-compose.dev.yml up -d     start Redis (127.0.0.1:6379), Mailpit (127.0.0.1:1025/8025), and Face Recognition (127.0.0.1:8000)
-#   docker compose -f docker-compose.dev.yml down      stop them (Redis data and Face Recognition models are preserved in volumes)
+#   docker compose -f docker-compose.dev.yml up -d     start Redis (127.0.0.1:6379) and Mailpit
+#   docker compose -f docker-compose.dev.yml down      stop them (Redis data is kept in the volume)
 services:
   redis:
     image: redis:7.4-alpine
@@ -8,11 +8,11 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     # Append-only file: queued jobs survive a container restart, as they would in production.
-    command: ["redis-server", "--appendonly", "yes"]
+    command: [ "redis-server", "--appendonly", "yes" ]
     volumes:
       - redis-dev-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 2s
       timeout: 3s
       retries: 30
@@ -27,34 +27,5 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
-  # Biometric Face Recognition Microservice (FastAPI + InsightFace)
-  face-recognition:
-    build:
-      context: apps/clockInClockout-face-recognition
-      dockerfile: Dockerfile
-    container_name: smartbusiness-dev-face-recognition
-    image: smartbusiness-dev-face-recognition:latest
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
-    env_file:
-      - path: apps/clockInClockout-face-recognition/.env
-        required: false
-    environment:
-      - MATCH_THRESHOLD=${MATCH_THRESHOLD:-0.55}
-      - LIVENESS_THRESHOLD=${LIVENESS_THRESHOLD:-0.65}
-      - BLINK_STEP=${BLINK_STEP:-true}
-      - CHALLENGE_STEPS=${CHALLENGE_STEPS:-0}
-      - SCREEN_BORDER_HARD_REJECT=${SCREEN_BORDER_HARD_REJECT:-true}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
-    volumes:
-      - face-recognition-models:/home/faceapp/.insightface
-
 volumes:
   redis-dev-data:
-  face-recognition-models:

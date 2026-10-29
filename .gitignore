@@ -5,16 +5,14 @@ node_modules
 .pnp
 .pnp.js
 
-# Lock files
+# Lock files (this repo uses pnpm-lock.yaml)
 package-lock.json
 pnpm-lock.json
 
-# Local env files
+# Local env files: every .env variant holds secrets; only templates are committed
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
 
 # Testing
 coverage
@@ -70,37 +68,3 @@ apps/check-printing-backend/micr/
 
 # Development emails written by the file email sender
 tmp/
-
-.agents
-
-PROJECT_KNOWLEDGE.md 
-STRICT_GUIDELINES.md 
-
-# project-context-docs
-ATTENDANCE_API_ENDPOINTS.md 
-CHECKPOINT_BACKEND_REVIEW.md
-
-
-apps/clockInClockOut-backend/README.md
-apps/clockInClockOut-frontend/README.md
-apps/portal-website/README.md
-apps/smartbusiness/README.md
-apps/smartbusiness-client/README.md
-apps/smartbusiness-admin/README.md
-apps/smartbusiness-portal/README.md
-
-AGENTS.md
-CHATBOT_USER_GUIDE.md
-CLIENT_SYSTEM_OVERVIEW.md
-CLOCK_IN_CLOCK_OUT_SYSTEM_DOCUMENTATION.md
-
-
-apps/clockInClockOut-backend/scripts
-packages/database/scripts
-
-
-docs/
-dump.rdb
-
-
-.codex-plugins
