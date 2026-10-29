@@ -11,6 +11,7 @@ const LoginPage = lazy(() => import('../pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('../pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
+const SubscriptionExpiredPage = lazy(() => import('../pages/auth/SubscriptionExpiredPage'));
 
 // Admin Pages (lazy-loaded)
 const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard'));
@@ -76,6 +77,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/login" element={user ? <Navigate to="/admin/dashboard" replace /> : <LoginPage />} />
         <Route path="/forgot-password" element={user ? <Navigate to="/admin/dashboard" replace /> : <ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/subscription-expired" element={<SubscriptionExpiredPage />} />
+        <Route path="/subscription-required" element={<Navigate to="/subscription-expired" replace />} />
         <Route path="/create-workspace" element={user ? <Navigate to="/admin/dashboard" replace /> : <RegisterPage />} />
         <Route path="/register" element={<Navigate to="/create-workspace" replace />} />
 

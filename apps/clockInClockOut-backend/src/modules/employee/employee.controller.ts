@@ -33,7 +33,9 @@ export class EmployeeController {
     const userId = req.user!.userId;
     const tenantId = req.tenant!.tenantId;
 
-    const result = await this.employeeService.updateEmployeeProfile(userId, tenantId, req.body);
+    const role = req.tenant?.role;
+
+    const result = await this.employeeService.updateEmployeeProfile(userId, tenantId, req.body, role);
 
     res.status(200).json({
       success: true,

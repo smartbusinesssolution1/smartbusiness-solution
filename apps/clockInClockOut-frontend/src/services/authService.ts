@@ -461,34 +461,33 @@ export const authService = {
    * Log out and clear session
    */
   async logout(): Promise<void> {
+    markSignedOut();
+    localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+    localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+    localStorage.removeItem(WORKSPACES_STORAGE_KEY);
+    setSessionUser(null);
+
+    // Clean up any onboarding checklist dismissal state so that next login
+    // will always display the checklist until 100% completed
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && (key.startsWith("checkpoint_onboarding_dismissed") || key.startsWith("checkpoint_onboarding_session"))) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+      sessionStorage.clear();
+    } catch {
+      // Storage unavailable
+    }
+
     try {
       await platformAuthApi.post('/api/v1/auth/logout').catch(() => { });
     } catch (err) {
       console.warn('Logout API error:', err);
-    } finally {
-      markSignedOut();
-      localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
-      localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
-      localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
-      localStorage.removeItem(WORKSPACES_STORAGE_KEY);
-
-      // Clean up any onboarding checklist dismissal state so that next login
-      // will always display the checklist until 100% completed
-      try {
-        const keysToRemove: string[] = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
-          if (key && (key.startsWith("checkpoint_onboarding_dismissed") || key.startsWith("checkpoint_onboarding_session"))) {
-            keysToRemove.push(key);
-          }
-        }
-        keysToRemove.forEach((k) => localStorage.removeItem(k));
-        sessionStorage.clear();
-      } catch {
-        // Storage unavailable
-      }
-
-      setSessionUser(null);
     }
   },
 

@@ -140,13 +140,22 @@ export const AdminProfile: React.FC = () => {
           .catch(() => {});
       }
 
-      // 2. Persist Profile Picture to Clock-In backend if changed and privileged
-      if (canUpdateAvatar && avatarPreview && avatarPreview !== user.avatarUrl) {
+      // 2. Persist Phone & Profile Picture to Clock-In backend
+      const shouldUpdateEmployee =
+        (data.phone && data.phone !== user.phone) ||
+        (canUpdateAvatar && avatarPreview && avatarPreview !== user.avatarUrl);
+
+      if (shouldUpdateEmployee) {
+        const payload: Record<string, any> = {
+          fullName: data.name,
+          phone: data.phone,
+        };
+        if (canUpdateAvatar && avatarPreview && avatarPreview !== user.avatarUrl) {
+          payload.biometricPhotoUrl = avatarPreview;
+        }
         await clockInApi
-          .patch('/api/v1/employees/me', {
-            biometricPhotoUrl: avatarPreview,
-          })
-          .catch((err) => console.warn('Could not persist avatar to employee record:', err));
+          .patch('/api/v1/employees/me', payload)
+          .catch((err) => console.warn('Could not persist profile details to employee record:', err));
       }
 
       // 3. Update local session & mockDb
