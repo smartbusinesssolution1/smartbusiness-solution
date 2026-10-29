@@ -125,7 +125,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const response = await authService.login(email, password, rememberDevice);
-      let liveWorkspaces: Workspace[] = [];
+      let liveWorkspaces: Workspace[] | null = null;
       let isSubscriptionError = false;
 
       try {
@@ -149,7 +149,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         user,
         token: response.token,
         currentTenant: tenant,
-        workspaces: liveWorkspaces.length > 0 ? liveWorkspaces : response.workspaces,
+        workspaces: liveWorkspaces !== null ? liveWorkspaces : response.workspaces,
         currentWorkspace,
         isSuperAdmin: computeIsSuperAdmin(tenant, user),
         isLoading: false,
@@ -250,7 +250,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     try {
       let currentUser: User | null = null;
-      let liveWorkspaces: Workspace[] = [];
+      let liveWorkspaces: Workspace[] | null = null;
       let isSubscriptionError = false;
 
       try {
@@ -283,7 +283,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           user: currentUser,
           token: 'session-cookie-active',
           currentTenant: tenant,
-          workspaces: liveWorkspaces,
+          workspaces: liveWorkspaces ?? [],
           currentWorkspace: active,
           isSuperAdmin: computeIsSuperAdmin(tenant, currentUser),
           isLoading: false,

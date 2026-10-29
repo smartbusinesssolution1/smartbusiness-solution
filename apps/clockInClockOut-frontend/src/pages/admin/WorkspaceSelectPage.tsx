@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Building2,
   Plus,
@@ -41,7 +41,8 @@ type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
 export const WorkspaceSelectPage: React.FC = () => {
   const navigate = useNavigate();
-  const { currentTenant, isSuperAdmin, workspaces, currentWorkspace, switchWorkspace, addWorkspace, refreshWorkspaces } =
+  const location = useLocation();
+  const { currentTenant, isSuperAdmin, workspaces, currentWorkspace, switchWorkspace, addWorkspace, refreshWorkspaces, logout, isLoading } =
     useAuth();
 
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
@@ -60,6 +61,8 @@ export const WorkspaceSelectPage: React.FC = () => {
   const [zipCode, setZipCode] = useState('');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
+
+  const hasNoWorkspaces = !isLoading && Boolean(workspaces && workspaces.length === 0);
 
   useEffect(() => {
     if (!workspaces || workspaces.length === 0) {
@@ -408,13 +411,32 @@ export const WorkspaceSelectPage: React.FC = () => {
       )}
 
       {/* ── 4. Shadcn Dialog: Add Workspace & Branch ── */}
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog
+        open={isAddModalOpen}
+        onOpenChange={(open) => {
+          if (!open && hasNoWorkspaces) return;
+          setIsAddModalOpen(open);
+        }}
+      >
+        <DialogContent
+          className="max-w-md"
+          hideClose={hasNoWorkspaces}
+          onPointerDownOutside={(e) => {
+            if (hasNoWorkspaces) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (hasNoWorkspaces) e.preventDefault();
+          }}
+        >
           <form onSubmit={handleCreateWorkspace}>
             <DialogHeader
               icon={<Building2 className="size-5 text-primary-600 dark:text-primary-400" />}
-              title="Add Workspace & Branch"
-              description={`Add a physical branch location, warehouse, or regional office under ${companyName}.`}
+              title={hasNoWorkspaces ? 'Create Your First Workspace' : 'Add Workspace & Branch'}
+              description={
+                hasNoWorkspaces
+                  ? `Welcome to ${companyName}! Please create your first branch or office workspace to get started.`
+                  : `Add a physical branch location, warehouse, or regional office under ${companyName}.`
+              }
             />
 
             <DialogBody className="space-y-4 pt-2">
@@ -497,9 +519,25 @@ export const WorkspaceSelectPage: React.FC = () => {
             </DialogBody>
 
             <DialogFooter>
+              {hasNoWorkspaces ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="default"
+                  disabled={isSubmitting}
+                  onClick={async () => {
+                    await logout();
+                    navigate('/login');
+                  }}
+                  className="mr-auto text-xs text-muted hover:text-ink"
+                >
+                  Sign Out
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
+                className={hasNoWorkspaces ? "hidden" : undefined}
                 size="default"
                 disabled={isSubmitting}
                 onClick={() => setIsAddModalOpen(false)}
@@ -513,7 +551,7 @@ export const WorkspaceSelectPage: React.FC = () => {
                 disabled={!name.trim() || isSubmitting}
                 loading={isSubmitting}
               >
-                {isSubmitting ? 'Creating Branch...' : 'Create Workspace'}
+                {isSubmitting ? 'Creating Branch...' : hasNoWorkspaces ? 'Create & Continue' : 'Create Workspace'}
               </Button>
             </DialogFooter>
           </form>
