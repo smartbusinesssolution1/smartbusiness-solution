@@ -12,11 +12,12 @@ RUN turbo prune @smartbusiness/chatbot-frontend --docker
 
 FROM base AS builder
 WORKDIR /app
-ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 COPY --from=pruner /app/out/json/ .
 RUN pnpm install --frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
+ARG VITE_API_BASE=/api
+ENV VITE_API_BASE=$VITE_API_BASE
 RUN pnpm --filter @smartbusiness/chatbot-frontend build
 
 FROM nginx:1.27-alpine AS runner
@@ -28,11 +29,13 @@ RUN printf 'server {\n\
     resolver 127.0.0.11 valid=30s ipv6=off;\n\
     location /api/ {\n\
         set $chatbot_backend http://chatbot-backend:8000;\n\
+        rewrite ^/api/(.*) /$1 break;\n\
         proxy_pass $chatbot_backend;\n\
         proxy_set_header Host $host;\n\
         proxy_set_header X-Real-IP $remote_addr;\n\
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
         proxy_set_header X-Forwarded-Proto $scheme;\n\
+        proxy_buffering off;\n\
         proxy_read_timeout 120s;\n\
     }\n\
     location / {\n\
