@@ -1,59 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Calendar,
+  Clock,
+  Search,
+  RotateCcw,
+  Download,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  FileText,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw,
+  Eye,
+  X,
+  Radio,
+  Sparkles,
+} from 'lucide-react';
+import dayjs from 'dayjs';
+
 import { attendanceService } from '../../services/attendanceService';
-import BrandLoader from '../../components/BrandLoader';
 import { ExportAuditReportModal } from '../../components/ExportAuditReportModal';
 import { AttendanceAuditDrawer } from '../../components/AttendanceAuditDrawer';
 import { AttendanceRecord } from '../../types';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TablePagination,
-  Paper,
-  Button,
-  TextField,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Grid,
-  Chip,
-  Skeleton,
-  useTheme,
-  Avatar,
-  Alert,
-  Tooltip,
-  TableSortLabel,
-  LinearProgress,
-  CircularProgress,
-} from '@mui/material';
-import {
-  FilterList as FilterIcon,
-  CheckCircle as OnTimeIcon,
-  Warning as LateIcon,
-  Cancel as AbsentIcon,
-  Autorenew as AutoClosedIcon,
-  Search as SearchIcon,
-  FileDownload as DownloadIcon,
-  EventNote as ReportIcon,
-  Refresh as RefreshIcon,
-  InfoOutlined as InfoIcon,
-} from '@mui/icons-material';
-import dayjs from 'dayjs';
 import { useAuth } from '../../context/AuthContext';
 import { getAvatarUrl } from '../../utils/imageUrl';
 import { useDebounce } from '../../hooks/useDebounce';
+import { cn } from '../../lib/utils';
+import {
+  Button,
+  Card,
+  Badge,
+  Tooltip,
+  Select,
+  SelectItem,
+  Input,
+  Table,
+  TableHeader,
+  TableBody,
+  TableHead,
+  TableRow,
+  TableCell,
+} from '../../components/ui';
+
+type SortField = 'date' | 'employeeName' | 'checkIn' | 'checkOut' | 'workingHours';
+type SortOrder = 'asc' | 'desc';
 
 export const AttendanceReport: React.FC = () => {
-  const theme = useTheme();
   const { user, currentWorkspace, workspaces } = useAuth();
 
   const cleanId = (id?: string | null): string => {
@@ -73,16 +71,20 @@ export const AttendanceReport: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [dateFilter, setDateFilter] = useState('');
 
-  // Export Modal State (only opens when clicking Export button)
+  // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   // Side Drawer State for detailed punch logs
   const [selectedRecord, setSelectedRecord] = useState<AttendanceRecord | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  // Pagination State (0-indexed for MUI TablePagination)
+  // Pagination State (0-indexed)
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+
+  // Sorting State
+  const [sortField, setSortField] = useState<SortField>('date');
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
 
   // Fetch attendance report with dynamic server-side filters & pagination
   const {
@@ -92,7 +94,15 @@ export const AttendanceReport: React.FC = () => {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['adminAttendanceReports', activeWorkspaceId, page, rowsPerPage, debouncedSearch.trim(), statusFilter, dateFilter],
+    queryKey: [
+      'adminAttendanceReports',
+      activeWorkspaceId,
+      page,
+      rowsPerPage,
+      debouncedSearch.trim(),
+      statusFilter,
+      dateFilter,
+    ],
     queryFn: () =>
       attendanceService.getAdminAttendanceReport({
         page: page + 1,
@@ -111,7 +121,7 @@ export const AttendanceReport: React.FC = () => {
   const queryClient = useQueryClient();
 
   // Background-prefetch adjacent pages so page navigation is instantaneous (<1ms)
-  React.useEffect(() => {
+  useEffect(() => {
     if (!user || !activeWorkspaceId || !reportData?.pagination) return;
     const totalPages = reportData.pagination.totalPages;
 
@@ -178,17 +188,13 @@ export const AttendanceReport: React.FC = () => {
 
   const records = reportData?.items || [];
 
-  // Time-wise and column sorting state (default: Check-In time descending)
-  const [sortField, setSortField] = useState<'checkIn' | 'checkOut' | 'employeeName' | 'workingHours' | 'date'>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-
-  const handleRequestSort = (property: 'checkIn' | 'checkOut' | 'employeeName' | 'workingHours' | 'date') => {
+  const handleRequestSort = (property: SortField) => {
     const isAsc = sortField === property && sortOrder === 'asc';
     setSortOrder(isAsc ? 'desc' : 'asc');
     setSortField(property);
   };
 
-  const sortedRecords = React.useMemo(() => {
+  const sortedRecords = useMemo(() => {
     const items = [...records];
     items.sort((a, b) => {
       if (sortField === 'date') {
@@ -240,7 +246,10 @@ export const AttendanceReport: React.FC = () => {
     });
     return items;
   }, [records, sortField, sortOrder]);
+
   const totalCount = reportData?.pagination?.total || 0;
+  const totalPages = reportData?.pagination?.totalPages || Math.ceil(totalCount / rowsPerPage) || 1;
+
   const summary = reportData?.summary || {
     totalShifts: 0,
     lateCount: 0,
@@ -249,593 +258,725 @@ export const AttendanceReport: React.FC = () => {
     absentCount: 0,
   };
 
-  const handlePageChange = (_event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
+  const isFiltered = Boolean(searchTerm.trim() || statusFilter !== 'all' || dateFilter);
 
-  const handleRowsPerPageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('all');
+    setDateFilter('');
     setPage(0);
   };
 
-  const getStatusChip = (status: string) => {
-    switch (status) {
+  const renderStatusBadge = (status: string) => {
+    switch (status?.toLowerCase()) {
       case 'present':
-        return <Chip label="On Time" color="success" size="small" icon={<OnTimeIcon />} />;
+        return (
+          <Badge variant="success" className="gap-1 font-mono text-[0.6875rem]">
+            <CheckCircle2 className="size-3 text-emerald-600" />
+            <span>On Time</span>
+          </Badge>
+        );
       case 'late':
-        return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
+        return (
+          <Badge variant="warning" className="gap-1 font-mono text-[0.6875rem]">
+            <AlertTriangle className="size-3 text-amber-600" />
+            <span>Late Arrival</span>
+          </Badge>
+        );
       case 'absent':
-        return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
+        return (
+          <Badge variant="destructive" className="gap-1 font-mono text-[0.6875rem]">
+            <XCircle className="size-3" />
+            <span>Absent</span>
+          </Badge>
+        );
       case 'half_day':
-        return <Chip label="Half Day" color="info" size="small" />;
+        return (
+          <Badge
+            variant="outline"
+            className="border-sky-300 bg-sky-50 text-sky-700 font-mono text-[0.6875rem]"
+          >
+            Half Day
+          </Badge>
+        );
       case 'auto_closed':
-        return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
+        return (
+          <Badge
+            variant="outline"
+            className="gap-1 border-purple-300 bg-purple-50 text-purple-700 font-mono text-[0.6875rem]"
+          >
+            <RefreshCw className="size-3 text-purple-600" />
+            <span>Auto-Closed</span>
+          </Badge>
+        );
       default:
-        return <Chip label={status} size="small" />;
+        return (
+          <Badge variant="outline" className="font-mono text-[0.6875rem] capitalize">
+            {status || 'Unknown'}
+          </Badge>
+        );
     }
   };
 
+  const renderSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="size-3 text-faint opacity-50 transition-opacity group-hover:opacity-100" />;
+    }
+    return sortOrder === 'asc' ? (
+      <ArrowUp className="size-3 text-primary-600" />
+    ) : (
+      <ArrowDown className="size-3 text-primary-600" />
+    );
+  };
+
   return (
-    <Box>
-      {/* Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
-            <Typography variant="h4" sx={{ fontWeight: 800 }}>
-              Attendance Report
-            </Typography>
-            {reportData?.isLive && (
-              <Chip
-                label="🟢 Live Database"
-                color="success"
-                size="small"
-                variant="outlined"
-                sx={{ fontWeight: 700, fontSize: '0.72rem' }}
-              />
-            )}
-          </Box>
-          <Typography variant="body2" color="text.secondary">
-            Perform enterprise logs auditing, inspect real-time punch records, and view attendance status.
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
-          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => refetch()}>
-            Refresh
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            onClick={() => setIsExportModalOpen(true)}
-            sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2 }}
-          >
-            Export Report
-          </Button>
-        </Box>
-      </Box>
-
-      {/* Backend Error Notice */}
-      {!isLoading && reportData && !reportData.isLive && reportData.errorMessage && (
-        <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
-          {reportData.errorMessage}
-        </Alert>
-      )}
-
-      {/* Critical Server Error Alert */}
-      {isError && (
-        <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }}>
-          Failed to communicate with attendance services. Please verify backend server is online at port 3000.
-        </Alert>
-      )}
-
-      {/* Metrics Summary row */}
-      <Grid container spacing={2.5} sx={{ mb: 3 }}>
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper
-            variant="outlined"
-            onClick={() => {
-              setStatusFilter('all');
-              setPage(0);
-            }}
-            sx={{
-              p: 2.25,
-              borderRadius: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.5,
-              cursor: 'pointer',
-              borderColor: statusFilter === 'all' ? 'primary.main' : undefined,
-              bgcolor: statusFilter === 'all' ? 'rgba(59, 130, 246, 0.04)' : 'background.paper',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                borderColor: 'primary.main',
-                boxShadow: 2,
-              },
-            }}
-          >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
-              Logged Shifts
-            </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'primary.main' }}>
-              {summary.totalShifts} Shifts
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Total active clock-ins
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper
-            variant="outlined"
-            onClick={() => {
-              setStatusFilter(statusFilter === 'late' ? 'all' : 'late');
-              setPage(0);
-            }}
-            sx={{
-              p: 2.25,
-              borderRadius: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.5,
-              cursor: 'pointer',
-              borderColor: statusFilter === 'late' ? 'warning.main' : undefined,
-              bgcolor: statusFilter === 'late' ? 'rgba(245, 158, 11, 0.08)' : 'background.paper',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                borderColor: 'warning.main',
-                boxShadow: 2,
-              },
-            }}
-          >
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
-              Late Arrivals
-            </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'warning.main' }}>
-              {summary.lateCount} ({summary.latePercentage}%)
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {statusFilter === 'late' ? 'Click to show all logs' : 'Click to filter late check-ins'}
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper
-            variant="outlined"
-            onClick={() => {
-              setStatusFilter(statusFilter === 'absent' ? 'all' : 'absent');
-              setPage(0);
-            }}
-            sx={{
-              p: 2.25,
-              borderRadius: 3,
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 0.5,
-              cursor: 'pointer',
-              borderColor: statusFilter === 'absent' ? 'error.main' : undefined,
-              bgcolor: statusFilter === 'absent' ? 'rgba(239, 68, 68, 0.08)' : 'background.paper',
-              transition: 'all 0.2s ease-in-out',
-              '&:hover': {
-                borderColor: 'error.main',
-                boxShadow: 2,
-              },
-            }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
-                Absent Personnel
-              </Typography>
-              <Chip
-                label={statusFilter === 'absent' ? 'Filtering' : 'View Absences'}
-                size="small"
-                color="error"
-                variant={statusFilter === 'absent' ? 'filled' : 'outlined'}
-                sx={{ height: 20, fontSize: '0.65rem', fontWeight: 700 }}
-              />
-            </Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'error.main' }}>
-              {summary.absentCount ?? 0} Absent
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {statusFilter === 'absent' ? 'Click to show all logs' : 'Click to filter absent records'}
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-          <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
-              Average Shift Length
-            </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.main' }}>
-              {summary.averageWorkingHours} hrs/day
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Averaged across completed logs
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* Filters Card */}
-      <Card sx={{ borderRadius: 3, mb: 3 }}>
-        <CardContent sx={{ p: 2.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <FilterIcon color="primary" sx={{ fontSize: 20 }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-              Audit Parameters & Filtering
-            </Typography>
-          </Box>
-
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 4 }}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Search Employee"
-                placeholder="Name or corporate ID..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setPage(0);
-                }}
-                slotProps={{
-                  input: {
-                    startAdornment: <SearchIcon sx={{ color: 'text.secondary', mr: 1, fontSize: 20 }} />,
-                  },
-                }}
-              />
-            </Grid>
-
-            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-              <FormControl fullWidth size="small">
-                <InputLabel id="status-filter-label">Log Status</InputLabel>
-                <Select
-                  labelId="status-filter-label"
-                  id="status-filter"
-                  value={statusFilter}
-                  label="Log Status"
-                  onChange={(e) => {
-                    setStatusFilter(e.target.value);
-                    setPage(0);
-                  }}
+    <div className="flex flex-col gap-6">
+      {/* ── 1. Page Header ── */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="eyebrow">ATTENDANCE AUDIT LEDGER</span>
+            <div className="flex items-center gap-3">
+              <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-[-0.02em] leading-tight text-ink">
+                Attendance Reports
+              </h1>
+              {reportData?.isLive && (
+                <Badge
+                  variant="outline"
+                  className="gap-1.5 border-emerald-300 bg-emerald-50/70 text-emerald-700 font-mono text-[0.6875rem]"
                 >
-                  <MenuItem value="all">All Statuses</MenuItem>
-                  <MenuItem value="present">On Time</MenuItem>
-                  <MenuItem value="late">Late Arrival</MenuItem>
-                  <MenuItem value="absent">Absent</MenuItem>
-                  <MenuItem value="half_day">Half Day</MenuItem>
-                  <MenuItem value="auto_closed">Auto-Closed</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
+                  <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Live Database</span>
+                </Badge>
+              )}
+            </div>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted">
+              Audit corporate attendance records, inspect real-time punch timestamps, track biometric verification, and export compliance files.
+            </p>
+          </div>
 
-            <Grid size={{ xs: 12, sm: 4, md: 4 }}>
-              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  type="date"
-                  label="Specific Date"
-                  value={dateFilter}
-                  onChange={(e) => {
-                    setDateFilter(e.target.value);
-                    setPage(0);
-                  }}
-                  slotProps={{ inputLabel: { shrink: true } }}
-                />
-                {dateFilter ? (
-                  <Button
-                    size="small"
-                    variant="text"
-                    color="inherit"
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="default"
+              onClick={() => refetch()}
+              disabled={isFetching}
+              className="gap-1.5"
+            >
+              <RotateCcw className={cn('size-3.5', isFetching && 'animate-spin text-primary-600')} />
+              <span>Refresh</span>
+            </Button>
+            <Button
+              variant="brand"
+              size="default"
+              onClick={() => setIsExportModalOpen(true)}
+              className="gap-1.5 shadow-sm"
+            >
+              <Download className="size-4" />
+              <span>Export Report</span>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Error / Notice Alerts ── */}
+      {!isLoading && reportData && !reportData.isLive && reportData.errorMessage && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 text-xs text-amber-800">
+          <AlertTriangle className="size-4 shrink-0 text-amber-600 mt-0.5" />
+          <div className="leading-relaxed">{reportData.errorMessage}</div>
+        </div>
+      )}
+
+      {isError && (
+        <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs text-rose-800">
+          <XCircle className="size-4 shrink-0 text-rose-600 mt-0.5" />
+          <div className="leading-relaxed">
+            Failed to communicate with attendance services. Please verify backend server is online at port 3000.
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Four Metric Stat Strip ── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Total Logged Shifts */}
+        <Card
+          onClick={() => {
+            setStatusFilter('all');
+            setPage(0);
+          }}
+          className={cn(
+            'p-3.5 flex flex-col gap-1 cursor-pointer transition-all duration-150',
+            statusFilter === 'all'
+              ? 'border-primary-500/80 bg-primary-50/20 ring-1 ring-primary-500/20'
+              : 'hover:border-line-strong hover:bg-subtle/50'
+          )}
+        >
+          <span className="text-[0.75rem] font-medium text-muted">Total Shifts</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-ink num">
+              {summary.totalShifts}
+            </span>
+            <span className="font-mono text-xs text-muted">shifts</span>
+          </div>
+          <span className="text-[0.6875rem] text-faint">
+            {statusFilter === 'all' ? 'Active view (All logs)' : 'Click to show all logs'}
+          </span>
+        </Card>
+
+        {/* Late Arrivals */}
+        <Card
+          onClick={() => {
+            setStatusFilter(statusFilter === 'late' ? 'all' : 'late');
+            setPage(0);
+          }}
+          className={cn(
+            'p-3.5 flex flex-col gap-1 cursor-pointer transition-all duration-150',
+            statusFilter === 'late'
+              ? 'border-amber-500/80 bg-amber-50/30 ring-1 ring-amber-500/20'
+              : 'hover:border-line-strong hover:bg-subtle/50'
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[0.75rem] font-medium text-muted">Late Arrivals</span>
+            <Badge variant="warning" className="font-mono text-[0.625rem] px-1.5 py-0">
+              {summary.latePercentage}%
+            </Badge>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-amber-600 num">
+              {summary.lateCount}
+            </span>
+            <span className="font-mono text-xs text-amber-700/80">records</span>
+          </div>
+          <span className="text-[0.6875rem] text-faint">
+            {statusFilter === 'late' ? 'Filtering late check-ins' : 'Click to filter late'}
+          </span>
+        </Card>
+
+        {/* Absent Personnel */}
+        <Card
+          onClick={() => {
+            setStatusFilter(statusFilter === 'absent' ? 'all' : 'absent');
+            setPage(0);
+          }}
+          className={cn(
+            'p-3.5 flex flex-col gap-1 cursor-pointer transition-all duration-150',
+            statusFilter === 'absent'
+              ? 'border-rose-500/80 bg-rose-50/30 ring-1 ring-rose-500/20'
+              : 'hover:border-line-strong hover:bg-subtle/50'
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[0.75rem] font-medium text-muted">Absent Personnel</span>
+            <Badge
+              variant="destructive"
+              className={cn(
+                'font-mono text-[0.625rem] px-1.5 py-0',
+                statusFilter === 'absent' && 'ring-1 ring-rose-400'
+              )}
+            >
+              {statusFilter === 'absent' ? 'Filtering' : 'Absences'}
+            </Badge>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-rose-600 num">
+              {summary.absentCount ?? 0}
+            </span>
+            <span className="font-mono text-xs text-rose-700/80">absent</span>
+          </div>
+          <span className="text-[0.6875rem] text-faint">
+            {statusFilter === 'absent' ? 'Filtering absent logs' : 'Click to filter absences'}
+          </span>
+        </Card>
+
+        {/* Average Working Hours */}
+        <Card className="p-3.5 flex flex-col gap-1">
+          <span className="text-[0.75rem] font-medium text-muted">Avg Shift Length</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className="font-mono text-2xl font-semibold text-emerald-600 num">
+              {summary.averageWorkingHours}
+            </span>
+            <span className="font-mono text-xs text-emerald-700/80">hrs/day</span>
+          </div>
+          <span className="text-[0.6875rem] text-faint">Averaged across completed shifts</span>
+        </Card>
+      </div>
+
+      {/* ── 4. Filter Toolbar ── */}
+      <Card className="p-3.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-12 items-center">
+          {/* Search box */}
+          <div className="sm:col-span-5">
+            <Input
+              type="text"
+              placeholder="Search by employee name or code..."
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(0);
+              }}
+              leading={<Search className="size-3.5" />}
+              trailing={
+                searchTerm ? (
+                  <button
+                    type="button"
                     onClick={() => {
-                      setDateFilter('');
+                      setSearchTerm('');
                       setPage(0);
                     }}
-                    sx={{ minWidth: 'auto', px: 1, textTransform: 'none', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                    className="cursor-pointer rounded p-0.5 text-faint hover:text-ink"
                   >
-                    Clear
-                  </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    onClick={() => {
-                      setDateFilter(dayjs().format('YYYY-MM-DD'));
-                      setPage(0);
-                    }}
-                    sx={{ whiteSpace: 'nowrap', textTransform: 'none', fontWeight: 600, fontSize: '0.75rem', py: 0.8 }}
-                  >
-                    Today
-                  </Button>
-                )}
-              </Box>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
+                    <X className="size-3.5" />
+                  </button>
+                ) : undefined
+              }
+              className="h-9 text-xs"
+            />
+          </div>
 
-      {/* Reports Table Card */}
-      <Card sx={{ borderRadius: 3, position: 'relative', overflow: 'hidden' }}>
-        {/* Top Progress Bar when fetching in background (pagination, filtering, refetch) */}
-        {isFetching && (
-          <LinearProgress
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 3,
-              zIndex: 10,
-            }}
-          />
-        )}
-
-        {isLoading ? (
-          <BrandLoader fullScreen message="Loading attendance records..." />
-        ) : (
-          <Box sx={{ position: 'relative' }}>
-            {/* Overlay Loader when paginating or fetching next page */}
-            {isFetching && (
-              <BrandLoader fullScreen={false} message="Updating attendance records..." />
-            )}
-
-            <TableContainer
-              component={Paper}
-              elevation={0}
-              sx={{
-                borderRadius: 0,
-                opacity: isFetching ? 0.45 : 1,
-                transition: 'opacity 0.2s ease-in-out',
-                pointerEvents: isFetching ? 'none' : 'auto',
+          {/* Log Status dropdown using shadcn Select */}
+          <div className="sm:col-span-3">
+            <Select
+              value={statusFilter}
+              onValueChange={(val) => {
+                setStatusFilter(val);
+                setPage(0);
               }}
             >
-              <Table sx={{ minWidth: 650 }}>
-                <TableHead>
-                  <TableRow>
-                    <TableCell>
-                      <TableSortLabel
-                        active={sortField === 'date'}
-                        direction={sortField === 'date' ? sortOrder : 'asc'}
-                        onClick={() => handleRequestSort('date')}
-                      >
-                        Date
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>Employee ID</TableCell>
-                    <TableCell>
-                      <TableSortLabel
-                        active={sortField === 'employeeName'}
-                        direction={sortField === 'employeeName' ? sortOrder : 'asc'}
-                        onClick={() => handleRequestSort('employeeName')}
-                      >
-                        Employee Name
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>
-                      <TableSortLabel
-                        active={sortField === 'checkIn'}
-                        direction={sortField === 'checkIn' ? sortOrder : 'desc'}
-                        onClick={() => handleRequestSort('checkIn')}
-                        sx={{ fontWeight: 800 }}
-                      >
-                        Check-In
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>
-                      <TableSortLabel
-                        active={sortField === 'checkOut'}
-                        direction={sortField === 'checkOut' ? sortOrder : 'desc'}
-                        onClick={() => handleRequestSort('checkOut')}
-                      >
-                        Check-Out
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell align="right">
-                      <TableSortLabel
-                        active={sortField === 'workingHours'}
-                        direction={sortField === 'workingHours' ? sortOrder : 'desc'}
-                        onClick={() => handleRequestSort('workingHours')}
-                      >
-                        Working Hours
-                      </TableSortLabel>
-                    </TableCell>
-                    <TableCell>Audit Note</TableCell>
-                    <TableCell align="center">Logs & Info</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {sortedRecords.length > 0 ? (
-                    sortedRecords.map((record) => {
-                      const isAbsent = record.status === 'absent';
-                      const hasLogs = Boolean(
-                        (record.sessions && record.sessions.length > 0) ||
-                        (record.totalSessions && record.totalSessions > 0) ||
-                        record.checkIn
-                      );
-                      return (
-                        <TableRow
-                          key={record.id}
-                          sx={{
-                            bgcolor: isAbsent ? 'rgba(239, 68, 68, 0.04)' : 'inherit',
-                            '&:last-child td, &:last-child th': { border: 0 },
-                            '&:hover': {
-                              bgcolor: isAbsent ? 'rgba(239, 68, 68, 0.09)' : 'action.hover',
-                            },
-                          }}
-                        >
-                          <TableCell sx={{ fontWeight: 700 }}>
-                            {record.date ? dayjs(record.date).format('DD, MMM YYYY') : '--'}
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 700, color: isAbsent ? 'error.main' : 'primary.main' }}>
-                            {record.employeeId}
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 600 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                              <Avatar
-                                src={getAvatarUrl(record.avatarUrl)}
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  fontSize: '0.875rem',
-                                  fontWeight: 700,
-                                  bgcolor: isAbsent ? theme.palette.error.main : theme.palette.primary.main,
-                                }}
-                              >
-                                {record.employeeName ? record.employeeName.charAt(0).toUpperCase() : 'E'}
-                              </Avatar>
-                              <Box>
-                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                                  {record.employeeName}
-                                </Typography>
-                                {isAbsent && (
-                                  <Typography
-                                    variant="caption"
-                                    sx={{ color: 'error.main', fontWeight: 600, display: 'block', lineHeight: 1 }}
-                                  >
-                                    Absent Log
-                                  </Typography>
-                                )}
-                              </Box>
-                            </Box>
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 600 }}>
-                            {record.checkIn ? (
-                              dayjs(`${record.date}T${record.checkIn}`).isValid()
-                                ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
-                                : record.checkIn
-                            ) : isAbsent ? (
-                              <Typography
-                                variant="body2"
-                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
-                              >
-                                No Check-In
-                              </Typography>
-                            ) : (
-                              '--'
-                            )}
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 600 }}>
-                            {record.checkOut ? (
-                              dayjs(`${record.date}T${record.checkOut}`).isValid()
-                                ? dayjs(`${record.date}T${record.checkOut}`).format('hh:mm A')
-                                : record.checkOut
-                            ) : record.checkIn ? (
-                              <span style={{ fontStyle: 'italic', color: theme.palette.text.secondary }}>
-                                Active Shift
-                              </span>
-                            ) : isAbsent ? (
-                              <Typography
-                                variant="body2"
-                                sx={{ color: 'error.main', fontSize: '0.8rem', fontStyle: 'italic', fontWeight: 600 }}
-                              >
-                                No Check-Out
-                              </Typography>
-                            ) : (
-                              '--'
-                            )}
-                          </TableCell>
-                          <TableCell>{getStatusChip(record.status)}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 700 }}>
-                            {record.workingHours && Number(record.workingHours) > 0 ? (
-                              `${record.workingHours} hrs`
-                            ) : isAbsent ? (
-                              <Typography variant="body2" sx={{ color: 'text.disabled', fontWeight: 600 }}>
-                                0 hrs
-                              </Typography>
-                            ) : (
-                              '--'
-                            )}
-                          </TableCell>
-                          <TableCell
-                            sx={{
-                              color: isAbsent ? 'error.dark' : 'text.secondary',
-                              fontSize: '0.75rem',
-                              fontWeight: 500,
-                              maxWidth: 220,
-                            }}
-                          >
-                            {record.notes || '--'}
-                          </TableCell>
-                          <TableCell align="center">
-                            <Tooltip title={hasLogs ? 'View Detailed Punch Logs' : 'No logs for absent employee'}>
-                              <span>
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  color="primary"
-                                  disabled={!hasLogs}
-                                  startIcon={<InfoIcon sx={{ fontSize: 16 }} />}
-                                  onClick={() => {
-                                    setSelectedRecord(record);
-                                    setIsDrawerOpen(true);
-                                  }}
-                                  sx={{
-                                    textTransform: 'none',
-                                    fontWeight: 700,
-                                    fontSize: '0.75rem',
-                                    borderRadius: 2,
-                                    py: 0.35,
-                                    px: 1.2,
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {record.totalSessions && record.totalSessions > 1
-                                    ? `${record.totalSessions} Logs`
-                                    : 'Logs'}
-                                </Button>
-                              </span>
-                            </Tooltip>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                          <ReportIcon sx={{ fontSize: 40, color: 'text.secondary' }} />
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, mt: 1 }}>
-                            No Auditable Logs Found
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            There are no recorded shifts matching the current criteria.
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="present">On Time</SelectItem>
+              <SelectItem value="late">Late Arrival</SelectItem>
+              <SelectItem value="absent">Absent</SelectItem>
+              <SelectItem value="half_day">Half Day</SelectItem>
+              <SelectItem value="auto_closed">Auto-Closed</SelectItem>
+            </Select>
+          </div>
 
-            {/* Pagination */}
-            <TablePagination
-              rowsPerPageOptions={[5, 10, 25, 50]}
-              component="div"
-              count={totalCount}
-              rowsPerPage={rowsPerPage}
-              page={page}
-              onPageChange={handlePageChange}
-              onRowsPerPageChange={handleRowsPerPageChange}
-              disabled={isFetching}
-              sx={{ borderTop: `1px solid ${theme.palette.divider}` }}
-            />
-          </Box>
+          {/* Specific Date input with Today / Clear quick buttons */}
+          <div className="sm:col-span-4 flex items-center gap-1.5">
+            <div className="relative flex-1">
+              <input
+                type="date"
+                value={dateFilter}
+                onChange={(e) => {
+                  setDateFilter(e.target.value);
+                  setPage(0);
+                }}
+                className="h-9 w-full rounded-lg border border-line bg-canvas px-3 text-xs text-ink focus:border-primary-400 focus:outline-none focus:ring-1 focus:ring-primary-400"
+              />
+            </div>
+
+            {dateFilter ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setDateFilter('');
+                  setPage(0);
+                }}
+                className="h-9 px-2 text-xs text-muted hover:text-ink"
+              >
+                Clear
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setDateFilter(dayjs().format('YYYY-MM-DD'));
+                  setPage(0);
+                }}
+                className="h-9 px-2.5 text-xs font-medium"
+              >
+                Today
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {isFiltered && (
+          <div className="flex items-center justify-between border-t border-line mt-3 pt-2.5 text-xs text-muted">
+            <div className="flex items-center gap-2">
+              <span className="flex size-1.5 rounded-full bg-primary-600" />
+              <span>Active filters applied</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetFilters}
+              className="h-6 gap-1 px-2 text-xs text-muted hover:text-ink"
+            >
+              <RotateCcw className="size-3" />
+              Reset filters
+            </Button>
+          </div>
         )}
       </Card>
 
-      {/* Side Drawer: Detailed Punch Logs & Face Biometrics for Employee */}
+      {/* ── 5. Attendance Ledger Table Card ── */}
+      <Card className="relative overflow-hidden">
+        {/* Subtle top indicator when fetching */}
+        {isFetching && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary-500 animate-pulse z-10" />
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-xs">
+            <thead>
+              <tr className="border-b border-line bg-subtle/50 text-faint">
+                {/* Date */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestSort('date')}
+                    className="group inline-flex items-center gap-1.5 hover:text-ink transition-colors"
+                  >
+                    <span>Date</span>
+                    {renderSortIcon('date')}
+                  </button>
+                </th>
+
+                {/* Employee ID */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Employee ID
+                </th>
+
+                {/* Employee Name */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestSort('employeeName')}
+                    className="group inline-flex items-center gap-1.5 hover:text-ink transition-colors"
+                  >
+                    <span>Employee</span>
+                    {renderSortIcon('employeeName')}
+                  </button>
+                </th>
+
+                {/* Check In */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestSort('checkIn')}
+                    className="group inline-flex items-center gap-1.5 hover:text-ink transition-colors"
+                  >
+                    <span>Check-In</span>
+                    {renderSortIcon('checkIn')}
+                  </button>
+                </th>
+
+                {/* Check Out */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestSort('checkOut')}
+                    className="group inline-flex items-center gap-1.5 hover:text-ink transition-colors"
+                  >
+                    <span>Check-Out</span>
+                    {renderSortIcon('checkOut')}
+                  </button>
+                </th>
+
+                {/* Status */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Status
+                </th>
+
+                {/* Working Hours */}
+                <th className="py-3 px-4 text-right font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleRequestSort('workingHours')}
+                    className="group inline-flex items-center gap-1.5 hover:text-ink transition-colors ml-auto"
+                  >
+                    <span>Duration</span>
+                    {renderSortIcon('workingHours')}
+                  </button>
+                </th>
+
+                {/* Audit Note */}
+                <th className="py-3 px-4 font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Audit Note
+                </th>
+
+                {/* Action */}
+                <th className="py-3 px-4 text-center font-mono font-medium tracking-wider uppercase text-[0.6875rem]">
+                  Telemetry Logs
+                </th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-line">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="py-16 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <div className="size-6 animate-spin rounded-full border-2 border-primary-600 border-t-transparent" />
+                      <span className="font-mono text-xs text-muted">Retrieving attendance logs...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : sortedRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-14 text-center">
+                    <div className="dot-grid mx-auto max-w-sm rounded-xl border border-dashed border-line-strong p-6 text-center">
+                      <div className="mx-auto flex size-10 items-center justify-center rounded-xl border border-primary-100 bg-panel text-primary-600 shadow-xs">
+                        <FileText className="size-5" />
+                      </div>
+                      <p className="mt-3 font-semibold text-ink">No Auditable Logs Found</p>
+                      <p className="mt-1 text-xs text-muted leading-relaxed">
+                        There are no recorded shifts matching the current filters. Adjust your search or change the date range.
+                      </p>
+                      {isFiltered && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleResetFilters}
+                          className="mt-4 gap-1.5 text-xs"
+                        >
+                          <RotateCcw className="size-3" />
+                          <span>Clear All Filters</span>
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                sortedRecords.map((record) => {
+                  const isAbsent = record.status === 'absent';
+                  const hasLogs = Boolean(
+                    (record.sessions && record.sessions.length > 0) ||
+                      (record.totalSessions && record.totalSessions > 0) ||
+                      record.checkIn
+                  );
+
+                  return (
+                    <tr
+                      key={record.id}
+                      className={cn(
+                        'transition-colors duration-100',
+                        isAbsent ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-subtle/60'
+                      )}
+                    >
+                      {/* Date */}
+                      <td className="py-3.5 px-4 font-mono font-medium text-ink">
+                        {record.date ? dayjs(record.date).format('DD MMM YYYY') : '--'}
+                      </td>
+
+                      {/* Employee ID */}
+                      <td className="py-3.5 px-4">
+                        <span
+                          className={cn(
+                            'font-mono text-xs px-1.5 py-0.5 rounded border',
+                            isAbsent
+                              ? 'border-rose-200 bg-rose-50 text-rose-700 font-semibold'
+                              : 'border-line bg-subtle text-ink-soft'
+                          )}
+                        >
+                          {record.employeeId}
+                        </span>
+                      </td>
+
+                      {/* Employee Name */}
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2.5">
+                          {record.avatarUrl ? (
+                            <img
+                              src={getAvatarUrl(record.avatarUrl)}
+                              alt={record.employeeName}
+                              className="size-8 rounded-full border border-line object-cover"
+                            />
+                          ) : (
+                            <div
+                              className={cn(
+                                'flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold text-white shadow-xs',
+                                isAbsent ? 'bg-rose-500' : 'bg-primary-600'
+                              )}
+                            >
+                              {record.employeeName ? record.employeeName.charAt(0).toUpperCase() : 'E'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-medium text-ink block truncate">
+                              {record.employeeName}
+                            </span>
+                            {isAbsent && (
+                              <span className="font-mono text-[0.625rem] text-rose-600 font-semibold uppercase">
+                                Absent Day
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* Check-In */}
+                      <td className="py-3.5 px-4 font-mono">
+                        {record.checkIn ? (
+                          <span className="font-medium text-ink">
+                            {dayjs(`${record.date}T${record.checkIn}`).isValid()
+                              ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
+                              : record.checkIn}
+                          </span>
+                        ) : isAbsent ? (
+                          <span className="italic text-rose-600 font-medium">No Check-In</span>
+                        ) : (
+                          <span className="text-muted">--</span>
+                        )}
+                      </td>
+
+                      {/* Check-Out */}
+                      <td className="py-3.5 px-4 font-mono">
+                        {record.checkOut ? (
+                          <span className="font-medium text-ink">
+                            {dayjs(`${record.date}T${record.checkOut}`).isValid()
+                              ? dayjs(`${record.date}T${record.checkOut}`).format('hh:mm A')
+                              : record.checkOut}
+                          </span>
+                        ) : record.checkIn ? (
+                          <span className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary-600 italic">
+                            <span className="size-1.5 rounded-full bg-primary-600 animate-pulse" />
+                            Active Shift
+                          </span>
+                        ) : isAbsent ? (
+                          <span className="italic text-rose-600 font-medium">No Check-Out</span>
+                        ) : (
+                          <span className="text-muted">--</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-3.5 px-4">{renderStatusBadge(record.status)}</td>
+
+                      {/* Working Hours */}
+                      <td className="py-3.5 px-4 text-right font-mono">
+                        {record.workingHours && Number(record.workingHours) > 0 ? (
+                          <span className="font-semibold text-ink num">
+                            {Number(record.workingHours).toFixed(1)} hrs
+                          </span>
+                        ) : isAbsent ? (
+                          <span className="font-mono text-faint">0 hrs</span>
+                        ) : (
+                          <span className="text-muted">--</span>
+                        )}
+                      </td>
+
+                      {/* Audit Note */}
+                      <td className="py-3.5 px-4 max-w-[200px] truncate text-muted text-xs">
+                        {record.notes ? (
+                          <span title={record.notes}>{record.notes}</span>
+                        ) : (
+                          <span className="text-faint font-mono text-[0.6875rem]">--</span>
+                        )}
+                      </td>
+
+                      {/* Action Button */}
+                      <td className="py-3.5 px-4 text-center">
+                        <Tooltip
+                          content={
+                            hasLogs
+                              ? 'Inspect detailed biometric & punch timeline'
+                              : 'No punch logs available for absent record'
+                          }
+                        >
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!hasLogs}
+                            onClick={() => {
+                              setSelectedRecord(record);
+                              setIsDrawerOpen(true);
+                            }}
+                            className="h-7 gap-1 px-2.5 text-xs font-medium hover:border-primary-400 hover:text-primary-600"
+                          >
+                            <Eye className="size-3 text-primary-600" />
+                            <span>
+                              {record.totalSessions && record.totalSessions > 1
+                                ? `${record.totalSessions} Logs`
+                                : 'Logs'}
+                            </span>
+                          </Button>
+                        </Tooltip>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* ── 6. Pagination Footer ── */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3 bg-subtle/30">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs text-muted">
+              Showing <strong className="text-ink">{records.length > 0 ? page * rowsPerPage + 1 : 0}</strong> to{' '}
+              <strong className="text-ink">
+                {Math.min((page + 1) * rowsPerPage, totalCount)}
+              </strong>{' '}
+              of <strong className="text-ink">{totalCount}</strong> logs
+            </span>
+
+            {/* Rows per page selector using shadcn Select */}
+            <div className="flex items-center gap-1.5 border-l border-line pl-3">
+              <span className="font-mono text-xs text-faint">Per page:</span>
+              <div className="w-18">
+                <Select
+                  value={String(rowsPerPage)}
+                  onValueChange={(val) => {
+                    setRowsPerPage(parseInt(val, 10));
+                    setPage(0);
+                  }}
+                  size="sm"
+                >
+                  {[5, 10, 25, 50].map((pageSize) => (
+                    <SelectItem key={pageSize} value={String(pageSize)}>
+                      {pageSize}
+                    </SelectItem>
+                  ))}
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0 || isFetching}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              className="h-7 px-2 text-xs"
+            >
+              <ChevronLeft className="size-3.5" />
+              <span className="hidden sm:inline">Prev</span>
+            </Button>
+
+            <span className="font-mono text-xs text-muted px-2">
+              Page <strong className="text-ink">{page + 1}</strong> of{' '}
+              <strong className="text-ink">{totalPages}</strong>
+            </span>
+
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page + 1 >= totalPages || isFetching}
+              onClick={() => setPage((p) => p + 1)}
+              className="h-7 px-2 text-xs"
+            >
+              <span className="hidden sm:inline">Next</span>
+              <ChevronRight className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── 7. Detailed Biometric & Punch Telemetry Drawer ── */}
       <AttendanceAuditDrawer
         open={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
         record={selectedRecord}
       />
 
-      {/* Export Audit Report Modal - Only triggers file generation when user explicitly clicks Download */}
+      {/* ── 8. Export Audit Modal ── */}
       <ExportAuditReportModal
         open={isExportModalOpen}
         onClose={() => setIsExportModalOpen(false)}
@@ -847,7 +988,7 @@ export const AttendanceReport: React.FC = () => {
         }}
         totalCount={totalCount}
       />
-    </Box>
+    </div>
   );
 };
 

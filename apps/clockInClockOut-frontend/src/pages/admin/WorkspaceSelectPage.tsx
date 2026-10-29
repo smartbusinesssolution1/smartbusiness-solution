@@ -1,87 +1,58 @@
-﻿import React, { useState, useEffect } from 'react';
-
-import {
-  Box,
-  Typography,
-  Button,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Snackbar,
-  Alert,
-  useTheme,
-  alpha,
-  Grid,
-  CircularProgress,
-} from '@mui/material';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import CheckRoundedIcon from '@mui/icons-material/CheckRounded';
-import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
-import LocationOnOutlinedIcon from '@mui/icons-material/LocationOnOutlined';
-import StorefrontRoundedIcon from '@mui/icons-material/StorefrontRounded';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
-import StarRoundedIcon from '@mui/icons-material/StarRounded';
+import {
+  Building2,
+  Plus,
+  Check,
+  MapPin,
+  Users,
+  ArrowRight,
+  ShieldCheck,
+  Store,
+  Radio,
+  Search,
+  X,
+  Sparkles,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Workspace } from '../../types';
 import BrandLoader from '../../components/BrandLoader';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Badge,
+  Input,
+  Field,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogBody,
+  DialogFooter,
+  DialogClose,
+} from '../../components/ui';
+import { cn } from '../../lib/utils';
 
 // ── Role badge helpers ──────────────────────────────────────────────────────
 type WorkspaceRole = 'OWNER' | 'ADMIN' | 'MEMBER';
 
-const ROLE_CONFIG: Record<WorkspaceRole, { label: string; lightBg: string; lightColor: string; darkBg: string; darkColor: string }> = {
-  OWNER: { label: 'Owner', lightBg: '#FFF7ED', lightColor: '#C2410C', darkBg: 'rgba(251,146,60,0.18)', darkColor: '#FDBA74' },
-  ADMIN: { label: 'Admin', lightBg: '#EEF2FF', lightColor: '#3730A3', darkBg: 'rgba(129,140,248,0.18)', darkColor: '#C7D2FE' },
-  MEMBER: { label: 'Member', lightBg: '#F1F5F9', lightColor: '#475569', darkBg: 'rgba(255,255,255,0.08)', darkColor: '#94A3B8' },
-};
-
-const WorkspaceRoleBadge: React.FC<{ role: WorkspaceRole; isDark: boolean }> = ({ role, isDark }) => {
-  const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.MEMBER;
-  return (
-    <Box
-      sx={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 0.4,
-        px: 0.9,
-        py: 0.3,
-        borderRadius: 1.5,
-        bgcolor: isDark ? cfg.darkBg : cfg.lightBg,
-        color: isDark ? cfg.darkColor : cfg.lightColor,
-        fontSize: '0.68rem',
-        fontWeight: 700,
-        letterSpacing: '0.01em',
-        lineHeight: 1.2,
-        flexShrink: 0,
-      }}
-    >
-      {cfg.label}
-    </Box>
-  );
-};
-
 export const WorkspaceSelectPage: React.FC = () => {
-  const theme = useTheme();
   const navigate = useNavigate();
-  const { currentTenant, workspaces, currentWorkspace, switchWorkspace, addWorkspace, refreshWorkspaces } = useAuth();
+  const { currentTenant, isSuperAdmin, workspaces, currentWorkspace, switchWorkspace, addWorkspace, refreshWorkspaces } =
+    useAuth();
 
-  useEffect(() => {
-    if (!workspaces || workspaces.length === 0) {
-      refreshWorkspaces();
-    }
-  }, [workspaces?.length, refreshWorkspaces]);
+  const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
+  const companyName = currentTenant?.name || 'Organization';
 
-
-  if (!workspaces) {
-    return <BrandLoader fullScreen message="Loading workspaces..." />;
-  }
-
+  // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+
+  // Form State
   const [name, setName] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
   const [city, setCity] = useState('');
@@ -90,8 +61,19 @@ export const WorkspaceSelectPage: React.FC = () => {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' | 'info' } | null>(null);
 
-  const companyName = currentTenant?.name || 'Organization';
-  const isDark = theme.palette.mode === 'dark';
+  useEffect(() => {
+    if (!workspaces || workspaces.length === 0) {
+      refreshWorkspaces();
+    }
+  }, [workspaces?.length, refreshWorkspaces]);
+
+  // Auto-open modal if ?create=true
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('create') === 'true') {
+      handleOpenAddModal();
+    }
+  }, []);
 
   // Helper to determine user role for a specific workspace
   const getWorkspaceRole = (ws: Workspace): WorkspaceRole => {
@@ -102,10 +84,38 @@ export const WorkspaceSelectPage: React.FC = () => {
   };
 
   // Only show workspaces where the logged-in user is Owner or Admin for that specific workspace
-  const visibleWorkspaces = workspaces.filter((ws) => {
-    const role = getWorkspaceRole(ws);
-    return role === 'OWNER' || role === 'ADMIN';
-  });
+  const visibleWorkspaces = useMemo(() => {
+    if (!workspaces) return [];
+    return workspaces.filter((ws) => {
+      const role = getWorkspaceRole(ws);
+      return role === 'OWNER' || role === 'ADMIN';
+    });
+  }, [workspaces, currentTenant]);
+
+  // Filtered workspaces by search query
+  const filteredWorkspaces = useMemo(() => {
+    if (!searchFilter.trim()) return visibleWorkspaces;
+    const q = searchFilter.toLowerCase().trim();
+    return visibleWorkspaces.filter(
+      (ws) =>
+        ws.name.toLowerCase().includes(q) ||
+        (ws.city && ws.city.toLowerCase().includes(q)) ||
+        (ws.state && ws.state.toLowerCase().includes(q)) ||
+        (ws.address && ws.address.toLowerCase().includes(q)) ||
+        (ws.zipCode && ws.zipCode.includes(q))
+    );
+  }, [visibleWorkspaces, searchFilter]);
+
+  const initials = (title?: string) => {
+    if (!title) return 'BR';
+    return title
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  };
 
   const handleSelectWorkspace = async (ws: Workspace) => {
     try {
@@ -142,11 +152,13 @@ export const WorkspaceSelectPage: React.FC = () => {
     }
     const cleanState = state.trim().toUpperCase();
     if (!cleanState || !/^[A-Za-z]{2}$/.test(cleanState)) {
-      errors.state = 'State must be a 2-letter code (e.g. TX)';
+      errors.state = 'State must be a 2-letter code (e.g. TX, CA)';
     }
     const cleanZip = zipCode.trim();
-    if (!cleanZip || !/^\d{5}(-\d{4})?$/.test(cleanZip)) {
-      errors.zipCode = 'ZIP code must be 5 digits (e.g. 78701)';
+    if (!cleanZip) {
+      errors.zipCode = 'ZIP code is required';
+    } else if (!/^\d{5}(-\d{4})?$/.test(cleanZip)) {
+      errors.zipCode = 'ZIP code must be 5 digits or ZIP+4 (e.g. 78701 or 78701-1234)';
     }
 
     setFormErrors(errors);
@@ -170,7 +182,7 @@ export const WorkspaceSelectPage: React.FC = () => {
         zipCode: zipCode.trim(),
       });
       setIsAddModalOpen(false);
-      setToast({ message: `Created workspace "${created.name}"!`, severity: 'success' });
+      setToast({ message: `Created branch "${created.name}"!`, severity: 'success' });
       setTimeout(() => {
         navigate('/admin/dashboard');
       }, 400);
@@ -186,519 +198,352 @@ export const WorkspaceSelectPage: React.FC = () => {
     }
   };
 
+  if (!workspaces) {
+    return <BrandLoader fullScreen message="Loading workspace directory..." />;
+  }
+
   return (
-    <Box sx={{ pb: 4, width: '100%' }}>
-      {/* Top Header Bar */}
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          flexDirection: { xs: 'column', sm: 'row' },
-          gap: 2,
-          mb: 3,
-        }}
-      >
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: -0.5 }}>
+    <div className="flex flex-col gap-6 w-full max-w-7xl mx-auto pb-10">
+      {/* ── 1. Hero Header Section ── */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-line pb-5">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="eyebrow">BRANCH LOCATIONS • MULTI-SITE ARCHITECTURE</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">
               Workspaces & Branches
-            </Typography>
-            <Box
-              component="span"
-              sx={{
-                px: 1.25,
-                py: 0.35,
-                borderRadius: 10,
-                bgcolor: theme.palette.mode === 'light' ? '#EEF2FF' : alpha(theme.palette.primary.main, 0.2),
-                color: theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE',
-                fontSize: '0.72rem',
-                fontWeight: 700,
-              }}
-            >
-              {visibleWorkspaces.length} Branches
-            </Box>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mt: 0.5 }}>
-            Manage attendance registers, geofences, and shifts per physical location under <strong>{companyName}</strong>.
-          </Typography>
-        </Box>
+            </h1>
+            <Badge variant="brand" className="font-mono text-xs">
+              {visibleWorkspaces.length} {visibleWorkspaces.length === 1 ? 'Location' : 'Locations'}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted sm:text-sm max-w-2xl mt-0.5">
+            Manage attendance registers, geofences, and shift schedules per physical campus or office location under{' '}
+            <strong className="text-ink">{companyName}</strong>.
+          </p>
+        </div>
 
-        {/* New Workspace Action Button */}
-        <Button
-          onClick={handleOpenAddModal}
-          variant="contained"
-          startIcon={<AddRoundedIcon />}
-          sx={{
-            borderRadius: 2,
-            px: 2.5,
-            py: 1,
-            fontWeight: 700,
-            fontSize: '0.85rem',
-            textTransform: 'none',
-            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-          }}
-        >
-          New Workspace
-        </Button>
-      </Box>
-
-      {/* Main Workspace Selection Body */}
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          variant="subtitle1"
-          sx={{
-            fontWeight: 700,
-            fontSize: '1rem',
-            color: 'text.primary',
-            letterSpacing: '-0.01em',
-          }}
-        >
-          Select Active Workspace
-        </Typography>
-        <Typography
-          variant="body2"
-          sx={{
-            fontSize: '0.82rem',
-            color: 'text.secondary',
-            mt: 0.25,
-          }}
-        >
-          Click on a workspace to switch your active attendance register, check-in logs, and branch settings.
-        </Typography>
-      </Box>
-
-        {/* 3-Column Responsive Cards Grid */}
-        {visibleWorkspaces.length === 0 ? (
-          <Box
-            sx={{
-              p: 4,
-              textAlign: 'center',
-              bgcolor: 'background.paper',
-              borderRadius: 3,
-              border: '1px solid', borderColor: 'divider',
-            }}
+        {/* Action Button */}
+        {isOwner && (
+          <Button
+            variant="brand"
+            size="default"
+            onClick={handleOpenAddModal}
+            className="self-start sm:self-center shrink-0 gap-2 shadow-theme-btn"
           >
-            <StorefrontRoundedIcon sx={{ fontSize: 36, color: 'text.secondary', opacity: 0.4, mb: 1 }} />
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, color: 'text.secondary' }}>
-              No administrative workspaces available
-            </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.5, fontSize: '0.85rem' }}>
-              Only workspaces where you are assigned as an Administrator or Owner are visible in this console.
-            </Typography>
-          </Box>
-        ) : (
-          <Grid container spacing={2.5}>
-          {visibleWorkspaces.map((ws) => {
-            const isSelected = ws.id === currentWorkspace?.id;
-            return (
-              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={ws.id}>
-                <Box
-                  onClick={() => handleSelectWorkspace(ws)}
-                  sx={{
-                    p: 2.75,
-                    borderRadius: 3,
-                    border: `1.5px solid ${
-                      isSelected ? theme.palette.primary.main : theme.palette.divider
-                    }`,
-                    bgcolor: 'background.paper',
-                    boxShadow: isSelected
-                      ? theme.palette.mode === 'light'
-                        ? '0 10px 15px -3px rgba(99, 102, 241, 0.15), 0 4px 6px -4px rgba(99, 102, 241, 0.1)'
-                        : '0 10px 15px -3px rgba(0, 0, 0, 0.4)'
-                      : theme.palette.mode === 'light'
-                      ? '0 1px 3px 0 rgba(0, 0, 0, 0.04)'
-                      : 'none',
-                    outline: isSelected
-                      ? `2px solid ${alpha(theme.palette.primary.main, 0.25)}`
-                      : 'none',
-                    transition: 'all 0.2s ease-in-out',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    minHeight: 180,
-                    gap: 2,
-                    '&:hover': {
-                      borderColor: theme.palette.primary.main,
-                      transform: 'translateY(-2px)',
-                      boxShadow:
-                        theme.palette.mode === 'light'
-                          ? '0 12px 20px -3px rgba(15, 23, 42, 0.08)'
-                          : '0 12px 20px -3px rgba(0, 0, 0, 0.5)',
-                    },
-                  }}
+            <Plus className="size-4 stroke-[2.5]" />
+            <span>New Workspace</span>
+          </Button>
+        )}
+      </div>
+
+      {/* ── 2. Filter & Summary Bar ── */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Search Filter */}
+        <div className="w-full sm:w-80">
+          <Input
+            placeholder="Search branches by name, city, state..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            leading={<Search className="size-4" />}
+            trailing={
+              searchFilter ? (
+                <button
+                  type="button"
+                  onClick={() => setSearchFilter('')}
+                  className="cursor-pointer text-muted hover:text-ink transition-colors p-0.5"
+                  aria-label="Clear branch search"
                 >
-                  <Box>
-                    {/* Top Row: Storefront Icon & Active Badge */}
-                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-                      <Box
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 2.5,
-                          bgcolor: isSelected
-                            ? theme.palette.mode === 'light'
-                              ? '#EEF2FF'
-                              : alpha(theme.palette.primary.main, 0.25)
-                            : theme.palette.mode === 'light'
-                            ? '#F1F5F9'
-                            : alpha(theme.palette.common.white, 0.06),
-                          border: `1px solid ${
-                            isSelected
-                              ? theme.palette.mode === 'light'
-                                ? '#C7D2FE'
-                                : alpha(theme.palette.primary.main, 0.4)
-                              : theme.palette.divider
-                          }`,
-                          color: isSelected ? theme.palette.primary.main : theme.palette.text.secondary,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <StorefrontRoundedIcon sx={{ fontSize: 22 }} />
-                      </Box>
+                  <X className="size-3.5" />
+                </button>
+              ) : undefined
+            }
+            className="h-9 text-xs"
+          />
+        </div>
 
-                      {isSelected && (
-                        <Box
-                          sx={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 0.5,
-                            px: 1.25,
-                            py: 0.4,
-                            borderRadius: 10,
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            bgcolor: theme.palette.mode === 'light' ? '#EEF2FF' : alpha(theme.palette.primary.main, 0.2),
-                            color: theme.palette.mode === 'light' ? '#3730A3' : '#C7D2FE',
-                          }}
-                        >
-                          <CheckRoundedIcon sx={{ fontSize: 14 }} />
-                          Active
-                        </Box>
+        {/* Active Branch Status Pill */}
+        <div className="flex items-center gap-2 text-xs font-mono text-muted">
+          <span>Active Session:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-1 font-semibold text-primary-800 dark:border-primary-900/60 dark:bg-primary-950/60 dark:text-primary-300">
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            {currentWorkspace?.name || 'No Workspace Selected'}
+          </span>
+        </div>
+      </div>
+
+      {/* ── 3. Workspace Responsive Cards Grid ── */}
+      {filteredWorkspaces.length === 0 ? (
+        <Card className="flex flex-col items-center justify-center p-12 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl border border-line bg-subtle text-muted mb-3">
+            <Store className="size-6 text-faint" />
+          </div>
+          <h3 className="text-base font-semibold text-ink">
+            {searchFilter ? 'No matching branches found' : 'No administrative workspaces available'}
+          </h3>
+          <p className="text-xs text-muted max-w-md mt-1 mb-4">
+            {searchFilter
+              ? `No branch records matched "${searchFilter}". Try adjusting your search query.`
+              : 'Workspaces where you are assigned as an Administrator or Owner will appear in this directory.'}
+          </p>
+          {searchFilter ? (
+            <Button variant="outline" size="sm" onClick={() => setSearchFilter('')}>
+              Clear Filter
+            </Button>
+          ) : isOwner ? (
+            <Button variant="brand" size="sm" onClick={handleOpenAddModal}>
+              <Plus className="size-3.5 mr-1" />
+              Create First Workspace
+            </Button>
+          ) : null}
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredWorkspaces.map((ws) => {
+            const isSelected = ws.id === currentWorkspace?.id;
+            const role = getWorkspaceRole(ws);
+
+            return (
+              <Card
+                key={ws.id}
+                onClick={() => handleSelectWorkspace(ws)}
+                className={cn(
+                  'group relative flex flex-col justify-between overflow-hidden transition-all duration-200 cursor-pointer p-5',
+                  isSelected
+                    ? 'border-primary-500 ring-2 ring-primary-500/20 bg-primary-50/20 dark:bg-primary-950/20 shadow-md'
+                    : 'border-line hover:border-line-strong hover:shadow-card hover:-translate-y-0.5'
+                )}
+              >
+                {/* Active Indicator Strip on Top Edge */}
+                {isSelected && (
+                  <div className="absolute top-0 left-0 right-0 h-1 bg-primary-600" />
+                )}
+
+                <div>
+                  {/* Top Header Row: Branch Avatar & Status Badges */}
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div
+                      className={cn(
+                        'flex size-10 shrink-0 items-center justify-center rounded-xl font-mono text-xs font-bold transition-colors shadow-xs',
+                        isSelected
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-primary-50 text-primary-700 ring-1 ring-primary-100 ring-inset dark:bg-primary-950 dark:text-primary-300 dark:ring-primary-900/60 group-hover:bg-primary-600 group-hover:text-white'
                       )}
-                    </Box>
-
-                    {/* Role Badge */}
-                    <Box sx={{ mt: 1.25, mb: 0.25 }}>
-                      <WorkspaceRoleBadge role={getWorkspaceRole(ws)} isDark={isDark} />
-                    </Box>
-
-                    {/* Workspace Title */}
-                    <Typography
-                      variant="subtitle1"
-                      sx={{
-                        fontWeight: 700,
-                        fontSize: '0.98rem',
-                        color: 'text.primary',
-                        mt: 1.75,
-                        letterSpacing: '-0.01em',
-                      }}
                     >
-                      {ws.name}
-                    </Typography>
+                      {initials(ws.name)}
+                    </div>
 
-                    {/* Address / Location Line */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.5, color: 'text.secondary' }}>
-                      <LocationOnOutlinedIcon sx={{ fontSize: 16, flexShrink: 0 }} />
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          fontSize: '0.78rem',
-                          color: 'text.secondary',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      {/* Role Badge */}
+                      <span
+                        className={cn(
+                          'rounded-md px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider',
+                          role === 'OWNER'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                            : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300'
+                        )}
                       >
-                        {ws.address ? `${ws.address}, ` : ''}{ws.city || 'Austin'}, {ws.state || 'TX'} {ws.zipCode || ''}
-                      </Typography>
-                    </Box>
-                  </Box>
+                        {role}
+                      </span>
 
-                  {/* Card Footer */}
-                  <Box
-                    sx={{
-                      pt: 1.5,
-                      borderTop: `1px solid ${theme.palette.divider}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      fontSize: '0.75rem',
-                    }}
+                      {/* Active Status Pill */}
+                      {isSelected && (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                          <Check className="size-3 stroke-[2.5]" />
+                          ACTIVE
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Branch Title & Description */}
+                  <h3 className="text-base font-semibold text-ink group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors line-clamp-1">
+                    {ws.name}
+                  </h3>
+
+                  {/* Address with MapPin */}
+                  <div className="flex items-center gap-1.5 text-xs text-muted mt-1.5 line-clamp-1">
+                    <MapPin className="size-3.5 shrink-0 text-faint group-hover:text-primary-500 transition-colors" />
+                    <span>
+                      {ws.address ? `${ws.address}, ` : ''}
+                      {ws.city || 'Regional Center'}, {ws.state || ''} {ws.zipCode || ''}
+                    </span>
+                  </div>
+
+                  {/* Badges / Metrics Strip */}
+                  <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-line/60">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-muted bg-subtle px-2 py-0.5 rounded-md">
+                      <Radio className="size-3 text-emerald-600 dark:text-emerald-400" />
+                      100m Geofence
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-mono text-muted bg-subtle px-2 py-0.5 rounded-md">
+                      <Users className="size-3 text-primary-600 dark:text-primary-400" />
+                      {ws.employeeCount || 0} Staff
+                    </span>
+                  </div>
+                </div>
+
+                {/* Footer Switch Action Row */}
+                <div className="flex items-center justify-between border-t border-line mt-4 pt-3">
+                  <span className="text-[11px] text-faint font-mono">
+                    {isSelected ? 'Currently in session' : 'Click to activate'}
+                  </span>
+                  <div
+                    className={cn(
+                      'inline-flex items-center gap-1 text-xs font-semibold transition-transform group-hover:translate-x-0.5',
+                      isSelected
+                        ? 'text-primary-600 dark:text-primary-400'
+                        : 'text-muted group-hover:text-ink'
+                    )}
                   >
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
-                      Geofence: <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>100m Active</Box>
-                      {ws.employeeCount ? ` • ${ws.employeeCount} Staff` : ''}
-                    </Typography>
-
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        color: theme.palette.primary.main,
-                        fontWeight: 700,
-                        fontSize: '0.78rem',
-                      }}
-                    >
-                      Launch
-                      <ArrowForwardRoundedIcon sx={{ fontSize: 14 }} />
-                    </Box>
-                  </Box>
-                </Box>
-              </Grid>
+                    <span>{isSelected ? 'In Workspace' : 'Launch Branch'}</span>
+                    <ArrowRight className="size-3.5" />
+                  </div>
+                </div>
+              </Card>
             );
           })}
-        </Grid>
-        )}
+        </div>
+      )}
 
-      {/* Modal: "Add Workspace & Branch" */}
-      <Dialog
-        open={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        maxWidth="xs"
-        fullWidth
-        slotProps={{
-          paper: {
-            sx: {
-              borderRadius: 3.5,
-              p: 1.5,
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            },
-          },
-        }}
-      >
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1.5 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-            <Box
-              sx={{
-                width: 34,
-                height: 34,
-                borderRadius: 2,
-                bgcolor: theme.palette.mode === 'light' ? '#EEF2FF' : alpha(theme.palette.primary.main, 0.2),
-                color: theme.palette.primary.main,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <StorefrontRoundedIcon sx={{ fontSize: 18 }} />
-            </Box>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, fontSize: '1.05rem', color: 'text.primary' }}>
-              Add Workspace & Branch
-            </Typography>
-          </Box>
-          <IconButton onClick={() => setIsAddModalOpen(false)} size="small" sx={{ color: 'text.secondary' }}>
-            <CloseRoundedIcon sx={{ fontSize: 20 }} />
-          </IconButton>
-        </DialogTitle>
+      {/* ── 4. Shadcn Dialog: Add Workspace & Branch ── */}
+      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+        <DialogContent className="max-w-md">
+          <form onSubmit={handleCreateWorkspace}>
+            <DialogHeader
+              icon={<Building2 className="size-5 text-primary-600 dark:text-primary-400" />}
+              title="Add Workspace & Branch"
+              description={`Add a physical branch location, warehouse, or regional office under ${companyName}.`}
+            />
 
-        <form onSubmit={handleCreateWorkspace}>
-          <DialogContent sx={{ pt: 1 }}>
-            <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.8rem', mb: 2 }}>
-              Add a physical branch location, warehouse, or regional office under <strong>{companyName}</strong>.
-            </Typography>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <Box>
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                  Workspace Name *
-                </Typography>
-                <TextField
-                  autoFocus
-                  required
+            <DialogBody className="space-y-4 pt-2">
+              <Field label="Workspace / Branch Name *" htmlFor="ws-name" error={formErrors.name}>
+                <Input
+                  id="ws-name"
                   placeholder="e.g. Northeast Regional Branch"
-                  fullWidth
-                  size="small"
                   value={name}
                   onChange={(e) => {
                     setName(e.target.value);
                     if (formErrors.name) setFormErrors((prev) => ({ ...prev, name: '' }));
                   }}
-                  error={Boolean(formErrors.name)}
-                  helperText={formErrors.name}
-                  slotProps={{
-                    input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
-                  }}
+                  autoFocus
                 />
-              </Box>
+              </Field>
 
-              <Box>
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                  Street Address *
-                </Typography>
-                <TextField
-                  required
-                  placeholder="e.g. 500 Enterprise Way"
-                  fullWidth
-                  size="small"
+              <Field label="Street Address *" htmlFor="ws-address" error={formErrors.addressLine1}>
+                <Input
+                  id="ws-address"
+                  placeholder="e.g. 500 Enterprise Way, Suite 200"
                   value={addressLine1}
                   onChange={(e) => {
                     setAddressLine1(e.target.value);
                     if (formErrors.addressLine1) setFormErrors((prev) => ({ ...prev, addressLine1: '' }));
                   }}
-                  error={Boolean(formErrors.addressLine1)}
-                  helperText={formErrors.addressLine1}
-                  slotProps={{
-                    input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
-                  }}
                 />
-              </Box>
+              </Field>
 
-              <Grid container spacing={1.5}>
-                <Grid size={{ xs: 5 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    City *
-                  </Typography>
-                  <TextField
-                    required
-                    placeholder="Austin"
-                    fullWidth
-                    size="small"
-                    value={city}
-                    onChange={(e) => {
-                      setCity(e.target.value);
-                      if (formErrors.city) setFormErrors((prev) => ({ ...prev, city: '' }));
-                    }}
-                    error={Boolean(formErrors.city)}
-                    helperText={formErrors.city}
-                    slotProps={{
-                      input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
-                    }}
-                  />
-                </Grid>
-                <Grid size={{ xs: 3 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    State *
-                  </Typography>
-                  <TextField
-                    required
-                    placeholder="TX"
-                    fullWidth
-                    size="small"
-                    value={state}
-                    onChange={(e) => {
-                      setState(e.target.value.toUpperCase());
-                      if (formErrors.state) setFormErrors((prev) => ({ ...prev, state: '' }));
-                    }}
-                    error={Boolean(formErrors.state)}
-                    helperText={formErrors.state}
-                    slotProps={{
-                      input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
-                      htmlInput: { maxLength: 2 },
-                    }}
-                  />
-                </Grid>
-                <Grid size={{ xs: 4 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', mb: 0.5, display: 'block' }}>
-                    Zip Code *
-                  </Typography>
-                  <TextField
-                    required
-                    placeholder="78701"
-                    fullWidth
-                    size="small"
-                    value={zipCode}
-                    onChange={(e) => {
-                      setZipCode(e.target.value);
-                      if (formErrors.zipCode) setFormErrors((prev) => ({ ...prev, zipCode: '' }));
-                    }}
-                    error={Boolean(formErrors.zipCode)}
-                    helperText={formErrors.zipCode}
-                    slotProps={{
-                      input: { sx: { borderRadius: '10px', fontSize: '0.85rem' } },
-                    }}
-                  />
-                </Grid>
-              </Grid>
-            </Box>
-          </DialogContent>
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                <div className="sm:col-span-6">
+                  <Field label="City *" htmlFor="ws-city" error={formErrors.city}>
+                    <Input
+                      id="ws-city"
+                      placeholder="e.g. Austin"
+                      value={city}
+                      onChange={(e) => {
+                        setCity(e.target.value);
+                        if (formErrors.city) setFormErrors((prev) => ({ ...prev, city: '' }));
+                      }}
+                    />
+                  </Field>
+                </div>
 
-          <Box sx={{ px: 3, pb: 3, pt: 1.5, display: 'flex', gap: 1.5 }}>
-            <Button
-              type="button"
-              disabled={isSubmitting}
-              onClick={() => setIsAddModalOpen(false)}
-              sx={{
-                flex: 1,
-                py: 1.2,
-                borderRadius: '10px',
-                border: `1px solid ${theme.palette.divider}`,
-                color: theme.palette.text.secondary,
-                fontWeight: 600,
-                fontSize: '0.82rem',
-                textTransform: 'none',
-                bgcolor: theme.palette.mode === 'light' ? '#FFFFFF' : alpha(theme.palette.common.white, 0.04),
-                '&:hover': {
-                  bgcolor: theme.palette.mode === 'light' ? '#F8FAFC' : alpha(theme.palette.common.white, 0.08),
-                  borderColor: theme.palette.mode === 'light' ? '#CBD5E1' : '#475569',
-                  color: theme.palette.text.primary,
-                },
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="contained"
-              disabled={!name.trim() || isSubmitting}
-              startIcon={isSubmitting ? <CircularProgress size={16} color="inherit" /> : null}
-              sx={{
-                flex: 1,
-                py: 1.2,
-                borderRadius: '10px',
-                fontWeight: 700,
-                fontSize: '0.82rem',
-                textTransform: 'none',
-                color: '#FFFFFF !important',
-                bgcolor: `${theme.palette.primary.main} !important`,
-                boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.25)',
-                transition: 'all 0.15s ease-in-out',
-                '&:hover': {
-                  bgcolor: `${theme.palette.primary.dark} !important`,
-                },
-                '&.Mui-disabled': {
-                  bgcolor: `${alpha(theme.palette.primary.main, 0.5)} !important`,
-                  color: '#FFFFFF !important',
-                  opacity: 0.65,
-                  cursor: 'not-allowed',
-                  boxShadow: 'none',
-                },
-              }}
-            >
-              {isSubmitting ? 'Creating...' : 'Create Workspace'}
-            </Button>
-          </Box>
-        </form>
+                <div className="sm:col-span-3">
+                  <Field label="State *" htmlFor="ws-state" error={formErrors.state}>
+                    <Input
+                      id="ws-state"
+                      placeholder="TX"
+                      maxLength={2}
+                      value={state}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase();
+                        setState(clean);
+                        if (formErrors.state) setFormErrors((prev) => ({ ...prev, state: '' }));
+                      }}
+                      className="uppercase font-mono"
+                    />
+                  </Field>
+                </div>
+
+                <div className="sm:col-span-3">
+                  <Field label="ZIP Code *" htmlFor="ws-zip" error={formErrors.zipCode}>
+                    <Input
+                      id="ws-zip"
+                      placeholder="78701"
+                      inputMode="numeric"
+                      autoComplete="postal-code"
+                      maxLength={10}
+                      value={zipCode}
+                      onChange={(e) => {
+                        const sanitized = e.target.value.replace(/[^\d-]/g, '').slice(0, 10);
+                        setZipCode(sanitized);
+                        if (formErrors.zipCode) setFormErrors((prev) => ({ ...prev, zipCode: '' }));
+                      }}
+                      className="font-mono"
+                    />
+                  </Field>
+                </div>
+              </div>
+            </DialogBody>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                disabled={isSubmitting}
+                onClick={() => setIsAddModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="brand"
+                size="default"
+                disabled={!name.trim() || isSubmitting}
+                loading={isSubmitting}
+              >
+                {isSubmitting ? 'Creating Branch...' : 'Create Workspace'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
       </Dialog>
 
-      {/* Toast Feedback */}
-      <Snackbar
-        open={Boolean(toast)}
-        autoHideDuration={3000}
-        onClose={() => setToast(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setToast(null)}
-          severity={toast?.severity || 'info'}
-          variant="filled"
-          sx={{
-            borderRadius: 2,
-            fontWeight: 600,
-            fontSize: '0.82rem',
-            bgcolor: toast?.severity === 'error' ? '#EF4444' : '#0F172A',
-            color: '#FFFFFF',
-            boxShadow: '0 10px 15px -3px rgba(0,0,0,0.3)',
-          }}
-        >
-          {toast?.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+      {/* ── 5. Toast Feedback Notification ── */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-drop-in">
+          <div
+            className={cn(
+              'flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-xl text-xs font-semibold text-white transition-all',
+              toast.severity === 'error' ? 'bg-rose-600' : 'bg-ink'
+            )}
+          >
+            {toast.severity === 'success' ? (
+              <Check className="size-4 text-emerald-400 stroke-[2.5]" />
+            ) : null}
+            <span>{toast.message}</span>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="ml-2 cursor-pointer text-white/70 hover:text-white p-0.5"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

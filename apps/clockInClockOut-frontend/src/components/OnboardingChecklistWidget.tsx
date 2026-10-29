@@ -232,6 +232,11 @@ export const OnboardingChecklistWidget: React.FC<OnboardingChecklistWidgetProps>
       return;
     }
 
+    if (zipCode.trim() && !/^\d{5}(-\d{4})?$/.test(zipCode.trim())) {
+      setWsError('ZIP code must be 5 digits (e.g. 78701) or ZIP+4 (e.g. 78701-1234).');
+      return;
+    }
+
     setWsError(null);
     setIsSubmittingWs(true);
 

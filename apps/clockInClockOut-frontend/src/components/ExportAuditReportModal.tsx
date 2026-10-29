@@ -1,30 +1,26 @@
 import React, { useState } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Typography,
-  Box,
-  Button,
-  Radio,
-  Paper,
-  CircularProgress,
-  IconButton,
-  Chip,
-  Alert,
-} from '@mui/material';
-import {
-  Close as CloseIcon,
-  TableChart as ExcelIcon,
-  Description as CsvIcon,
-  PictureAsPdf as PdfIcon,
-  FileDownload as DownloadIcon,
-  CheckCircle as SuccessIcon,
-} from '@mui/icons-material';
+  FileSpreadsheet,
+  FileText,
+  FileDown,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Filter,
+} from 'lucide-react';
 import { attendanceService, ExportReportParams } from '../services/attendanceService';
 import { clockInApi, CLOCKIN_API_URL } from '../services/apiClient';
 import dayjs from 'dayjs';
+import { cn } from '../lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  Button,
+  Badge,
+} from './ui';
 
 export interface ExportAuditReportModalProps {
   open: boolean;
@@ -45,10 +41,11 @@ interface FormatOption {
   title: string;
   extension: string;
   description: string;
-  icon: React.ReactNode;
-  color: string;
-  bgColor: string;
-  borderColor: string;
+  icon: React.ComponentType<{ className?: string }>;
+  accentColor: string;
+  bgLight: string;
+  borderClass: string;
+  activeBorder: string;
 }
 
 const FORMAT_OPTIONS: FormatOption[] = [
@@ -57,30 +54,33 @@ const FORMAT_OPTIONS: FormatOption[] = [
     title: 'Microsoft Excel',
     extension: '.xlsx',
     description: 'Formatted workbook with headers, auto-width columns, and shift summary statistics.',
-    icon: <ExcelIcon sx={{ fontSize: 28, color: '#16A34A' }} />,
-    color: '#16A34A',
-    bgColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    icon: FileSpreadsheet,
+    accentColor: 'text-emerald-600',
+    bgLight: 'bg-emerald-50/60',
+    borderClass: 'border-emerald-200',
+    activeBorder: 'border-emerald-500 ring-2 ring-emerald-500/20',
   },
   {
     id: 'csv',
     title: 'Comma Separated Values',
     extension: '.csv',
     description: 'Universal raw tabular dataset with UTF-8 BOM, compatible with Google Sheets & BI tools.',
-    icon: <CsvIcon sx={{ fontSize: 28, color: '#2563EB' }} />,
-    color: '#2563EB',
-    bgColor: '#EFF6FF',
-    borderColor: '#BFDBFE',
+    icon: FileText,
+    accentColor: 'text-blue-600',
+    bgLight: 'bg-blue-50/60',
+    borderClass: 'border-blue-200',
+    activeBorder: 'border-blue-500 ring-2 ring-blue-500/20',
   },
   {
     id: 'pdf',
     title: 'Portable Document Format',
     extension: '.pdf',
     description: 'Executive landscape document styled for printing, corporate compliance, and archiving.',
-    icon: <PdfIcon sx={{ fontSize: 28, color: '#DC2626' }} />,
-    color: '#DC2626',
-    bgColor: '#FEF2F2',
-    borderColor: '#FECACA',
+    icon: FileDown,
+    accentColor: 'text-rose-600',
+    bgLight: 'bg-rose-50/60',
+    borderClass: 'border-rose-200',
+    activeBorder: 'border-rose-500 ring-2 ring-rose-500/20',
   },
 ];
 
@@ -162,190 +162,152 @@ export const ExportAuditReportModal: React.FC<ExportAuditReportModalProps> = ({
   };
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      maxWidth="sm"
-      fullWidth
-      slotProps={{
-        paper: {
-          sx: {
-            borderRadius: 3,
-            p: 1,
-            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-          },
-        },
-      }}
-    >
-      <DialogTitle
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          pb: 1,
-        }}
-      >
-        <Box>
-          <Typography variant="h6" sx={{ fontWeight: 800 }}>
-            Export Audit Report
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Select your preferred file format to download the attendance audit records.
-          </Typography>
-        </Box>
-        <IconButton size="small" onClick={handleClose} disabled={isExporting}>
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </DialogTitle>
+    <Dialog open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
+      <DialogContent className="max-w-lg p-0">
+        <DialogHeader
+          title="Export Audit Ledger"
+          description="Download filtered attendance records for corporate payroll, audits, and compliance."
+          icon={<Download className="size-4 text-primary-600" />}
+        />
 
-      <DialogContent sx={{ pt: 1.5 }}>
-        {/* Active Criteria Scope Info */}
-        <Box
-          sx={{
-            mb: 2.5,
-            p: 1.5,
-            borderRadius: 2,
-            bgcolor: 'action.hover',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 1,
-          }}
-        >
-          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase' }}>
-            Export Scope:
-          </Typography>
-          <Chip label={`All Matching Logs (${totalCount} Records)`} size="small" color="primary" sx={{ fontWeight: 600 }} />
-          {currentFilters.status && currentFilters.status !== 'all' && (
-            <Chip label={`Status: ${currentFilters.status.toUpperCase()}`} size="small" variant="outlined" />
+        <div className="flex flex-col gap-4 px-6 py-3">
+          {/* Active Scope Summary Banner */}
+          <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-line bg-subtle/70 p-3 text-xs">
+            <span className="font-mono text-[0.6875rem] font-medium uppercase tracking-wider text-muted flex items-center gap-1">
+              <Filter className="size-3 text-faint" /> Scope:
+            </span>
+            <Badge variant="brand" className="font-mono text-[0.6875rem]">
+              {totalCount} matching logs
+            </Badge>
+            {currentFilters.status && currentFilters.status !== 'all' && (
+              <Badge variant="outline" className="font-mono text-[0.6875rem] uppercase">
+                Status: {currentFilters.status}
+              </Badge>
+            )}
+            {currentFilters.date && (
+              <Badge variant="outline" className="font-mono text-[0.6875rem]">
+                Date: {dayjs(currentFilters.date).isValid() ? dayjs(currentFilters.date).format('DD MMM YYYY') : currentFilters.date}
+              </Badge>
+            )}
+            {currentFilters.search && (
+              <Badge variant="outline" className="font-mono text-[0.6875rem] max-w-[150px] truncate">
+                Search: &quot;{currentFilters.search}&quot;
+              </Badge>
+            )}
+          </div>
+
+          {/* Feedback Alerts */}
+          {error && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50/70 p-3 text-xs text-rose-700">
+              <AlertCircle className="size-4 shrink-0 mt-0.5 text-rose-600" />
+              <span>{error}</span>
+            </div>
           )}
-          {currentFilters.date && (
-            <Chip
-              label={`Date: ${dayjs(currentFilters.date).isValid() ? dayjs(currentFilters.date).format('DD, MMM YYYY') : currentFilters.date}`}
-              size="small"
-              variant="outlined"
-            />
+
+          {successInfo && (
+            <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-emerald-700">
+              <CheckCircle2 className="size-4 shrink-0 mt-0.5 text-emerald-600" />
+              <div>
+                <p className="font-semibold">Report generated successfully ({successInfo.totalRecords} records).</p>
+                <p className="text-emerald-600/80">Downloading file {successInfo.filename}...</p>
+              </div>
+            </div>
           )}
-          {currentFilters.search && (
-            <Chip label={`Search: "${currentFilters.search}"`} size="small" variant="outlined" />
-          )}
-        </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        {successInfo && (
-          <Alert severity="success" icon={<SuccessIcon />} sx={{ mb: 2, borderRadius: 2 }}>
-            Report generated successfully! ({successInfo.totalRecords} records) Downloading <strong>{successInfo.filename}</strong>...
-          </Alert>
-        )}
-
-        {/* Format Options Cards */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-          {FORMAT_OPTIONS.map((opt) => {
-            const isSelected = selectedFormat === opt.id;
-            return (
-              <Paper
-                key={opt.id}
-                variant="outlined"
-                onClick={() => !isExporting && setSelectedFormat(opt.id)}
-                sx={{
-                  p: 2,
-                  borderRadius: 2.5,
-                  cursor: isExporting ? 'default' : 'pointer',
-                  border: isSelected ? `2px solid ${opt.color}` : '1px solid',
-                  borderColor: isSelected ? opt.color : 'divider',
-                  bgcolor: isSelected ? opt.bgColor : 'background.paper',
-                  transition: 'all 0.15s ease-in-out',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  '&:hover': {
-                    borderColor: opt.color,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                  },
-                }}
-              >
-                <Radio
-                  checked={isSelected}
-                  value={opt.id}
+          {/* File Format Selection Cards */}
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-semibold text-ink">Choose Output Format</span>
+            {FORMAT_OPTIONS.map((opt) => {
+              const isSelected = selectedFormat === opt.id;
+              const Icon = opt.icon;
+              return (
+                <button
+                  type="button"
+                  key={opt.id}
                   disabled={isExporting}
-                  sx={{
-                    color: opt.color,
-                    '&.Mui-checked': { color: opt.color },
-                    p: 0.5,
-                  }}
-                />
-
-                <Box
-                  sx={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 2,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    bgcolor: '#FFFFFF',
-                    border: `1px solid ${opt.borderColor}`,
-                    flexShrink: 0,
-                  }}
+                  onClick={() => setSelectedFormat(opt.id)}
+                  className={cn(
+                    'group relative flex w-full items-center gap-3.5 rounded-xl border p-3.5 text-left transition-all duration-150',
+                    isSelected
+                      ? `${opt.activeBorder} ${opt.bgLight}`
+                      : 'border-line bg-canvas hover:border-line-strong hover:bg-subtle/50',
+                    isExporting && 'pointer-events-none opacity-60'
+                  )}
                 >
-                  {opt.icon}
-                </Box>
+                  {/* Radio ring */}
+                  <div
+                    className={cn(
+                      'flex size-4 shrink-0 items-center justify-center rounded-full border transition-all',
+                      isSelected ? 'border-primary-600 bg-primary-600' : 'border-line-strong bg-canvas'
+                    )}
+                  >
+                    {isSelected && <span className="size-1.5 rounded-full bg-white" />}
+                  </div>
 
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                      {opt.title}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        fontWeight: 700,
-                        color: opt.color,
-                        bgcolor: '#FFFFFF',
-                        px: 0.75,
-                        py: 0.1,
-                        borderRadius: 1,
-                        border: `1px solid ${opt.borderColor}`,
-                      }}
-                    >
-                      {opt.extension}
-                    </Typography>
-                  </Box>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                    {opt.description}
-                  </Typography>
-                </Box>
-              </Paper>
-            );
-          })}
-        </Box>
+                  {/* Icon box */}
+                  <div
+                    className={cn(
+                      'flex size-10 shrink-0 items-center justify-center rounded-lg border bg-white shadow-xs',
+                      opt.borderClass
+                    )}
+                  >
+                    <Icon className={cn('size-5', opt.accentColor)} />
+                  </div>
+
+                  {/* Description */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-ink">{opt.title}</span>
+                      <span
+                        className={cn(
+                          'rounded-md border px-1.5 py-0.5 font-mono text-[0.625rem] font-semibold bg-white',
+                          opt.borderClass,
+                          opt.accentColor
+                        )}
+                      >
+                        {opt.extension}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-muted">{opt.description}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <DialogFooter className="mt-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleClose}
+            disabled={isExporting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="brand"
+            size="sm"
+            onClick={handleDownload}
+            disabled={isExporting}
+            className="gap-2"
+          >
+            {isExporting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                <span>Generating {selectedFormat.toUpperCase()}...</span>
+              </>
+            ) : (
+              <>
+                <Download className="size-3.5" />
+                <span>Download {selectedFormat.toUpperCase()}</span>
+              </>
+            )}
+          </Button>
+        </DialogFooter>
       </DialogContent>
-
-      <DialogActions sx={{ px: 3, pb: 2.5, pt: 1, justifyContent: 'space-between' }}>
-        <Button onClick={handleClose} disabled={isExporting} color="inherit" sx={{ textTransform: 'none', fontWeight: 600 }}>
-          Cancel
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handleDownload}
-          disabled={isExporting}
-          startIcon={isExporting ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
-          sx={{
-            textTransform: 'none',
-            fontWeight: 700,
-            borderRadius: 2,
-            px: 2.5,
-            py: 1,
-          }}
-        >
-          {isExporting ? 'Generating Report...' : `Download ${selectedFormat.toUpperCase()} File`}
-        </Button>
-      </DialogActions>
     </Dialog>
   );
 };

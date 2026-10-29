@@ -1,68 +1,51 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { attendanceService } from '../../services/attendanceService';
-import { employeeService } from '../../services/employeeService';
-import { useAuth } from '../../context/AuthContext';
-import BrandLoader from '../../components/BrandLoader';
-import { settingsService } from '../../services/settingsService';
-import { OnboardingChecklistWidget } from '../../components/OnboardingChecklistWidget';
-import { getAvatarUrl } from '../../utils/imageUrl';
-import { User } from '../../types';
+import { useNavigate, Link } from 'react-router-dom';
 import {
-  Box,
-  Grid,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Paper,
-  Divider,
-  LinearProgress,
-  IconButton,
-  Skeleton,
-  useTheme,
-  ButtonBase,
-  Avatar,
-  Chip,
-  ButtonGroup,
-  Tooltip as MuiTooltip,
-  Alert,
-} from '@mui/material';
+  Users,
+  CheckCircle2,
+  AlertTriangle,
+  RotateCw,
+  ArrowUpRight,
+  ArrowRight,
+  Clock,
+  ShieldCheck,
+  Inbox,
+  UserPlus,
+  Check,
+  Building2,
+} from 'lucide-react';
 import {
-  BarChart as RechartsBarChart,
+  ResponsiveContainer,
+  BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
-  ResponsiveContainer,
 } from 'recharts';
-import {
-  People as PeopleIcon,
-  CheckCircle as PresentIcon,
-  Warning as LateIcon,
-  Autorenew as AutoClosedIcon,
-  GpsFixed as GpsFixedIcon,
-  Bolt as QuickActionsIcon,
-  PersonAdd as AddEmployeeIcon,
-  Assessment as ReportIcon,
-  LocationOn as GeofenceIcon,
-  Settings as SettingsIcon,
-  CloudDownload as ExportIcon,
-  Domain as DomainIcon,
-  Schedule as ScheduleIcon,
-  Info as InfoIcon,
-  Refresh as RefreshIcon,
-  FiberManualRecord as DotIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
-  EventNote as EventNoteIcon,
-  Cancel as AbsentIcon,
-  CheckCircle as OnTimeIcon,
-} from '@mui/icons-material';
 import dayjs from 'dayjs';
+
+import { attendanceService } from '../../services/attendanceService';
+import { employeeService } from '../../services/employeeService';
+import { settingsService } from '../../services/settingsService';
+import { useAuth } from '../../context/AuthContext';
+import BrandLoader from '../../components/BrandLoader';
+import { getAvatarUrl } from '../../utils/imageUrl';
+import { cn } from '../../lib/utils';
+import {
+  Button,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  Badge,
+  Progress,
+  Tooltip,
+} from '../../components/ui';
+import { User } from '../../types';
 
 interface StreamRecord {
   id: string;
@@ -71,46 +54,16 @@ interface StreamRecord {
   workspace: string;
   time: string;
   type: string;
-  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
+  status: 'present' | 'late' | 'absent' | 'half_day' | 'auto_closed';
   avatarUrl?: string | null;
 }
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const theme = useTheme();
-  const isDark = theme.palette.mode === 'dark';
   const { user, workspaces, currentWorkspace, currentTenant } = useAuth();
 
   // Active chart view tab
   const [chartTab, setChartTab] = useState<'weekly' | 'dept'>('weekly');
-
-  // Semantic color tints matching existing theme
-  const colors = useMemo(() => ({
-    present: {
-      main: isDark ? '#34d399' : '#10b981',
-      bg: isDark ? 'rgba(6, 78, 59, 0.45)' : '#ecfdf5',
-    },
-    late: {
-      main: isDark ? '#fbbf24' : '#f59e0b',
-      bg: isDark ? 'rgba(120, 53, 15, 0.45)' : '#fffbeb',
-    },
-    absent: {
-      main: isDark ? '#f87171' : '#ef4444',
-      bg: isDark ? 'rgba(127, 29, 29, 0.45)' : '#fef2f2',
-    },
-    autoclosed: {
-      main: isDark ? '#818cf8' : '#6366f1',
-      bg: isDark ? 'rgba(49, 46, 129, 0.45)' : '#f5f3ff',
-    },
-    geofence: {
-      main: isDark ? '#2dd4bf' : '#0d9488',
-      bg: isDark ? 'rgba(19, 78, 74, 0.45)' : '#f0fdfa',
-    },
-    primary: {
-      main: theme.palette.primary.main,
-      bg: isDark ? 'rgba(49, 46, 129, 0.35)' : '#e0e7ff',
-    },
-  }), [isDark, theme.palette.primary.main]);
 
   const cleanId = (id?: string | null): string => {
     if (!id || id === 'undefined' || id === 'null' || id.trim() === '') return '';
@@ -137,7 +90,7 @@ export const AdminDashboard: React.FC = () => {
     gcTime: 300_000,
   });
 
-  // Fetch recent attendance logs for real-time pulse stream
+  // Fetch recent attendance logs
   const {
     data: rawAttendance = [],
     isLoading: isAttendanceLoading,
@@ -150,7 +103,7 @@ export const AdminDashboard: React.FC = () => {
     gcTime: 300_000,
   });
 
-  // Fetch employees directory to support dynamic department analytics
+  // Fetch employees directory
   const {
     data: employeesData,
     isLoading: isEmployeesLoading,
@@ -163,7 +116,7 @@ export const AdminDashboard: React.FC = () => {
     gcTime: 300_000,
   });
 
-  // Fetch workspace geofence and shift configuration for active workspace
+  // Fetch workspace geofence and shift configuration
   const {
     data: geofenceSettings,
     refetch: refetchGeofence,
@@ -190,104 +143,19 @@ export const AdminDashboard: React.FC = () => {
     refetchGeofence();
   };
 
-  // 1. Row 1: 5-Pillar High-Impact KPI Strip
-  // 1. Row 1: 5-Pillar High-Impact KPI Strip
+  // KPIs
   const totalEmployeesCount = metrics?.totalEmployees ?? employees.length;
-  const presentTodayCount = metrics?.presentToday ?? (rawAttendance || []).filter((r) => r.status === 'present' || r.status === 'late').length;
-  const lateTodayCount = metrics?.lateToday ?? (rawAttendance || []).filter((r) => r.status === 'late').length;
-  const absentTodayCount = metrics?.absentCount ?? Math.max(0, totalEmployeesCount - presentTodayCount);
-  const attendanceRateVal = metrics?.attendanceRate ?? (totalEmployeesCount > 0 ? Math.round((presentTodayCount / totalEmployeesCount) * 100) : 0);
-  const verifiedPunchesCount = (rawAttendance || []).filter((r) => r.status !== 'absent').length;
-
-  const kpiPillars = useMemo(() => [
-    {
-      title: 'Total Employees',
-      value: totalEmployeesCount,
-      icon: <PeopleIcon sx={{ fontSize: 24, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      badgeText: `${totalEmployeesCount} Total`,
-      badgeBg: colors.present.bg,
-      badgeColor: colors.present.main,
-      subText: `${absentTodayCount} on leave / absent`,
-      path: '/admin/employees',
-    },
-    {
-      title: 'Present Today',
-      value: presentTodayCount,
-      icon: <PresentIcon sx={{ fontSize: 24, color: colors.present.main }} />,
-      bgColor: colors.present.bg,
-      badgeText: `${attendanceRateVal}%`,
-      badgeBg: colors.present.bg,
-      badgeColor: colors.present.main,
-      subText: `${attendanceRateVal}% floor coverage`,
-      path: '/admin/reports',
-    },
-    {
-      title: 'Late Today',
-      value: lateTodayCount,
-      icon: <LateIcon sx={{ fontSize: 24, color: colors.late.main }} />,
-      bgColor: colors.late.bg,
-      badgeText: lateTodayCount > 0 ? `${lateTodayCount} Late` : '0 Late',
-      badgeBg: colors.late.bg,
-      badgeColor: colors.late.main,
-      subText: 'After shift cutoff',
-      path: '/admin/reports',
-    },
-    {
-      title: 'Auto Closed',
-      value: metrics?.autoClosedToday ?? 0,
-      icon: <AutoClosedIcon sx={{ fontSize: 24, color: colors.autoclosed.main }} />,
-      bgColor: colors.autoclosed.bg,
-      badgeText: (metrics?.autoClosedToday ?? 0) > 0 ? 'Action Req.' : '0 Anomaly',
-      badgeBg: (metrics?.autoClosedToday ?? 0) > 0 ? colors.autoclosed.bg : colors.present.bg,
-      badgeColor: (metrics?.autoClosedToday ?? 0) > 0 ? colors.autoclosed.main : colors.present.main,
-      subText: 'Missed check-out',
-      path: '/admin/reports',
-    },
-    {
-      title: 'Geofence Compliance',
-      value: verifiedPunchesCount > 0 ? '100%' : '0%',
-      icon: <GpsFixedIcon sx={{ fontSize: 24, color: colors.geofence.main }} />,
-      bgColor: colors.geofence.bg,
-      badgeText: 'In-Bounds',
-      badgeBg: colors.geofence.bg,
-      badgeColor: colors.geofence.main,
-      subText: `${verifiedPunchesCount} punches verified`,
-      path: '/admin/settings',
-    },
-  ], [totalEmployeesCount, presentTodayCount, lateTodayCount, absentTodayCount, attendanceRateVal, verifiedPunchesCount, metrics?.autoClosedToday, colors]);
-
-  // 2. Row 2: Administrative Actions Full-Width Launchpad
-  const adminActions = useMemo(() => [
-    {
-      title: 'Onboard Staff',
-      desc: 'Add personnel & roles',
-      icon: <AddEmployeeIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      onClick: () => navigate('/admin/employees/new'),
-    },
-    {
-      title: 'Employee Directory',
-      desc: 'View & manage roster',
-      icon: <PeopleIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      onClick: () => navigate('/admin/employees'),
-    },
-    {
-      title: 'Audit Ledger',
-      desc: 'Live punches & shifts',
-      icon: <ReportIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      onClick: () => navigate('/admin/reports'),
-    },
-    {
-      title: 'Organization',
-      desc: 'Policies, shifts & geofence',
-      icon: <SettingsIcon sx={{ fontSize: 22, color: colors.primary.main }} />,
-      bgColor: colors.primary.bg,
-      onClick: () => navigate('/admin/settings'),
-    },
-  ], [colors, navigate]);
+  const presentTodayCount =
+    metrics?.presentToday ??
+    (rawAttendance || []).filter((r) => r.status === 'present' || r.status === 'late').length;
+  const lateTodayCount =
+    metrics?.lateToday ?? (rawAttendance || []).filter((r) => r.status === 'late').length;
+  const absentTodayCount =
+    metrics?.absentCount ?? Math.max(0, totalEmployeesCount - presentTodayCount);
+  const autoClosedCount = metrics?.autoClosedToday ?? 0;
+  const attendanceRateVal =
+    metrics?.attendanceRate ??
+    (totalEmployeesCount > 0 ? Math.round((presentTodayCount / totalEmployeesCount) * 100) : 0);
 
   // Dynamic Weekly Trend Analytics (Mon-Fri)
   const weeklyChartData = useMemo(() => {
@@ -295,7 +163,6 @@ export const AdminDashboard: React.FC = () => {
       return metrics.weeklyStats;
     }
 
-    // Dynamic derivation from rawAttendance across the last 5 business days
     const days: { dateStr: string; day: string }[] = [];
     let cursor = dayjs();
     while (days.length < 5) {
@@ -316,9 +183,12 @@ export const AdminDashboard: React.FC = () => {
       const present = dayRecs.filter((r) => r.status === 'present' || r.status === 'half_day').length;
       const late = dayRecs.filter((r) => r.status === 'late').length;
       const explicitAbsent = dayRecs.filter((r) => r.status === 'absent').length;
-      const absent = dayRecs.length > 0
-        ? (explicitAbsent > 0 ? explicitAbsent : Math.max(0, totalStaff - (present + late)))
-        : 0;
+      const absent =
+        dayRecs.length > 0
+          ? explicitAbsent > 0
+            ? explicitAbsent
+            : Math.max(0, totalStaff - (present + late))
+          : 0;
 
       return {
         day,
@@ -335,7 +205,6 @@ export const AdminDashboard: React.FC = () => {
       return metrics.departmentStats;
     }
 
-    // Dynamic grouping from employee records and attendance logs
     if (employees && employees.length > 0) {
       const deptMap: Record<string, { total: number; empIds: Set<string> }> = {};
       employees.forEach((emp) => {
@@ -348,7 +217,6 @@ export const AdminDashboard: React.FC = () => {
         if (emp.employeeId) deptMap[dept].empIds.add(emp.employeeId);
       });
 
-      // Target today's records, or fallback to the most recent record date
       const todayStr = dayjs().format('YYYY-MM-DD');
       let targetRecords = (rawAttendance || []).filter((r) => r.date === todayStr);
       if (targetRecords.length === 0 && rawAttendance && rawAttendance.length > 0) {
@@ -388,11 +256,15 @@ export const AdminDashboard: React.FC = () => {
   }, [metrics?.departmentStats, employees, rawAttendance]);
 
   // Formatted Live Feed Stream Items
-  const liveStreamRecords = useMemo<StreamRecord[]>(() => {
+  const recentAttendanceList = useMemo<StreamRecord[]>(() => {
     if (rawAttendance && rawAttendance.length > 0) {
-      // Map first 5 items
-      return rawAttendance.slice(0, 5).map((item, idx) => {
-        const formattedId = item.employeeId || (item as any).employee?.employeeCode || (item as any).employee?.id || item.id || '--';
+      return rawAttendance.slice(0, 6).map((item, idx) => {
+        const formattedId =
+          item.employeeId ||
+          (item as any).employee?.employeeCode ||
+          (item as any).employee?.id ||
+          item.id ||
+          `#${1001 + idx}`;
 
         let checkInTime = '--';
         if (item.checkIn) {
@@ -404,8 +276,13 @@ export const AdminDashboard: React.FC = () => {
         }
 
         const isLate = item.status === 'late';
-        const isGps = Boolean((item as any).clockInLatitude || (item as any).locationVerified || (item as any).isGeofenceVerified);
-        const workspaceName = (item as any).workspaceName || (item as any).workspace || 'Main Office';
+        const isGps = Boolean(
+          (item as any).clockInLatitude ||
+            (item as any).locationVerified ||
+            (item as any).isGeofenceVerified
+        );
+        const workspaceName =
+          (item as any).workspaceName || (item as any).workspace || 'Main Office';
 
         return {
           id: item.id || `stream-${idx}`,
@@ -414,28 +291,29 @@ export const AdminDashboard: React.FC = () => {
           workspace: workspaceName,
           time: checkInTime,
           type: isLate ? 'Late Arrival' : isGps ? 'GPS Verified' : 'On Time',
-          status: item?.status,
+          status: item.status,
           avatarUrl: (item as any).avatarUrl || null,
         };
       });
     }
 
-    // No mock fallback feed
     return [];
   }, [rawAttendance]);
 
-  // Leave & Time-Off Requests State (Pending Approvals & Adjustments)
-  const [leaveRequests, setLeaveRequests] = useState<Array<{
-    id: string;
-    name: string;
-    empId: string;
-    avatarUrl?: string | null;
-    department: string;
-    type: string;
-    duration: string;
-    reason: string;
-    status: 'pending' | 'approved' | 'rejected';
-  }>>([]);
+  // Leave & Time-Off Requests State
+  const [leaveRequests, setLeaveRequests] = useState<
+    Array<{
+      id: string;
+      name: string;
+      empId: string;
+      avatarUrl?: string | null;
+      department: string;
+      type: string;
+      duration: string;
+      reason: string;
+      status: 'pending' | 'approved' | 'rejected';
+    }>
+  >([]);
 
   const handleApproveRequest = (id: string) => {
     setLeaveRequests((prev) =>
@@ -454,989 +332,721 @@ export const AdminDashboard: React.FC = () => {
     [leaveRequests]
   );
 
-  const totalStaffCount = useMemo(
-    () => metrics?.totalEmployees ?? employees.length ?? 0,
-    [metrics?.totalEmployees, employees.length]
+  // Setup completion metrics
+  const hasGeofenceConfigured = Boolean(
+    (geofenceSettings?.isConfigured &&
+      geofenceSettings?.geofence &&
+      (Number(geofenceSettings.geofence.latitude) !== 0 ||
+        Number(geofenceSettings.geofence.longitude) !== 0)) ||
+      (activeWorkspaceId &&
+        localStorage.getItem(`geofence_configured_${activeWorkspaceId}`) === 'true') ||
+      (currentTenant?.id &&
+        localStorage.getItem(`geofence_configured_${currentTenant.id}`) === 'true')
   );
 
-  const presentStaffCount = useMemo(
-    () => metrics?.presentToday ?? (rawAttendance?.length ?? 0),
-    [metrics?.presentToday, rawAttendance]
+  const hasShiftConfigured = Boolean(
+    (geofenceSettings?.isConfigured &&
+      geofenceSettings?.geofence?.defaultShiftStartTime &&
+      geofenceSettings?.geofence?.defaultShiftEndTime) ||
+      (activeWorkspaceId &&
+        localStorage.getItem(`shifts_configured_${activeWorkspaceId}`) === 'true') ||
+      (currentTenant?.id &&
+        localStorage.getItem(`shifts_configured_${currentTenant.id}`) === 'true')
   );
 
-  const absentStaffCount = useMemo(
-    () => metrics?.absentCount ?? Math.max(0, totalStaffCount - presentStaffCount),
-    [metrics?.absentCount, totalStaffCount, presentStaffCount]
+  const hasEmployeesAdded = totalEmployeesCount > 0;
+  const hasAvatarUploaded = Boolean(
+    user?.avatarUrl &&
+      user.avatarUrl.trim() !== '' &&
+      !user.avatarUrl.includes('placeholder')
   );
 
-  const shiftCoveragePercent = useMemo(
-    () => (totalStaffCount > 0 ? Math.round((presentStaffCount / totalStaffCount) * 100) : 0),
-    [totalStaffCount, presentStaffCount]
-  );
+  const setupSteps = [
+    { label: 'Add employees', done: hasEmployeesAdded, path: '/admin/employees/new' },
+    { label: 'Set office geofence', done: hasGeofenceConfigured, path: '/admin/settings' },
+    { label: 'Define shift hours', done: hasShiftConfigured, path: '/admin/settings' },
+    { label: 'Upload admin avatar', done: hasAvatarUploaded, path: '/admin/profile' },
+  ];
 
+  const setupDoneCount = setupSteps.filter((s) => s.done).length;
+  const setupPercent = Math.round((setupDoneCount / setupSteps.length) * 100);
+  const isSetupComplete = setupDoneCount === setupSteps.length;
 
+  const greeting = () => {
+    const h = new Date().getHours();
+    return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  };
 
+  const userFirstName = user?.name ? user.name.split(' ')[0] : 'Admin';
+  const workspaceTitle = currentWorkspace?.name || 'Workspace';
+
+  const dateEyebrow = new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date());
+
+  if (isLoading) {
+    return <BrandLoader fullScreen message="Loading dashboard view..." />;
+  }
 
   return (
-    <Box sx={{ pb: 4 }}>
-      {/* Dashboard Top Header */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box>
-          <Typography variant="h5" sx={{ fontWeight: 800, color: 'text.primary', letterSpacing: -0.5 }}>
-            Admin Dashboard
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500, mt: 0.5 }}>
-            Company-wide real-time attendance insights, personnel audits, and geofence tracking.
-          </Typography>
-        </Box>
-        <MuiTooltip title="Refresh All Metrics">
-          <IconButton
-            onClick={handleRefreshAll}
-            disabled={isLoading || isMetricsFetching}
-            size="small"
-            sx={{
-              border: `1px solid ${theme.palette.divider}`,
-              bgcolor: 'background.paper',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-              '&:hover': { bgcolor: 'action.hover' },
-            }}
-          >
-            <RefreshIcon fontSize="small" />
-          </IconButton>
-        </MuiTooltip>
-      </Box>
-
-      {isLoading ? (
-        <BrandLoader fullScreen message="Loading dashboard" />
-      ) : (
-        <Grid container spacing={3}>
-          {/* Newly Registered Tenant Notice (0 Workspaces) */}
-          {workspaces && workspaces.length === 0 && (
-            <Grid size={{ xs: 12 }}>
-              <Alert
-                severity="info"
-                icon={<DomainIcon sx={{ fontSize: 22 }} />}
-                sx={{
-                  borderRadius: 3,
-                  alignItems: 'center',
-                  '& .MuiAlert-message': { width: '100%' },
-                }}
-                action={
-                  <Button
-                    color="primary"
-                    variant="contained"
-                    size="small"
-                    onClick={() => {
-                      const step1Btn = document.getElementById('checklist-step-1');
-                      if (step1Btn) {
-                        step1Btn.click();
-                      } else {
-                        navigate('/workspace/select');
-                      }
-                    }}
-                    sx={{ textTransform: 'none', fontWeight: 700, borderRadius: 2, mr: 1 }}
-                  >
-                    Create Workspace
-                  </Button>
-                }
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      {/* Page Header */}
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1.5">
+            <span className="eyebrow">{dateEyebrow}</span>
+            <h1 className="text-[1.625rem] sm:text-[1.75rem] font-semibold tracking-[-0.02em] leading-tight text-ink">
+              {greeting()}, {userFirstName}
+            </h1>
+            <p className="max-w-2xl text-sm leading-relaxed text-muted">
+              Here's what needs attention at {workspaceTitle}.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Tooltip content="Refresh metrics">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRefreshAll}
+                disabled={isLoading || isMetricsFetching}
               >
-                <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-                  Tenant Account Registered: {currentTenant?.name || (user as any)?.tenantName || 'Organization'}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
-                  To begin tracking attendance, start by creating your primary workspace in the Onboarding Guide on the right.
-                </Typography>
-              </Alert>
-            </Grid>
-          )}
-          {/* ======================================================================
-              ROW 1: 5-Pillar High-Impact KPI Strip
-              ====================================================================== */}
-          <Grid size={{ xs: 12 }}>
-            <Grid container spacing={2.5}>
-              {kpiPillars.map((kpi) => (
-                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={kpi.title}>
-                  <Card
-                    sx={{
-                      borderRadius: 3,
-                      border: `1px solid ${theme.palette.divider}`,
-                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                      transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                      '&:hover': {
-                        transform: 'translateY(-3px)',
-                        boxShadow: '0 8px 16px -4px rgba(0, 0, 0, 0.08)',
-                      },
-                    }}
-                  >
-                    <ButtonBase
-                      onClick={() => navigate(kpi.path)}
-                      sx={{
-                        width: '100%',
-                        textAlign: 'left',
-                        display: 'block',
-                        p: 0,
-                      }}
+                <RotateCw className={cn('size-3.5 mr-1.5 text-muted', isMetricsFetching && 'animate-spin')} />
+                Refresh
+              </Button>
+            </Tooltip>
+
+            <Button variant="brand" size="sm" asChild>
+              <Link to="/admin/employees/new" className="gap-1.5">
+                <UserPlus className="size-3.5" />
+                <span>+ Onboard Staff</span>
+              </Link>
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Setup Card (shadcn Card with pattern and Progress) */}
+      {!isSetupComplete && (
+        <Card className="relative overflow-hidden p-5 sm:p-6">
+          <div className="dot-grid pointer-events-none absolute inset-y-0 right-0 w-1/2 opacity-60 [mask-image:linear-gradient(to_left,black,transparent)]" />
+          <div className="relative flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex max-w-xl flex-col gap-2.5">
+              <span className="eyebrow">
+                SETUP {setupDoneCount} OF {setupSteps.length}
+              </span>
+              <h2 className="text-base font-semibold tracking-tight text-ink">
+                Finish setting up {workspaceTitle}
+              </h2>
+              <p className="text-xs leading-relaxed text-muted">
+                Add your staff roster, establish geofenced coordinates, and define shift hours to
+                enable live attendance tracking.
+              </p>
+
+              {/* Steps checklist pills using shadcn Badge */}
+              <div className="flex flex-wrap gap-2 pt-1">
+                {setupSteps.map((step) => (
+                  <Link key={step.label} to={step.path}>
+                    <Badge
+                      variant={step.done ? 'success' : 'outline'}
+                      className="cursor-pointer gap-1.5 font-medium transition-colors hover:border-line-strong"
                     >
-                      <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}
-                          >
-                            {kpi.title}
-                          </Typography>
-                          <Paper
-                            elevation={0}
-                            sx={{
-                              width: 38,
-                              height: 38,
-                              borderRadius: 2,
-                              bgcolor: kpi.bgColor,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            {kpi.icon}
-                          </Paper>
-                        </Box>
-
-                        <Typography variant="h4" sx={{ fontWeight: 800, color: 'text.primary', mb: 1 }}>
-                          {kpi.value}
-                        </Typography>
-
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                          <Chip
-                            label={kpi.badgeText}
-                            size="small"
-                            sx={{
-                              height: 20,
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              bgcolor: kpi.badgeBg,
-                              color: kpi.badgeColor,
-                              borderRadius: 1.5,
-                              px: 0.5,
-                            }}
-                          />
-                          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                            {kpi.subText}
-                          </Typography>
-                        </Box>
-                      </CardContent>
-                    </ButtonBase>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-
-          {/* ======================================================================
-              ROW 2: Administrative Actions Full-Width Launchpad
-              ====================================================================== */}
-          <Grid size={{ xs: 12 }}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 2.5,
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <QuickActionsIcon sx={{ color: 'primary.main', fontSize: 20 }} />
-                  <Typography
-                    variant="subtitle2"
-                    sx={{
-                      fontWeight: 800,
-                      letterSpacing: 0.75,
-                      textTransform: 'uppercase',
-                      color: 'text.primary',
-                    }}
-                  >
-                    Administrative Actions
-                  </Typography>
-                </Box>
-                <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 600 }}>
-                  1-Click Navigation
-                </Typography>
-              </Box>
-
-              <Grid container spacing={2}>
-                {adminActions.map((action) => (
-                  <Grid size={{ xs: 12, sm: 6, md: 3, lg: 3 }} key={action.title}>
-                    <ButtonBase
-                      onClick={action.onClick}
-                      sx={{
-                        width: '100%',
-                        p: 1.75,
-                        borderRadius: 2.5,
-                        border: `1px solid ${theme.palette.divider}`,
-                        bgcolor: 'background.paper',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'flex-start',
-                        gap: 1.75,
-                        textAlign: 'left',
-                        transition: 'all 0.2s ease',
-                        '&:hover': {
-                          borderColor: 'primary.main',
-                          bgcolor: isDark ? 'rgba(129, 140, 248, 0.08)' : 'rgba(79, 70, 229, 0.04)',
-                          transform: 'translateY(-2px)',
-                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
-                          '& .action-title': { color: 'primary.main' },
-                        },
-                      }}
-                    >
-                      <Paper
-                        elevation={0}
-                        sx={{
-                          width: 40,
-                          height: 40,
-                          borderRadius: 2,
-                          bgcolor: action.bgColor,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          flexShrink: 0,
-                        }}
+                      <span
+                        className={cn(
+                          'flex size-3.5 items-center justify-center rounded-full text-[9px] font-bold',
+                          step.done ? 'bg-emerald-600 text-white' : 'border border-faint text-faint'
+                        )}
                       >
-                        {action.icon}
-                      </Paper>
-                      <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                        <Typography
-                          className="action-title"
-                          variant="body2"
-                          sx={{
-                            fontWeight: 700,
-                            color: 'text.primary',
-                            lineHeight: 1.25,
-                            transition: 'color 0.15s ease',
-                          }}
-                        >
-                          {action.title}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500, mt: 0.25 }}>
-                          {action.desc}
-                        </Typography>
-                      </Box>
-                    </ButtonBase>
-                  </Grid>
+                        {step.done ? <Check className="size-2.5" /> : null}
+                      </span>
+                      <span>{step.label}</span>
+                    </Badge>
+                  </Link>
                 ))}
-              </Grid>
-            </Card>
-          </Grid>
+              </div>
 
-          {/* ======================================================================
-              ROW 3: Middle Bento Grid (Analytics 8 cols / Live Stream 4 cols)
-              ====================================================================== */}
-          {/* Dual-Tab Attendance Analytics Canvas */}
-          <Grid size={{ xs: 12, lg: 8 }}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 3,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Attendance Analytics
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    {chartTab === 'weekly' ? 'LAST 5 BUSINESS DAYS' : 'DEPARTMENT PERFORMANCE'}
-                  </Typography>
-                </Box>
+              {/* shadcn Progress component */}
+              <div className="flex items-center gap-2 pt-1">
+                <Progress value={setupPercent} className="h-1.5 flex-1" />
+                <span className="font-mono text-xs font-medium text-muted num">{setupPercent}%</span>
+              </div>
+            </div>
 
-                <ButtonGroup
-                  size="small"
-                  sx={{
-                    bgcolor: isDark ? 'background.default' : '#f1f5f9',
-                    p: 0.5,
-                    borderRadius: 2,
-                    border: `1px solid ${theme.palette.divider}`,
-                    '& .MuiButton-root': {
-                      border: 'none',
-                      borderRadius: 1.5,
-                      textTransform: 'none',
-                      fontWeight: 600,
-                      fontSize: '0.75rem',
-                      px: 1.75,
-                      py: 0.5,
-                    },
-                  }}
+            <div className="flex shrink-0 items-center gap-2">
+              <Button variant="brand" size="default" asChild>
+                <Link
+                  to={setupSteps.find((s) => !s.done)?.path || '/admin/settings'}
+                  className="gap-1.5"
                 >
-                  <Button
-                    onClick={() => setChartTab('weekly')}
-                    sx={{
-                      bgcolor: chartTab === 'weekly' ? 'background.paper' : 'transparent',
-                      color: chartTab === 'weekly' ? 'primary.main' : 'text.secondary',
-                      boxShadow: chartTab === 'weekly' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                      '&:hover': { bgcolor: chartTab === 'weekly' ? 'background.paper' : 'transparent' },
-                    }}
-                  >
-                    Weekly Trend
-                  </Button>
-                  <Button
-                    onClick={() => setChartTab('dept')}
-                    sx={{
-                      bgcolor: chartTab === 'dept' ? 'background.paper' : 'transparent',
-                      color: chartTab === 'dept' ? 'primary.main' : 'text.secondary',
-                      boxShadow: chartTab === 'dept' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                      '&:hover': { bgcolor: chartTab === 'dept' ? 'background.paper' : 'transparent' },
-                    }}
-                  >
-                    By Department
-                  </Button>
-                </ButtonGroup>
-              </Box>
-
-              <Box sx={{ width: '100%', flex: 1, minHeight: 340, mt: 2, display: 'flex', flexDirection: 'column' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  {chartTab === 'weekly' ? (
-                    <RechartsBarChart
-                      data={weeklyChartData}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme.palette.divider} />
-                      <XAxis dataKey="day" tick={{ fontSize: 11, fontWeight: 500, fill: theme.palette.text.secondary }} />
-                      <YAxis tick={{ fontSize: 11, fontWeight: 500, fill: theme.palette.text.secondary }} />
-                      <RechartsTooltip
-                        contentStyle={{
-                          borderRadius: 8,
-                          backgroundColor: theme.palette.background.paper,
-                          border: `1px solid ${theme.palette.divider}`,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                          fontSize: '0.8rem',
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="present" name="On Time" stackId="attendance" fill="#10b981" barSize={38} />
-                      <Bar dataKey="late" name="Late Check-In" stackId="attendance" fill="#f59e0b" barSize={38} />
-                      <Bar dataKey="absent" name="Absent" stackId="attendance" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={38} />
-                    </RechartsBarChart>
-                  ) : departmentStats.length === 0 ? (
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        height: '100%',
-                        p: 2,
-                      }}
-                    >
-                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-                        No department attendance records available yet.
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <RechartsBarChart
-                      data={departmentStats}
-                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme.palette.divider} />
-                      <XAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 500, fill: theme.palette.text.secondary }} />
-                      <YAxis unit="%" tick={{ fontSize: 11, fontWeight: 500, fill: theme.palette.text.secondary }} domain={[0, 100]} />
-                      <RechartsTooltip
-                        formatter={(val: number | string | Array<number | string> | undefined) => [`${val}%`, 'Attendance Rate']}
-                        contentStyle={{
-                          borderRadius: 8,
-                          backgroundColor: theme.palette.background.paper,
-                          border: `1px solid ${theme.palette.divider}`,
-                          boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                          fontSize: '0.8rem',
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12, fontWeight: 600, paddingTop: 10 }} />
-                      <Bar dataKey="rate" name="Attendance Rate (%)" fill={theme.palette.primary.main} radius={[4, 4, 0, 0]} barSize={38} />
-                    </RechartsBarChart>
-                  )}
-                </ResponsiveContainer>
-              </Box>
-            </Card>
-          </Grid>
-
-          {/* Right Panel: Live Operational Pulse (Real-Time Check-In Stream) */}
-          <Grid size={{ xs: 12, lg: 4 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, height: '100%' }}>
-              <OnboardingChecklistWidget
-                totalEmployeesCount={totalEmployeesCount}
-                hasGeofenceConfigured={Boolean(
-                  (geofenceSettings?.isConfigured &&
-                    geofenceSettings?.geofence &&
-                    (Number(geofenceSettings.geofence.latitude) !== 0 || Number(geofenceSettings.geofence.longitude) !== 0)) ||
-                  (activeWorkspaceId && localStorage.getItem(`geofence_configured_${activeWorkspaceId}`) === 'true') ||
-                  (currentTenant?.id && localStorage.getItem(`geofence_configured_${currentTenant.id}`) === 'true')
-                )}
-                hasShiftConfigured={Boolean(
-                  (geofenceSettings?.isConfigured &&
-                    geofenceSettings?.geofence?.defaultShiftStartTime &&
-                    geofenceSettings?.geofence?.defaultShiftEndTime) ||
-                  (activeWorkspaceId && localStorage.getItem(`shifts_configured_${activeWorkspaceId}`) === 'true') ||
-                  (currentTenant?.id && localStorage.getItem(`shifts_configured_${currentTenant.id}`) === 'true')
-                )}
-                hasAvatarUploaded={Boolean(user?.avatarUrl && user.avatarUrl.trim() !== '' && !user.avatarUrl.includes('placeholder'))}
-              />
-
-              <Card
-                sx={{
-                  borderRadius: 3,
-                  border: `1px solid ${theme.palette.divider}`,
-                  boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                  p: 3,
-
-                  display: 'flex',
-                  flexDirection: 'column',
-                }}
-              >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                      Live Operational Pulse
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5 }}>
-                      Real-Time Check-In Stream
-                    </Typography>
-                  </Box>
-                  <Chip
-                    icon={
-                      <Box
-                        sx={{
-                          width: 7,
-                          height: 7,
-                          borderRadius: '50%',
-                          bgcolor: colors.present.main,
-                          boxShadow: `0 0 6px ${colors.present.main}`,
-                          mr: 0.5,
-                        }}
-                      />
-                    }
-                    label="LIVE FEED"
-                    size="small"
-                    sx={{
-                      fontWeight: 700,
-                      fontSize: '0.68rem',
-                      bgcolor: colors.present.bg,
-                      color: colors.present.main,
-                      borderRadius: 1.5,
-                      height: 22,
-                      border: `1px solid ${colors.present.main}30`,
-                    }}
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: 1.5,
-                    maxHeight: 310,
-                    overflowY: 'auto',
-                    pr: 0.5,
-                    '&::-webkit-scrollbar': { width: 5 },
-                    '&::-webkit-scrollbar-thumb': {
-                      bgcolor: 'divider',
-                      borderRadius: 4,
-                    },
-                  }}
-                >
-                  {liveStreamRecords.length === 0 ? (
-                    <Box sx={{ py: 6, textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                        No live activity yet
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                        Employee punches will stream here in real time.
-                      </Typography>
-                    </Box>
-                  ) : (
-                    liveStreamRecords.map((stream) => {
-                      const initials = stream.name
-                        .split(' ')
-                        .map((n) => n[0])
-                        .join('')
-                        .substring(0, 2);
-
-                      const getStatusChip = (status: string) => {
-                        switch (status) {
-                          case 'present':
-                            return <Chip label="On Time" color="success" size="small" icon={<OnTimeIcon />} />;
-                          case 'late':
-                            return <Chip label="Late Check-In" color="warning" size="small" icon={<LateIcon />} />;
-                          case 'absent':
-                            return <Chip label="Absent" color="error" size="small" icon={<AbsentIcon />} />;
-                          case 'half_day':
-                            return <Chip label="Half Day" color="info" size="small" />;
-                          case 'auto_closed':
-                            return <Chip label="Auto-Closed" color="secondary" size="small" icon={<AutoClosedIcon />} />;
-                          default:
-                            return <Chip label={status} size="small" />;
-                        }
-                      };
-                      const isLate = stream.status === 'late';
-                      const gps = getStatusChip(stream.status)
-                      return (
-                        <Box
-                          key={stream.id}
-                          sx={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            p: 1.25,
-                            borderRadius: 2,
-                            bgcolor: isDark ? 'background.default' : '#f8fafc',
-                            border: `1px solid ${theme.palette.divider}`,
-                            transition: 'background-color 0.15s ease',
-                            '&:hover': {
-                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#f1f5f9',
-                            },
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                            <Box sx={{ position: 'relative' }}>
-                              <Avatar
-                                src={getAvatarUrl(stream.avatarUrl)}
-                                alt={stream.name}
-                                sx={{
-                                  width: 36,
-                                  height: 36,
-                                  fontSize: '0.8rem',
-                                  fontWeight: 700,
-                                  bgcolor: isLate ? colors.late.bg : colors.primary.bg,
-                                  color: isLate ? colors.late.main : colors.primary.main,
-                                }}
-                              >
-                                {initials}
-                              </Avatar>
-                              <Box
-                                sx={{
-                                  position: 'absolute',
-                                  bottom: 0,
-                                  right: 0,
-                                  width: 9,
-                                  height: 9,
-                                  borderRadius: '50%',
-                                  bgcolor: isLate ? colors.late.main : colors.present.main,
-                                  border: `2px solid ${theme.palette.background.paper}`,
-                                }}
-                              />
-                            </Box>
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                                {stream.name}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                {stream.empId} · {stream.workspace}
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          <Box sx={{ textAlign: 'right' }}>
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.primary', display: 'block' }}>
-                              {stream.time}
-                            </Typography>
-                            {/* <Chip
-                              label={stream.type}
-                              size="small"
-                              sx={{
-                                height: 18,
-                                fontSize: '0.65rem',
-                                fontWeight: 700,
-                                borderRadius: 1,
-                                bgcolor: isLate ? colors.late.bg : isGps ? colors.geofence.bg : colors.present.bg,
-                                color: isLate ? colors.late.main : isGps ? colors.geofence.main : colors.present.main,
-                                mt: 0.25,
-                              }}
-                            /> */}
-                            <div>
-                              {gps}
-                            </div>
-                          </Box>
-                        </Box>
-                      );
-                    })
-                  )}
-                </Box>
-              </Card>
-            </Box>
-          </Grid>
-
-          {/* ======================================================================
-              ROW 4: Operational Approvals & Shift Coverage (50% / 50% Split)
-              ====================================================================== */}
-          {/* Widget A: Leave & Time-Off Requests */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 3,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Leave & Time-Off Requests
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Pending Approvals & Adjustments
-                  </Typography>
-                </Box>
-                <Chip
-                  label={pendingLeavesCount > 0 ? `${pendingLeavesCount} ACTION REQUIRED` : 'ALL RESOLVED'}
-                  size="small"
-                  sx={{
-                    height: 22,
-                    fontSize: '0.68rem',
-                    fontWeight: 700,
-                    bgcolor: pendingLeavesCount > 0 ? colors.late.bg : colors.present.bg,
-                    color: pendingLeavesCount > 0 ? colors.late.main : colors.present.main,
-                    borderRadius: 1.5,
-                  }}
-                />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.75, flexGrow: 1 }}>
-                {leaveRequests.length === 0 ? (
-                  <Box sx={{ py: 6, textAlign: 'center', my: 'auto' }}>
-                    <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      No pending requests
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                      All time-off and punch adjustment requests are resolved.
-                    </Typography>
-                  </Box>
-                ) : (
-                  leaveRequests.map((req) => {
-                    const isPending = req.status === 'pending';
-                    const isApproved = req.status === 'approved';
-                    const isRejected = req.status === 'rejected';
-
-                    const typeStyle =
-                      req.type === 'Casual Leave'
-                        ? { bg: colors.late.bg, color: colors.late.main }
-                        : req.type === 'Sick Leave'
-                          ? { bg: colors.autoclosed.bg, color: colors.autoclosed.main }
-                          : { bg: colors.primary.bg, color: colors.primary.main };
-
-                    return (
-                      <Paper
-                        key={req.id}
-                        elevation={0}
-                        sx={{
-                          p: 1.75,
-                          borderRadius: 2,
-                          bgcolor: isDark ? 'background.default' : '#f8fafc',
-                          border: `1px solid ${theme.palette.divider}`,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 1.25,
-                          transition: 'background-color 0.2s ease',
-                        }}
-                      >
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
-                            <Avatar
-                              src={getAvatarUrl(req.avatarUrl)}
-                              sx={{
-                                width: 38,
-                                height: 38,
-                                fontSize: '0.875rem',
-                                fontWeight: 700,
-                                bgcolor: colors.primary.main,
-                              }}
-                            >
-                              {req.name[0]}
-                            </Avatar>
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                                {req.name}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 500 }}>
-                                {req.empId} · {req.department}
-                              </Typography>
-                            </Box>
-                          </Box>
-
-                          <Chip
-                            label={req.type}
-                            size="small"
-                            sx={{
-                              height: 20,
-                              fontSize: '0.68rem',
-                              fontWeight: 700,
-                              bgcolor: typeStyle.bg,
-                              color: typeStyle.color,
-                              borderRadius: 1,
-                            }}
-                          />
-                        </Box>
-
-                        {/* Time / Duration & Reason */}
-                        <Box sx={{ pl: 0.25 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
-                            <EventNoteIcon sx={{ fontSize: 15, color: 'text.secondary' }} />
-                            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.primary' }}>
-                              {req.duration}
-                            </Typography>
-                          </Box>
-                          <Typography
-                            variant="caption"
-                            color="text.secondary"
-                            sx={{
-                              display: 'block',
-                              fontStyle: 'italic',
-                              lineHeight: 1.35,
-                              bgcolor: isDark ? 'rgba(255,255,255,0.03)' : '#ffffff',
-                              p: 0.75,
-                              borderRadius: 1,
-                              border: `1px dashed ${theme.palette.divider}`,
-                            }}
-                          >
-                            "{req.reason}"
-                          </Typography>
-                        </Box>
-
-                        {/* Action Buttons or Resolved Status */}
-                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', pt: 0.25 }}>
-                          {isPending && (
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Button
-                                size="small"
-                                variant="text"
-                                color="error"
-                                onClick={() => handleRejectRequest(req.id)}
-                                startIcon={<CloseIcon sx={{ fontSize: 16 }} />}
-                                sx={{
-                                  fontSize: '0.72rem',
-                                  fontWeight: 600,
-                                  py: 0.3,
-                                  px: 1,
-                                  textTransform: 'none',
-                                }}
-                              >
-                                Decline
-                              </Button>
-                              <Button
-                                size="small"
-                                variant="contained"
-                                color="success"
-                                onClick={() => handleApproveRequest(req.id)}
-                                startIcon={<CheckIcon sx={{ fontSize: 16 }} />}
-                                sx={{
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  py: 0.3,
-                                  px: 1.5,
-                                  borderRadius: 1.5,
-                                  textTransform: 'none',
-                                  boxShadow: 'none',
-                                }}
-                              >
-                                Approve
-                              </Button>
-                            </Box>
-                          )}
-                          {isApproved && (
-                            <Chip
-                              icon={<CheckIcon sx={{ fontSize: '14px !important', color: `${colors.present.main} !important` }} />}
-                              label="Approved by Admin"
-                              size="small"
-                              sx={{
-                                height: 22,
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                bgcolor: colors.present.bg,
-                                color: colors.present.main,
-                                borderRadius: 1,
-                              }}
-                            />
-                          )}
-                          {isRejected && (
-                            <Chip
-                              icon={<CloseIcon sx={{ fontSize: '14px !important', color: `${colors.late.main} !important` }} />}
-                              label="Declined"
-                              size="small"
-                              sx={{
-                                height: 22,
-                                fontSize: '0.68rem',
-                                fontWeight: 700,
-                                bgcolor: colors.late.bg,
-                                color: colors.late.main,
-                                borderRadius: 1,
-                              }}
-                            />
-                          )}
-                        </Box>
-                      </Paper>
-                    );
-                  })
-                )}
-              </Box>
-            </Card>
-          </Grid>
-
-          {/* Widget B: Active Shift & Roster Coverage */}
-          <Grid size={{ xs: 12, md: 6 }}>
-            <Card
-              sx={{
-                borderRadius: 3,
-                border: `1px solid ${theme.palette.divider}`,
-                boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
-                p: 3,
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2.5 }}>
-                <Box>
-                  <Typography variant="h6" sx={{ fontWeight: 700, color: 'text.primary', lineHeight: 1.2 }}>
-                    Active Shift Coverage
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase' }}>
-                    Live Roster Deployment Today
-                  </Typography>
-                </Box>
-                <Chip
-                  label={`${shiftCoveragePercent}% COVERAGE`}
-                  size="small"
-                  sx={{
-                    height: 22,
-                    fontSize: '0.7rem',
-                    fontWeight: 700,
-                    bgcolor: shiftCoveragePercent >= 75 ? colors.present.bg : colors.primary.bg,
-                    color: shiftCoveragePercent >= 75 ? colors.present.main : colors.primary.main,
-                    borderRadius: 1.5,
-                  }}
-                />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, flexGrow: 1 }}>
-                {/* Shift 1: General Core Shift */}
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <ScheduleIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        General Core Shift (09:00 - 17:00)
-                      </Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: colors.present.main }}>
-                      {presentStaffCount} / {totalStaffCount} on duty ({shiftCoveragePercent}%)
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={shiftCoveragePercent}
-                    sx={{
-                      height: 7,
-                      borderRadius: 3,
-                      bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-                      '& .MuiLinearProgress-bar': {
-                        bgcolor: colors.present.main,
-                        borderRadius: 3,
-                      },
-                    }}
-                  />
-                </Box>
-
-                {/* Shift 2: Field & Remote Tracked */}
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <GeofenceIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        Field Operations & Remote (GPS Tracked)
-                      </Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: colors.geofence.main }}>
-                      {Math.min(presentStaffCount, 2)} / {Math.min(presentStaffCount, 2)} in-bounds (100%)
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={100}
-                    sx={{
-                      height: 7,
-                      borderRadius: 3,
-                      bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-                      '& .MuiLinearProgress-bar': {
-                        bgcolor: colors.geofence.main,
-                        borderRadius: 3,
-                      },
-                    }}
-                  />
-                </Box>
-
-                {/* Shift 3: Pending / Approved Absences */}
-                <Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <EventNoteIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
-                      <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary' }}>
-                        Time-Off & Scheduled Leaves
-                      </Typography>
-                    </Box>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: colors.late.main }}>
-                      {absentStaffCount} on leave ({totalStaffCount > 0 ? Math.round((absentStaffCount / totalStaffCount) * 100) : 0}%)
-                    </Typography>
-                  </Box>
-                  <LinearProgress
-                    variant="determinate"
-                    value={totalStaffCount > 0 ? (absentStaffCount / totalStaffCount) * 100 : 0}
-                    sx={{
-                      height: 7,
-                      borderRadius: 3,
-                      bgcolor: isDark ? 'rgba(255,255,255,0.08)' : '#e2e8f0',
-                      '& .MuiLinearProgress-bar': {
-                        bgcolor: colors.late.main,
-                        borderRadius: 3,
-                      },
-                    }}
-                  />
-                </Box>
-
-                {/* Roster Insight Notice */}
-                <Alert
-                  severity="info"
-                  icon={<InfoIcon fontSize="small" />}
-                  sx={{
-                    mt: 'auto',
-                    borderRadius: 2,
-                    fontSize: '0.75rem',
-                    py: 0.75,
-                    bgcolor: isDark ? 'rgba(79, 70, 229, 0.12)' : 'rgba(79, 70, 229, 0.05)',
-                    color: 'text.secondary',
-                    border: `1px solid ${theme.palette.divider}`,
-                    '& .MuiAlert-icon': {
-                      color: 'primary.main',
-                      py: 0.5,
-                    },
-                  }}
-                >
-                  <Typography variant="caption" sx={{ display: 'block', fontWeight: 500, lineHeight: 1.4 }}>
-                    <strong>Roster Insight:</strong> {presentStaffCount} of {totalStaffCount} personnel are clocked in today. {absentStaffCount} personnel have time-off requests pending review.
-                  </Typography>
-                </Alert>
-              </Box>
-            </Card>
-          </Grid>
-        </Grid>
+                  <span>Resume setup</span>
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
-    </Box>
+
+      {/* 4 QueueTiles Metric Cards (shadcn Cards) */}
+      <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Tile 1: Total Staff */}
+        <Link to="/admin/employees" className="group block">
+          <Card className="flex flex-col gap-3 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-pop">
+            <div className="flex items-center justify-between">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-primary-50 text-primary-600 ring-1 ring-primary-100 ring-inset">
+                <Users className="size-4" />
+              </span>
+              <ArrowUpRight className="size-4 text-faint transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-primary-600" />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[0.8125rem] text-muted">Total staff</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[1.75rem] font-medium leading-none tracking-tight text-ink num">
+                  {totalEmployeesCount}
+                </span>
+                <span className="font-mono text-xs text-muted num">
+                  {absentTodayCount} on leave
+                </span>
+              </div>
+            </div>
+            <span className="text-xs font-medium text-primary-600">Review roster →</span>
+          </Card>
+        </Link>
+
+        {/* Tile 2: Present Today */}
+        <Link to="/admin/reports" className="group block">
+          <Card className="flex flex-col gap-3 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary-200 hover:shadow-pop">
+            <div className="flex items-center justify-between">
+              <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 ring-1 ring-emerald-100 ring-inset">
+                <CheckCircle2 className="size-4" />
+              </span>
+              <ArrowUpRight className="size-4 text-faint transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-emerald-600" />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[0.8125rem] text-muted">Present today</span>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[1.75rem] font-medium leading-none tracking-tight text-ink num">
+                  {presentTodayCount}
+                </span>
+                <span className="font-mono text-xs text-muted num">{attendanceRateVal}% coverage</span>
+              </div>
+            </div>
+            <span className="text-xs font-medium text-primary-600">Live attendance →</span>
+          </Card>
+        </Link>
+
+        {/* Tile 3: Late Arrivals */}
+        <Link to="/admin/reports" className="group block">
+          <Card
+            className={cn(
+              'flex flex-col gap-3 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-pop',
+              lateTodayCount > 0
+                ? 'border-amber-500/30 bg-amber-50/40 hover:border-amber-400'
+                : 'hover:border-primary-200'
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={cn(
+                  'flex size-8 items-center justify-center rounded-lg ring-1 ring-inset',
+                  lateTodayCount > 0
+                    ? 'bg-amber-100 text-amber-700 ring-amber-200'
+                    : 'bg-primary-50 text-primary-600 ring-primary-100'
+                )}
+              >
+                <AlertTriangle className="size-4" />
+              </span>
+              <ArrowUpRight
+                className={cn(
+                  'size-4 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5',
+                  lateTodayCount > 0 ? 'text-amber-700' : 'text-faint group-hover:text-primary-600'
+                )}
+              />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span
+                className={cn(
+                  'text-[0.8125rem]',
+                  lateTodayCount > 0 ? 'font-medium text-amber-900' : 'text-muted'
+                )}
+              >
+                Late arrivals
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    'font-mono text-[1.75rem] font-medium leading-none tracking-tight num',
+                    lateTodayCount > 0 ? 'text-amber-900' : 'text-faint'
+                  )}
+                >
+                  {lateTodayCount}
+                </span>
+                <span className="font-mono text-xs text-muted num">After cutoff</span>
+              </div>
+            </div>
+            <span
+              className={cn(
+                'text-xs font-medium',
+                lateTodayCount > 0 ? 'text-amber-700' : 'text-faint'
+              )}
+            >
+              {lateTodayCount > 0 ? 'Audit late punches →' : 'Zero exceptions'}
+            </span>
+          </Card>
+        </Link>
+
+        {/* Tile 4: Auto Closed Today */}
+        <Link to="/admin/reports" className="group block">
+          <Card
+            className={cn(
+              'flex flex-col gap-3 p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-pop',
+              autoClosedCount > 0
+                ? 'border-indigo-500/30 bg-indigo-50/40 hover:border-indigo-400'
+                : 'hover:border-primary-200'
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span
+                className={cn(
+                  'flex size-8 items-center justify-center rounded-lg ring-1 ring-inset',
+                  autoClosedCount > 0
+                    ? 'bg-indigo-100 text-indigo-700 ring-indigo-200'
+                    : 'bg-primary-50 text-primary-600 ring-primary-100'
+                )}
+              >
+                <RotateCw className="size-4" />
+              </span>
+              <ArrowUpRight
+                className={cn(
+                  'size-4 transition-all group-hover:translate-x-0.5 group-hover:-translate-y-0.5',
+                  autoClosedCount > 0 ? 'text-indigo-700' : 'text-faint group-hover:text-primary-600'
+                )}
+              />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span
+                className={cn(
+                  'text-[0.8125rem]',
+                  autoClosedCount > 0 ? 'font-medium text-indigo-900' : 'text-muted'
+                )}
+              >
+                Auto closed today
+              </span>
+              <div className="flex items-baseline gap-2">
+                <span
+                  className={cn(
+                    'font-mono text-[1.75rem] font-medium leading-none tracking-tight num',
+                    autoClosedCount > 0 ? 'text-indigo-900' : 'text-faint'
+                  )}
+                >
+                  {autoClosedCount}
+                </span>
+                <span className="font-mono text-xs text-muted num">Missed checkout</span>
+              </div>
+            </div>
+            <span
+              className={cn(
+                'text-xs font-medium',
+                autoClosedCount > 0 ? 'text-indigo-700' : 'text-faint'
+              )}
+            >
+              {autoClosedCount > 0 ? 'Action required →' : 'Zero anomalies'}
+            </span>
+          </Card>
+        </Link>
+      </div>
+
+      {/* Recent Attendance Activity Panel (shadcn Card) */}
+      <Card className="overflow-hidden">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h2 className="text-[0.9375rem] font-semibold tracking-tight text-ink">
+              Recent attendance activity
+            </h2>
+            <p className="text-[0.8125rem] text-muted">
+              The latest punches and shifts recorded in this workspace.
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" asChild>
+            <Link
+              to="/admin/reports"
+              className="gap-1 text-xs font-medium text-primary-600 hover:text-primary-700"
+            >
+              View all reports <ArrowRight className="size-3.5" />
+            </Link>
+          </Button>
+        </div>
+
+        {recentAttendanceList.length === 0 ? (
+          <div className="p-6">
+            <div className="dot-grid flex flex-col items-center justify-center gap-3 rounded-[var(--radius-card)] border border-dashed border-line-strong px-6 py-12 text-center">
+              <div className="flex size-11 items-center justify-center rounded-xl border border-primary-100 bg-panel text-primary-600 shadow-card">
+                <Inbox className="size-5" />
+              </div>
+              <div className="flex max-w-sm flex-col gap-1">
+                <p className="font-semibold text-ink">No punches recorded yet</p>
+                <p className="text-xs leading-relaxed text-muted">
+                  Employee check-ins and check-outs will appear here with live timestamps and GPS
+                  verification status.
+                </p>
+              </div>
+              <Button variant="brand" size="sm" asChild className="mt-2">
+                <Link to="/admin/employees/new" className="gap-1.5">
+                  <UserPlus className="size-3.5" /> Onboard first employee
+                </Link>
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <ul className="divide-y divide-line">
+            {recentAttendanceList.map((rec) => {
+              const isLate = rec.status === 'late';
+              const isAuto = rec.status === 'auto_closed';
+              const isPresent = rec.status === 'present';
+
+              return (
+                <li key={rec.id}>
+                  <div className="grid grid-cols-[5.5rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3 transition-colors hover:bg-subtle/60 sm:grid-cols-[6rem_minmax(0,1fr)_7rem_8rem_6rem]">
+                    {/* Employee Code */}
+                    <span className="font-mono text-[0.8125rem] text-muted num">
+                      {rec.empId}
+                    </span>
+
+                    {/* Employee Info */}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {rec.avatarUrl ? (
+                        <img
+                          src={getAvatarUrl(rec.avatarUrl)}
+                          alt={rec.name}
+                          className="size-7 rounded-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex size-7 items-center justify-center rounded-full bg-primary-100 font-mono text-[10px] font-semibold text-primary-700">
+                          {rec.name.substring(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                      <span className="truncate text-sm font-medium text-ink">{rec.name}</span>
+                    </div>
+
+                    {/* Check In Time */}
+                    <span className="text-right font-mono text-sm text-ink num sm:text-left">
+                      {rec.time}
+                    </span>
+
+                    {/* Status Pill using shadcn Badge */}
+                    <span className="hidden sm:block">
+                      <Badge
+                        variant={
+                          isPresent ? 'success' : isLate ? 'warning' : isAuto ? 'brand' : 'secondary'
+                        }
+                        className="gap-1 font-mono text-[0.6875rem] num"
+                      >
+                        <span
+                          className={cn(
+                            'size-1.5 rounded-full',
+                            isPresent && 'bg-emerald-500',
+                            isLate && 'bg-amber-500',
+                            isAuto && 'bg-primary-500',
+                            !isPresent && !isLate && !isAuto && 'bg-muted'
+                          )}
+                        />
+                        {rec.type}
+                      </Badge>
+                    </span>
+
+                    {/* Workspace / Relative info */}
+                    <span className="hidden text-right font-mono text-xs text-muted sm:block">
+                      {rec.workspace}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+
+      {/* Two-Column Bento Grid: Analytics Chart + Shifts & Leave Requests */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        {/* Left Column (8 cols): Attendance Analytics Recharts */}
+        <div className="flex flex-col gap-6 lg:col-span-8">
+          <Card className="p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+              <div>
+                <CardTitle className="text-sm font-semibold tracking-tight text-ink">
+                  Attendance analytics
+                </CardTitle>
+                <span className="font-mono text-[0.625rem] font-semibold tracking-wider text-muted uppercase">
+                  {chartTab === 'weekly' ? 'LAST 5 BUSINESS DAYS' : 'DEPARTMENT PERFORMANCE'}
+                </span>
+              </div>
+
+              {/* Chart Tab Switcher */}
+              <div className="flex rounded-lg border border-line bg-subtle p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setChartTab('weekly')}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
+                    chartTab === 'weekly'
+                      ? 'bg-panel font-semibold text-ink shadow-sm'
+                      : 'text-muted hover:text-ink'
+                  )}
+                >
+                  Weekly trend
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setChartTab('dept')}
+                  className={cn(
+                    'rounded-md px-2.5 py-1 text-xs font-medium transition-all',
+                    chartTab === 'dept'
+                      ? 'bg-panel font-semibold text-ink shadow-sm'
+                      : 'text-muted hover:text-ink'
+                  )}
+                >
+                  By department
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 h-[280px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                {chartTab === 'weekly' ? (
+                  <BarChart
+                    data={weeklyChartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="day"
+                      tick={{ fontSize: 11, fill: '#64748b', fontFamily: 'var(--font-mono)' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      tick={{ fontSize: 11, fill: '#64748b', fontFamily: 'var(--font-mono)' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{
+                        borderRadius: 8,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        fontSize: '0.75rem',
+                        fontFamily: 'var(--font-sans)',
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{
+                        fontSize: '11px',
+                        fontFamily: 'var(--font-sans)',
+                        fontWeight: 500,
+                        paddingTop: '8px',
+                      }}
+                    />
+                    <Bar
+                      dataKey="present"
+                      name="On Time"
+                      stackId="att"
+                      fill="#10b981"
+                      barSize={32}
+                    />
+                    <Bar
+                      dataKey="late"
+                      name="Late Check-In"
+                      stackId="att"
+                      fill="#f59e0b"
+                      barSize={32}
+                    />
+                    <Bar
+                      dataKey="absent"
+                      name="Absent"
+                      stackId="att"
+                      fill="#ef4444"
+                      radius={[4, 4, 0, 0]}
+                      barSize={32}
+                    />
+                  </BarChart>
+                ) : departmentStats.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted">
+                    No department attendance recorded yet.
+                  </div>
+                ) : (
+                  <BarChart
+                    data={departmentStats}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11, fill: '#64748b', fontFamily: 'var(--font-mono)' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      unit="%"
+                      domain={[0, 100]}
+                      tick={{ fontSize: 11, fill: '#64748b', fontFamily: 'var(--font-mono)' }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <RechartsTooltip
+                      formatter={(val: any) => [`${val}%`, 'Attendance Rate']}
+                      contentStyle={{
+                        borderRadius: 8,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                        fontSize: '0.75rem',
+                        fontFamily: 'var(--font-sans)',
+                      }}
+                    />
+                    <Bar
+                      dataKey="rate"
+                      name="Attendance Rate (%)"
+                      fill="#4f46e5"
+                      radius={[4, 4, 0, 0]}
+                      barSize={32}
+                    />
+                  </BarChart>
+                )}
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+
+        {/* Right Column (4 cols): Active Shift & Leave Approvals */}
+        <div className="flex flex-col gap-6 lg:col-span-4">
+          {/* Active Shift Coverage Widget (shadcn Card + Progress) */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-line pb-3.5">
+              <div>
+                <CardTitle className="text-sm font-semibold tracking-tight text-ink">
+                  Shift coverage
+                </CardTitle>
+                <span className="font-mono text-[0.625rem] font-semibold text-muted uppercase">
+                  LIVE DEPLOYMENT TODAY
+                </span>
+              </div>
+              <Badge variant="success" className="font-mono text-[0.6875rem]">
+                {attendanceRateVal}% ACTIVE
+              </Badge>
+            </div>
+
+            <div className="flex flex-col gap-4 pt-4">
+              {/* Core Shift */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-ink">General Shift (09:00 - 17:00)</span>
+                  <span className="font-mono text-muted num">
+                    {presentTodayCount}/{totalEmployeesCount}
+                  </span>
+                </div>
+                <Progress
+                  value={totalEmployeesCount > 0 ? (presentTodayCount / totalEmployeesCount) * 100 : 0}
+                  indicatorClassName="bg-emerald-500"
+                  className="h-1.5"
+                />
+              </div>
+
+              {/* Field Operations */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-ink">Field GPS Operations</span>
+                  <span className="font-mono text-muted num">100% verified</span>
+                </div>
+                <Progress value={100} indicatorClassName="bg-teal-500" className="h-1.5" />
+              </div>
+
+              {/* Leaves / Absences */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-ink">Absences & Time-Off</span>
+                  <span className="font-mono text-muted num">
+                    {absentTodayCount} staff ({totalEmployeesCount > 0 ? Math.round((absentTodayCount / totalEmployeesCount) * 100) : 0}%)
+                  </span>
+                </div>
+                <Progress
+                  value={totalEmployeesCount > 0 ? (absentTodayCount / totalEmployeesCount) * 100 : 0}
+                  indicatorClassName="bg-amber-500"
+                  className="h-1.5"
+                />
+              </div>
+            </div>
+          </Card>
+
+          {/* Leave & Time-Off Requests Widget */}
+          <Card className="p-5">
+            <div className="flex items-center justify-between border-b border-line pb-3.5">
+              <div>
+                <CardTitle className="text-sm font-semibold tracking-tight text-ink">
+                  Leave requests
+                </CardTitle>
+                <span className="font-mono text-[0.625rem] font-semibold text-muted uppercase">
+                  PENDING APPROVALS
+                </span>
+              </div>
+              <Badge
+                variant={pendingLeavesCount > 0 ? 'warning' : 'success'}
+                className="font-mono text-[0.6875rem]"
+              >
+                {pendingLeavesCount > 0 ? `${pendingLeavesCount} PENDING` : 'ALL RESOLVED'}
+              </Badge>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-4">
+              {leaveRequests.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-xs font-medium text-muted">No pending requests</p>
+                  <p className="text-[0.6875rem] text-faint">
+                    All time-off and punch adjustment requests are clear.
+                  </p>
+                </div>
+              ) : (
+                leaveRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex flex-col gap-2 rounded-lg border border-line bg-subtle/50 p-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-ink">{req.name}</span>
+                      <Badge variant="secondary" className="font-mono text-[0.625rem]">
+                        {req.type}
+                      </Badge>
+                    </div>
+                    <p className="text-[0.6875rem] text-muted italic">"{req.reason}"</p>
+                    {req.status === 'pending' && (
+                      <div className="flex justify-end gap-1.5 pt-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRejectRequest(req.id)}
+                          className="h-6 px-2 text-[0.6875rem] text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        >
+                          Decline
+                        </Button>
+                        <Button
+                          variant="default"
+                          size="sm"
+                          onClick={() => handleApproveRequest(req.id)}
+                          className="h-6 bg-emerald-600 px-2.5 text-[0.6875rem] text-white hover:bg-emerald-700"
+                        >
+                          Approve
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
   );
 };
 

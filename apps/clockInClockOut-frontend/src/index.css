@@ -1,17 +1,173 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* ClockIn-ClockOut Indigo Theme Palette */
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+  --color-primary-950: #1e1b4b;
+
+  --color-teal-50: #f0fdfa;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+
+  /* Surfaces & Neutrals driven by CSS variables for dynamic Light & Dark themes */
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-sidebar: var(--sidebar);
+  --color-subtle: var(--subtle);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+
+  --radius-card: 1rem;
+  --radius-control: 0.625rem;
+
+  --shadow-card: 0 1px 2px rgb(12 20 39 / 0.04), 0 12px 32px -16px rgb(16 36 94 / 0.13);
+  --shadow-pop: 0 2px 4px rgb(12 20 39 / 0.05), 0 24px 48px -16px rgb(16 36 94 / 0.24);
+  --shadow-theme-pill: 0 4px 14px -1px rgba(79, 70, 229, 0.45), 0 2px 6px -1px rgba(79, 70, 229, 0.3);
+  --shadow-theme-btn: 0 4px 12px -2px rgba(79, 70, 229, 0.35), 0 1px 2px 0 rgba(79, 70, 229, 0.2);
+
+  --animate-drop-in: drop-in 140ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-in: pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pop-out: pop-out 120ms ease-in;
+  --animate-overlay-in: overlay-in 160ms ease-out;
+  --animate-overlay-out: overlay-out 120ms ease-in;
+  @keyframes drop-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: none; } }
+  @keyframes pop-in { from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+  @keyframes pop-out { from { opacity: 1; transform: translate(-50%, -50%) scale(1); } to { opacity: 0; transform: translate(-50%, -48%) scale(0.97); } }
+  @keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes brandSlideProgress {
+    0% { left: -45%; }
+    50% { left: 30%; width: 55%; }
+    100% { left: 100%; width: 45%; }
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
 :root {
-  --font-inter: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color-scheme: light;
+  --font-geist: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-geist-mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* Light Theme Surfaces & Colors */
+  --canvas: #f8fafc;
+  --panel: #ffffff;
+  --sidebar: #fbfcfe;
+  --subtle: #f1f5f9;
+  --ink: #0c1427;
+  --ink-soft: #273149;
+  --muted: #5c6880;
+  --faint: #98a2b6;
+  --line: #e3e8f1;
+  --line-strong: #cfd7e5;
+  --accent: #4f46e5;
+}
+
+.dark, [data-theme="dark"], html.dark {
+  color-scheme: dark;
+  /* Dark Theme Surfaces & Colors */
+  --canvas: #090d16;
+  --panel: #111827;
+  --sidebar: #0d121f;
+  --subtle: #1e293b;
+  --ink: #f8fafc;
+  --ink-soft: #e2e8f0;
+  --muted: #94a3b8;
+  --faint: #64748b;
+  --line: #1e293b;
+  --line-strong: #334155;
+  --accent: #6366f1;
 }
 
 body {
-  font-family: var(--font-inter);
+  font-family: var(--font-geist);
+  font-feature-settings: "ss01", "cv11";
+  letter-spacing: -0.012em;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color: var(--ink, #0c1427);
+  background:
+    radial-gradient(900px 420px at 85% -140px, rgb(79 70 229 / 0.07), transparent 70%),
+    radial-gradient(700px 360px at 12% -180px, rgb(13 148 136 / 0.05), transparent 70%),
+    var(--canvas, #f8fafc);
+  background-attachment: fixed;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.dark body,
+html.dark body {
+  color: var(--ink, #f8fafc);
+  background:
+    radial-gradient(900px 420px at 85% -140px, rgb(99 102 241 / 0.12), transparent 70%),
+    radial-gradient(700px 360px at 12% -180px, rgb(20 184 166 / 0.08), transparent 70%),
+    var(--canvas, #090d16);
+  background-attachment: fixed;
+}
+
+.font-mono, code {
+  font-family: var(--font-geist-mono);
+}
+
+/* Screenshot eyebrow typography class */
+.eyebrow {
+  font-family: var(--font-geist-mono);
+  font-size: 0.6875rem; /* 11px */
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent, #4f46e5);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.dot-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgb(25 51 122 / 0.1) 1px, transparent 0);
+  background-size: 14px 14px;
+}
+
+.dark .dot-grid {
+  background-image: radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.08) 1px, transparent 0);
+}
+
+.dark select option {
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+.bg-theme-gradient {
+  background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+}
+.bg-theme-gradient:hover {
+  background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%);
 }
 
 @keyframes authCardEntrance {
