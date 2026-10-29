@@ -53,14 +53,15 @@ build_and_push "apps/clockInClockOut-backend/Dockerfile" "smartbusiness/clockin-
 
 # 2. Python AI Microservices
 build_and_push "apps/clockInClockout-face-recognition/Dockerfile" "smartbusiness/face-recognition" "apps/clockInClockout-face-recognition"
-build_and_push "apps/chatbot-backend/Dockerfile" "smartbusiness/rag-chatbot" "apps/chatbot-backend"
+build_and_push "apps/chatbot-backend/Dockerfile" "smartbusiness/chatbot-backend" "apps/chatbot-backend"
 
 # 3. React / Vite Frontends
 build_and_push "apps/check-printing-frontend/Dockerfile" "smartbusiness/check-printing-frontend" "."
 build_and_push "apps/clockInClockOut-frontend/Dockerfile" "smartbusiness/clockin-frontend" "."
 build_and_push "apps/platform-web/Dockerfile" "smartbusiness/platform-web" "."
+build_and_push "apps/chatbot-frontend/Dockerfile" "smartbusiness/chatbot-frontend" "."
 
 # 4. Ingress / Reverse Proxy Gateway
 build_and_push "docker/Dockerfile.gateway" "smartbusiness/gateway" "."
 
-echo "==> All 9 images successfully built and pushed to AWS ECR!"
+echo "==> All 10 images successfully built and pushed to AWS ECR!"
