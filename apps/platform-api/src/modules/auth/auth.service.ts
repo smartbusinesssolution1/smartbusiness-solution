@@ -63,6 +63,7 @@ export interface InvitationView {
   // True when the person already chose a password through another invitation: they
   // just sign in.
   accountReady: boolean;
+  role: string;
 }
 
 export interface AcceptedInvitation extends AuthResult {
@@ -633,6 +634,7 @@ export class AuthService {
       inviterName: ctx.inviterName,
       expiresAt: record.expiresAt,
       accountReady: ctx.user.hasPassword,
+      role: ctx.role,
     };
   }
 

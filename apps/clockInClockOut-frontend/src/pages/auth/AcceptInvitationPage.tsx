@@ -79,6 +79,18 @@ export const AcceptInvitationPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleWebSignIn = async () => {
+    setIsResetting(true);
+    try {
+      await authService.logout();
+    } catch {
+      // Ignore
+    }
+    sessionStorage.clear();
+    window.location.href = '/login';
+  };
 
   useEffect(() => {
     if (!token) return;
@@ -153,6 +165,7 @@ export const AcceptInvitationPage: React.FC = () => {
       </StateCard>
     );
   } else if (isDone || invitation.accountReady) {
+    const isEmployee = ['employee', 'member'].includes(invitation.role?.toLowerCase() ?? 'employee');
     content = (
       <StateCard
         tone={isDone ? 'success' : 'info'}
@@ -164,9 +177,21 @@ export const AcceptInvitationPage: React.FC = () => {
           Open the <strong>Clock-In app</strong> on your phone and sign in with <strong>{invitation.email}</strong> and your password.
         </p>
         <div className="w-full pt-2">
-          <Button component={Link} to="/login" variant="contained" fullWidth sx={primaryButtonSx}>
-            Or sign in on the web
-          </Button>
+          {isEmployee ? (
+            <Button component="a" href="clockin://login" variant="contained" fullWidth sx={primaryButtonSx}>
+              Open Clock-In Mobile App
+            </Button>
+          ) : (
+            <Button
+              onClick={handleWebSignIn}
+              disabled={isResetting}
+              variant="contained"
+              fullWidth
+              sx={primaryButtonSx}
+            >
+              {isResetting ? <CircularProgress size={20} color="inherit" /> : 'Sign in on the web'}
+            </Button>
+          )}
         </div>
       </StateCard>
     );

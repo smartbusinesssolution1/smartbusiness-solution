@@ -106,13 +106,25 @@ export class AuthRepository {
         select: { id: true, businessName: true, tenantId: true, tenant: { select: { name: true, status: true } } },
       }),
       invitedById ? prisma.user.findUnique({ where: { id: invitedById }, select: { fullName: true } }) : null,
-      prisma.workspaceMember.findFirst({ where: { workspaceId, userId, deletedAt: null }, select: { id: true } }),
+      prisma.workspaceMember.findFirst({
+        where: { workspaceId, userId, deletedAt: null },
+        select: {
+          id: true,
+          employeeProfiles: { select: { role: true }, take: 1 },
+          assignedRoles: { select: { role: { select: { slug: true } } } },
+        },
+      }),
     ]);
     return {
       user: user ? { id: user.id, email: user.email, fullName: user.fullName, hasPassword: user.passwordHash !== null } : null,
       workspace,
       inviterName: inviter?.fullName ?? null,
       membershipActive: membership !== null,
+      role: (() => {
+        const empRole = membership?.employeeProfiles?.[0]?.role?.toLowerCase();
+        const assignedRole = membership?.assignedRoles?.[0]?.role?.slug?.toLowerCase();
+        return empRole || assignedRole || "employee";
+      })(),
     };
   }
 

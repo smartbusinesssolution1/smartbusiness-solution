@@ -1,4 +1,4 @@
-﻿import { User, Tenant, Workspace } from '../types';
+import { User, Tenant, Workspace } from '../types';
 import { platformAuthApi, clockInApi, isSignedIn, markSignedIn, markSignedOut, refreshSession } from './apiClient';
 import { getSessionUser, setSessionUser, getUsers } from './mockDb';
 
@@ -17,6 +17,7 @@ export interface InvitationView {
   expiresAt: string;
   // Already has a password (set through another invitation): they just sign in.
   accountReady: boolean;
+  role?: string;
 }
 
 export interface LoginResponse {
