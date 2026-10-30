@@ -10,8 +10,9 @@ import {
 } from "./index.js";
 
 // Against the disposable test Redis (pnpm --filter @smartbusiness/check-printing-backend test:db:up).
-// Database 2 is this package's; it is emptied before the run.
-const REDIS_URL = process.env.JOBS_TEST_REDIS_URL ?? "redis://127.0.0.1:63790/2";
+// Database 3 is this package's; it is emptied before the run. (1 is platform-api's, 2 is
+// check-printing-backend's: suites run side by side in CI and must not empty each other's.)
+const REDIS_URL = process.env.JOBS_TEST_REDIS_URL ?? "redis://127.0.0.1:63790/3";
 
 interface TestJobs {
   greet: { name: string };

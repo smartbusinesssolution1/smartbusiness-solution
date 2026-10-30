@@ -78,7 +78,7 @@ describe("approval rule amounts", () => {
   it.each([
     [{ minAmount: 1_000_000 }, "minimum"],
     [{ minAmount: 1000, maxAmount: 1_000_000 }, "maximum"],
-  ])("a %s above the check maximum is refused (%s)", async (body) => {
+  ])("a %s above the check maximum is refused (%s)", async (body, _which) => {
     const res = await createRule(body);
 
     expect(res.status).toBe(400);

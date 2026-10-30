@@ -25,10 +25,16 @@ describe("portal address", () => {
 });
 
 describe("isProductNotAvailable", () => {
-  it("is true only for the API's PRODUCT_NOT_AVAILABLE refusal", () => {
-    const message = "Your organization does not have an active subscription to this product.";
-    assert.equal(isProductNotAvailable(new ApiError(403, "PRODUCT_NOT_AVAILABLE", message)), true);
-    // Not a member of a workspace, or no permission: a different screen.
+  const message = "Your organization does not have an active subscription to this product.";
+
+  // Every code the shared requireProduct sends for a company without Check Printing.
+  for (const code of ["SUBSCRIPTION_EXPIRED", "SUBSCRIPTION_INACTIVE", "PRODUCT_NOT_AVAILABLE"]) {
+    it(`is true for ${code}`, () => {
+      assert.equal(isProductNotAvailable(new ApiError(403, code, message)), true);
+    });
+  }
+
+  it("is false for any other refusal (not a member, no permission) or error", () => {
     assert.equal(isProductNotAvailable(new ApiError(403, "FORBIDDEN", "You are not a member of this organization.")), false);
     assert.equal(isProductNotAvailable(new Error("network")), false);
   });

@@ -7,6 +7,9 @@ import { getApp } from "../helpers/api.js";
 // Accounts are created on the portal now, and a company may sign in without having Check
 // Printing. The refusal carries its own code, so the app can show "your company doesn't
 // have Check Printing" with a way to the portal, instead of a generic "access denied".
+// The shared requireProduct (packages/auth) says why: SUBSCRIPTION_EXPIRED when the
+// access ended, SUBSCRIPTION_INACTIVE otherwise. Check Printing's isProductNotAvailable
+// (check-printing-frontend/src/lib/portal.ts) must recognise every one of these codes.
 
 let world: TestWorld;
 
@@ -16,13 +19,16 @@ beforeEach(async () => {
 });
 
 describe("a company without Check Printing", () => {
-  it.each(["CANCELED", "EXPIRED"] as const)("is refused with PRODUCT_NOT_AVAILABLE when its access is %s", async (status) => {
+  it.each([
+    ["CANCELED", "SUBSCRIPTION_INACTIVE"],
+    ["EXPIRED", "SUBSCRIPTION_EXPIRED"],
+  ] as const)("is refused when its access is %s, with %s", async (status, code) => {
     await prisma.productSubscription.updateMany({ where: { tenantId: world.tenantId }, data: { status } });
 
     const res = await request(getApp()).get("/api/v1/workspaces").set(authHeaders(world.admin));
 
     expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe("PRODUCT_NOT_AVAILABLE");
+    expect(res.body.error.code).toBe(code);
     // The message is unchanged, for anything that shows it as it is.
     expect(res.body.error.message).toBe("Your organization does not have an active subscription to this product.");
   });
@@ -33,7 +39,7 @@ describe("a company without Check Printing", () => {
     const res = await request(getApp()).get("/api/v1/workspaces").set(authHeaders(world.admin));
 
     expect(res.status).toBe(403);
-    expect(res.body.error.code).toBe("PRODUCT_NOT_AVAILABLE");
+    expect(res.body.error.code).toBe("SUBSCRIPTION_INACTIVE");
   });
 });
 
@@ -46,7 +52,7 @@ describe("other refusals keep their own code", () => {
       .set(authHeaders(world.admin));
 
     expect(res.status).not.toBe(200);
-    expect(res.body.error.code).not.toBe("PRODUCT_NOT_AVAILABLE");
+    expect(["SUBSCRIPTION_EXPIRED", "SUBSCRIPTION_INACTIVE", "PRODUCT_NOT_AVAILABLE"]).not.toContain(res.body.error.code);
   });
 
   it("a company with Check Printing gets in", async () => {

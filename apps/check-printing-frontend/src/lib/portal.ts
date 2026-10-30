@@ -13,8 +13,13 @@ const DEV_PORTAL_URL = "http://localhost:3003";
 // The API's code for "this company doesn't have Check Printing" (requireProduct in
 // @smartbusiness/auth): different from not being a member of a workspace. The app answers
 // it with a way to the portal, where products are added.
+// requireProduct answers SUBSCRIPTION_EXPIRED (the company's access ended) or
+// SUBSCRIPTION_INACTIVE (it never had it, or it was cancelled); PRODUCT_NOT_AVAILABLE is
+// what earlier platform versions sent, still accepted while an older backend is deployed.
+const NO_PRODUCT_CODES = new Set(["SUBSCRIPTION_EXPIRED", "SUBSCRIPTION_INACTIVE", "PRODUCT_NOT_AVAILABLE"]);
+
 export function isProductNotAvailable(error: unknown): boolean {
-  return error instanceof ApiError && error.code === "PRODUCT_NOT_AVAILABLE";
+  return error instanceof ApiError && NO_PRODUCT_CODES.has(error.code);
 }
 
 export function portalUrl(env: { DEV?: boolean; VITE_PORTAL_URL?: string } = import.meta.env): string | null {

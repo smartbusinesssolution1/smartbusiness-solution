@@ -1,0 +1,206 @@
+# CI for the development branch: every push to development and every pull request into it
+# builds, type-checks, lints and tests what it changed, plus everything that depends on it.
+#
+# Built for the GitHub Free plan (about 2,000 runner minutes a month, private repository):
+#   - one verify job (setup and install happen once, not once per job)
+#   - only what changed is checked; documentation-only changes skip the verify job
+#   - pnpm downloads and Turborepo results are cached between runs
+#   - pull-request runs that a newer push replaces are cancelled
+#
+# The test databases are throwaway containers (Postgres, Redis, S3Mock) on the same ports
+# as apps/check-printing-backend/docker-compose.test.yml, so the tests need no CI-specific
+# settings. No production secret is used anywhere in CI.
+
+name: CI
+
+on:
+  push:
+    branches: [development]
+  pull_request:
+    branches: [development]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  # Pull requests: a newer push makes the older run pointless, because a pull request is
+  # always compared with its base as a whole. Pushes to development are never cancelled:
+  # each run checks only what its own push changed, so cancelling one would leave those
+  # changes unchecked. They queue instead.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: "22" # the same major version as the production images (node:22-bookworm-slim)
+  TURBO_TELEMETRY_DISABLED: "1"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.classify.outputs.run }}
+      mode: ${{ steps.classify.outputs.mode }}
+      base: ${{ steps.classify.outputs.base }}
+    steps:
+      - name: Check out (full history, to compare with the base)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide what to check
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: bash .github/scripts/classify-changes.sh
+
+  verify:
+    name: Build, types, lint and tests
+    needs: changes
+    if: needs.changes.outputs.run == 'true' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: check_printing_test
+        ports: ["54329:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d check_printing_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:7.4-alpine
+        ports: ["63790:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      s3:
+        image: adobe/s3mock:3.12.0
+        env:
+          initialBuckets: check-printing-test
+        ports: ["59090:9090"]
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          # Turborepo compares with the base commit to find the changed packages.
+          fetch-depth: ${{ needs.changes.outputs.mode == 'affected' && '0' || '1' }}
+
+      - name: Set up pnpm (version from package.json "packageManager")
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js ${{ env.NODE_VERSION }} with the pnpm download cache
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies (exactly as locked)
+        # --frozen-lockfile fails if package.json and pnpm-lock.yaml disagree, i.e. someone
+        # changed dependencies without committing the updated lockfile.
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore the Turborepo cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ github.ref_name }}-
+            turbo-${{ runner.os }}-development-
+            turbo-${{ runner.os }}-
+
+      - name: Install the MICR font (if configured)
+        # The licensed E-13B font is not in git. When the MICR_FONT_BASE64 repository secret
+        # holds it (base64 of MICR.ttf), the printing tests run against it; without it they
+        # are skipped, and this run says so.
+        env:
+          MICR_FONT_BASE64: ${{ secrets.MICR_FONT_BASE64 }}
+        run: |
+          if [ -n "$MICR_FONT_BASE64" ]; then
+            mkdir -p apps/check-printing-backend/micr
+            echo "$MICR_FONT_BASE64" | base64 -d > apps/check-printing-backend/micr/MICR.ttf
+            echo "MICR font installed: the printing tests run."
+          else
+            echo "::warning title=MICR font not configured::Printing tests (batch print, layouts, PDF integrity, signatures) are skipped. Add the MICR_FONT_BASE64 repository secret to run them."
+            echo "> ⚠️ **MICR font not configured**: printing tests were skipped. Add the \`MICR_FONT_BASE64\` repository secret to run them." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Prepare the Clock-In test database
+        # platform-api and check-printing-backend create and migrate their own test databases
+        # (vitest global setup); Clock-In's tests expect clock_in_test to exist already.
+        run: pnpm --filter @smartbusiness/database exec prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://test:test@127.0.0.1:54329/clock_in_test
+
+      - name: Wait for the test S3 server
+        run: |
+          for i in $(seq 1 60); do
+            curl -sf -o /dev/null http://127.0.0.1:59090/ && exit 0
+            sleep 1
+          done
+          echo "::error::The S3Mock test container did not start in 60 seconds."
+          exit 1
+
+      - name: Build, type-check, lint and test
+        id: turbo
+        env:
+          MODE: ${{ needs.changes.outputs.mode }}
+          BASE: ${{ needs.changes.outputs.base }}
+          # Clock-In's tests default to Redis on 6379 (the development one); in CI they use
+          # the test Redis, database 4. The others: platform-api 1, check-printing-backend 2,
+          # packages/jobs 3. Each suite empties its own, so they must never share one.
+          TEST_REDIS_URL: redis://127.0.0.1:63790/4
+        run: |
+          filter=()
+          if [ "$MODE" = "affected" ]; then
+            # The changed packages and every package that depends on them.
+            filter=(--filter="...[$BASE]")
+          fi
+          pnpm turbo run build check-types lint test "${filter[@]}" \
+            --cache-dir=.turbo/cache \
+            --concurrency=2 \
+            --continue=dependencies-successful \
+            --output-logs=errors-only \
+            --log-order=grouped \
+            --summarize
+
+      - name: Report
+        if: always() && steps.turbo.outcome != 'skipped'
+        run: node .github/scripts/ci-report.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the logs of failed tasks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-task-logs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            apps/*/.turbo/turbo-*.log
+            packages/*/.turbo/turbo-*.log
+          retention-days: 5
+          if-no-files-found: ignore
+
+      - name: Prune and save the Turborepo cache
+        # Saved even when a task failed: Turborepo never caches a failed task, and the tasks
+        # that passed don't have to run again on the fix.
+        if: always() && steps.turbo.outcome != 'skipped'
+        run: |
+          # Keep it small: drop cache entries not created in the last 7 days.
+          find .turbo/cache -type f -mtime +7 -delete 2>/dev/null || true
+          du -sh .turbo/cache 2>/dev/null || true
+      - uses: actions/cache/save@v4
+        if: always() && steps.turbo.outcome != 'skipped'
+        with:
+          path: .turbo/cache
+          key: turbo-${{ runner.os }}-${{ github.ref_name }}-${{ github.sha }}-${{ github.run_attempt }}
