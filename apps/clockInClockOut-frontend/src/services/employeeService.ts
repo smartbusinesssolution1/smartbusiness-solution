@@ -125,6 +125,16 @@ export const employeeService = {
     }
   },
 
+  // Emails the employee their way in again: a new one-time "choose your password" link (an
+  // older one stops working), or "you now have access" if they already have an account.
+  async resendInvitation(id: string): Promise<void> {
+    try {
+      await clockInApi.post(`/api/v1/admin/employees/${id}/resend-invitation`);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error?.message || "We couldn't send the invitation right now. Try again in a moment.");
+    }
+  },
+
   async checkEmail(email: string, workspaceId?: string): Promise<CheckEmployeeEmailResult> {
     try {
       const response = await clockInApi.get('/api/v1/admin/employees/check-email', {

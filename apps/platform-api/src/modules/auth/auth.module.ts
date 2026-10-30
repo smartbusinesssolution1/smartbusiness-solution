@@ -19,7 +19,7 @@ export const authService = new AuthService(
   new AuditService(),
   new UserTokenService(),
   emailSender,
-  { appUrl: app.url, ttlMinutes: passwordReset.ttlMinutes, invitationTtlDays: invitation.ttlDays },
+  { appUrl: app.url, clockInAppUrl: app.clockInUrl, ttlMinutes: passwordReset.ttlMinutes, invitationTtlDays: invitation.ttlDays },
 );
 
 export const authController = new AuthController(authService, emailQueue);

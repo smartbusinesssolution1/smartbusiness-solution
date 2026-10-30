@@ -28,7 +28,15 @@ export interface EmailJobs {
   // password yet means an invitation link (created then, never stored in the job; a newer
   // link replaces older ones); otherwise a "you now have access" email. Checked again at
   // send time, so a cancelled invitation sends nothing.
-  "workspace-invitation": { userId: string; workspaceId: string; invitedById: string };
+  // product: which app the links in the email open (Check Printing when not given). Both
+  // products onboard people this way: nobody is ever emailed a password; a new person
+  // chooses their own through the link.
+  "workspace-invitation": {
+    userId: string;
+    workspaceId: string;
+    invitedById: string;
+    product?: "check-printing" | "clock-in-clock-out";
+  };
   // A company signed up (on the portal). The worker looks the owner up when it runs and
   // sends the welcome email: no password, ever (they chose it and know it), only a link
   // back to the app they signed up on. appUrl is one of our own addresses (checked when

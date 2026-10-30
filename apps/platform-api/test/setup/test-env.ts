@@ -49,6 +49,7 @@ export function applyTestEnv(): void {
   process.env.EMAIL_TRANSPORT = "memory";
   process.env.EMAIL_FROM = "SmartBusiness <no-reply@smartbusiness.test>";
   process.env.APP_URL = "https://app.smartbusiness.test";
+  process.env.CLOCK_IN_APP_URL = "https://clock.smartbusiness.test";
   process.env.PASSWORD_RESET_TTL_MINUTES = "60";
   process.env.MFA_ENCRYPTION_KEY = "7a".repeat(32);
   // Job queue: the test Redis, database 1 (emptied by global setup); short retry waits.

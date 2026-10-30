@@ -75,6 +75,11 @@ export const envSchema = z
     // request, so a forged Host header cannot put someone else's site into our emails.
     APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5173"),
 
+    // Clock-In's web app: links in emails for Clock-In employees (their invitation, "you
+    // now have access") open it instead of Check Printing (APP_URL). Production:
+    // https://clock.<domain>.
+    CLOCK_IN_APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5174"),
+
     // How emails are delivered: "smtp" sends them (Mailpit locally, AWS SES in production),
     // "file" writes them to EMAIL_FILE_DIRECTORY, "memory" keeps them in a list (tests).
     EMAIL_TRANSPORT: z.enum(["smtp", "file", "memory"]).default("file"),

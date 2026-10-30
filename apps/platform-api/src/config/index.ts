@@ -37,6 +37,7 @@ export const server = {
 
 export const app = {
   url: config.APP_URL.replace(/\/+$/, ""),
+  clockInUrl: config.CLOCK_IN_APP_URL.replace(/\/+$/, ""),
 } as const;
 
 export const email = {

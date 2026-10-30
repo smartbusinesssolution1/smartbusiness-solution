@@ -73,7 +73,8 @@ export function isPublicAuthRoute(url: string): boolean {
     url.includes('/auth/register') ||
     url.includes('/auth/refresh') ||
     url.includes('/auth/forgot-password') ||
-    url.includes('/auth/reset-password')
+    url.includes('/auth/reset-password') ||
+    url.includes('/auth/invitations')
   );
 }
 

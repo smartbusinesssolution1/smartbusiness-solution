@@ -30,6 +30,9 @@ router.post("/", uploadAvatar.single("avatar"), controller.create);
 // PUT /api/v1/admin/employees/:id - Update employee with optional new avatar
 router.put("/:id", uploadAvatar.single("avatar"), controller.update);
 
+// POST /api/v1/admin/employees/:id/resend-invitation - Email the employee their way in again
+router.post("/:id/resend-invitation", controller.resendInvitation);
+
 // DELETE /api/v1/admin/employees/:id - Remove employee
 router.delete("/:id", controller.delete);
 

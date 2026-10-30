@@ -303,7 +303,7 @@ export class AuthRepository {
     }) as Promise<UserWithTenantProducts | null>;
   }
 
-  // â”€â”€â”€ Session Operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Session Operations ─────────────────────────────────────────
 
   async createSession(data: CreateSessionData): Promise<Session> {
     return prisma.session.create({ data });

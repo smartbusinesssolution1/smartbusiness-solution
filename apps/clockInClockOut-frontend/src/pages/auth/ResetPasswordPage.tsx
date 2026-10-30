@@ -22,7 +22,7 @@ import { AttendanceShowcase } from './components/AttendanceShowcase';
 export const ResetPasswordPage: React.FC = () => {
   const navigate = useNavigate();
   // From "#token=" (or "?token=" in older emails), then taken out of the address bar.
-  const token = useLinkToken();
+  const token = useLinkToken('reset');
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -59,7 +59,7 @@ export const ResetPasswordPage: React.FC = () => {
 
     try {
       await authService.resetPassword(token, password);
-      clearLinkToken();
+      clearLinkToken('reset');
       setIsSuccess(true);
     } catch (err: any) {
       setError(err?.message || 'Failed to reset password. The link may have expired or is invalid.');

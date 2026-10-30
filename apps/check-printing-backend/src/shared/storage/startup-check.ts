@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "crypto";
 import { StorageIntegrityError } from "./envelope.js";
 import { StorageNotFoundError, type ObjectStorage } from "./types.js";
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 // FILE STORAGE CHECK AT STARTUP
 //
 // A wrong bucket, region, key or IAM policy used to show up only when someone first
@@ -19,7 +19,7 @@ import { StorageNotFoundError, type ObjectStorage } from "./types.js";
 // Production and staging refuse to start when the check fails (like a bad environment
 // variable); development only warns, so other work can go on without S3 access.
 // Network blips and S3 hiccups are retried; a wrong setting is not, it won't fix itself.
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ═══════════════════════════════════════════════════════════════
 
 const PROBE_FOLDER = "_startup-check";
 
@@ -155,7 +155,7 @@ function describeLocation(location: StorageLocation): string {
     : `local folder ${location.localDirectory ?? "?"}`;
 }
 
-// â”€â”€â”€ Turning S3 and disk errors into the setting to fix â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Turning S3 and disk errors into the setting to fix ───────────────────
 
 function errorName(err: unknown): string {
   return (err as { name?: string })?.name ?? "";

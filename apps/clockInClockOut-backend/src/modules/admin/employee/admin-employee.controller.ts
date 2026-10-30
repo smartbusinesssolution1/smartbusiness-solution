@@ -145,7 +145,8 @@ export class AdminEmployeeController {
         bodyParsed.data,
         req.file,
         callerRole,
-        headerWorkspaceId
+        headerWorkspaceId,
+        req.user?.userId, // the inviter, named in the invitation email
       );
       res.status(201).json({
         success: true,
@@ -208,6 +209,28 @@ export class AdminEmployeeController {
    * DELETE /api/v1/admin/employees/:id
    * Delete or deactivate employee profile
    */
+  /**
+   * POST /api/v1/admin/employees/:id/resend-invitation
+   * Emails the employee their way in again (a new one-time link; an older one stops working)
+   */
+  resendInvitation = async (req: Request, res: Response): Promise<void> => {
+    const paramParsed = EmployeeIdParamSchema.safeParse(req.params);
+    if (!paramParsed.success) {
+      throw new ValidationError("Invalid employee ID", {
+        id: paramParsed.error.issues.map((i) => i.message),
+      });
+    }
+
+    const tenantId = req.tenant!.tenantId;
+    const result = await this.employeeService.resendInvitation(paramParsed.data.id, tenantId, req.user!.userId);
+
+    res.status(result.invitationQueued ? 202 : 503).json({
+      success: result.invitationQueued,
+      data: result,
+      ...(result.invitationQueued ? {} : { error: { code: "SERVICE_UNAVAILABLE", message: "We couldn't send the invitation right now. Try again in a moment." } }),
+    });
+  };
+
   delete = async (req: Request, res: Response): Promise<void> => {
     const paramParsed = EmployeeIdParamSchema.safeParse(req.params);
     if (!paramParsed.success) {

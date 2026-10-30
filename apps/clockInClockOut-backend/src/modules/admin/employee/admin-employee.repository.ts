@@ -285,9 +285,8 @@ export class AdminEmployeeRepository {
     input: CreateEmployeeInput;
     employeeCode: string;
     biometricPhotoUrl: string;
-    passwordHash: string;
   }) {
-    const { tenantId, workspaceId, input, employeeCode, biometricPhotoUrl, passwordHash } = params;
+    const { tenantId, workspaceId, input, employeeCode, biometricPhotoUrl } = params;
 
     return prisma.$transaction(async (tx) => {
       // 1. Find or create user
@@ -314,11 +313,13 @@ export class AdminEmployeeRepository {
         // User exists, but belongs to a different workspace.
         // Reuse the user without overwriting their global details.
       } else {
+        // No password: the person chooses their own through the invitation link (platform-api
+        // treats "no password yet" as invited: they can't sign in until they accept).
         user = await tx.user.create({
           data: {
             fullName: input.name,
             email: input.email,
-            passwordHash,
+            passwordHash: null,
             isActive: input.status === "active",
           },
         });
