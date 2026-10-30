@@ -23,5 +23,18 @@ export const US_STATES = [
 ];
 
 export function newIdempotencyKey(): string {
-  return crypto.randomUUID();
+  // crypto.randomUUID() is only available in secure contexts (HTTPS).
+  // Fall back to a manual UUID v4 generator for HTTP / older environments.
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // Polyfill: UUID v4 using crypto.getRandomValues when available, otherwise Math.random
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r =
+      typeof crypto !== "undefined" && crypto.getRandomValues
+        ? (crypto.getRandomValues(new Uint8Array(1))[0] & 15) >> (c === "x" ? 0 : 1)
+        : Math.floor(Math.random() * 16);
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }

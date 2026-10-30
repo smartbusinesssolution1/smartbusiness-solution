@@ -17,7 +17,10 @@ services:
 
   # ── Identity & Core Auth Service ──
   platform-api:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-api:latest
+    build:
+      context: .
+      dockerfile: apps/platform-api/Dockerfile
+    image: smartbusiness/platform-api:latest
     container_name: smartbusiness-platform-api
     restart: always
     ports:
@@ -34,7 +37,10 @@ services:
 
   # ── Check Printing & Bank Encryption Service ──
   check-printing-backend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-backend:latest
+    build:
+      context: .
+      dockerfile: apps/check-printing-backend/Dockerfile
+    image: smartbusiness/check-printing-backend:latest
     container_name: smartbusiness-check-backend
     restart: always
     ports:
@@ -53,7 +59,10 @@ services:
 
   # ── ClockIn / Attendance Microservice ──
   clockin-backend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-backend:latest
+    build:
+      context: .
+      dockerfile: apps/clockInClockOut-backend/Dockerfile
+    image: smartbusiness/clockin-backend:latest
     container_name: smartbusiness-clockin-backend
     restart: always
     ports:
@@ -78,7 +87,10 @@ services:
 
   # ── Biometric Face Recognition Microservice ──
   face-recognition:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/face-recognition:latest
+    build:
+      context: apps/clockInClockout-face-recognition
+      dockerfile: Dockerfile
+    image: smartbusiness/face-recognition:latest
     container_name: smartbusiness-face-recognition
     restart: always
     ports:
@@ -89,7 +101,10 @@ services:
 
   # ── RAG Chatbot Service (Python / FastAPI) ──
   chatbot-backend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/chatbot-backend:latest
+    build:
+      context: apps/chatbot-backend
+      dockerfile: Dockerfile
+    image: smartbusiness/chatbot-backend:latest
     container_name: smartbusiness-chatbot-backend
     restart: always
     ports:
@@ -111,7 +126,10 @@ services:
 
   # ── Chatbot Admin Console Frontend (Nginx Alpine) ──
   chatbot-frontend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/chatbot-frontend:latest
+    build:
+      context: .
+      dockerfile: apps/chatbot-frontend/Dockerfile
+    image: smartbusiness/chatbot-frontend:latest
     container_name: smartbusiness-chatbot-frontend
     restart: always
     ports:
@@ -124,7 +142,10 @@ services:
 
   # ── Frontends (Served via Nginx containers) ──
   check-printing-frontend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/check-printing-frontend:latest
+    build:
+      context: .
+      dockerfile: apps/check-printing-frontend/Dockerfile
+    image: smartbusiness/check-printing-frontend:latest
     container_name: smartbusiness-check-frontend
     restart: always
     ports:
@@ -134,7 +155,10 @@ services:
       - smartbusiness-net
 
   clockin-frontend:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/clockin-frontend:latest
+    build:
+      context: .
+      dockerfile: apps/clockInClockOut-frontend/Dockerfile
+    image: smartbusiness/clockin-frontend:latest
     container_name: smartbusiness-clockin-web
     restart: always
     ports:
@@ -145,7 +169,10 @@ services:
 
   # ── Platform Marketing Website (Nginx container) ──
   platform-web:
-    image: ${AWS_ACCOUNT_ID:-348243984409}.dkr.ecr.${AWS_REGION:-ap-south-1}.amazonaws.com/smartbusiness/platform-web:latest
+    build:
+      context: .
+      dockerfile: apps/platform-web/Dockerfile
+    image: smartbusiness/platform-web:latest
     container_name: smartbusiness-platform-web
     restart: always
     ports:

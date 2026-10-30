@@ -10,7 +10,8 @@ interface CachedProductSubscription {
   plan: any;
 }
 
-export const productSubscriptionCache = new SimpleCache<CachedProductSubscription>(60);
+export const productSubscriptionCache =
+  new SimpleCache<CachedProductSubscription>(60);
 
 export const PRODUCT_NOT_AVAILABLE = "PRODUCT_NOT_AVAILABLE";
 
@@ -46,8 +47,14 @@ export function requireProduct(productSlug: string) {
       include: { product: true },
     });
 
-    if (!subscription || !["ACTIVE", "TRIALING"].includes(subscription.status)) {
-      const code = subscription?.status === "EXPIRED" ? "SUBSCRIPTION_EXPIRED" : "SUBSCRIPTION_INACTIVE";
+    if (
+      !subscription ||
+      !["ACTIVE", "TRIALING"].includes(subscription.status)
+    ) {
+      const code =
+        subscription?.status === "EXPIRED"
+          ? "SUBSCRIPTION_EXPIRED"
+          : "SUBSCRIPTION_INACTIVE";
       throw new ForbiddenError(
         "Your organization does not have an active subscription to this product.",
         code,

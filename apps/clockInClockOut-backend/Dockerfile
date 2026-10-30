@@ -27,7 +27,7 @@ WORKDIR /app
 ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 
 COPY --from=pruner /app/out/json/ .
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --prefer-frozen-lockfile
 
 COPY --from=pruner /app/out/full/ .
 
