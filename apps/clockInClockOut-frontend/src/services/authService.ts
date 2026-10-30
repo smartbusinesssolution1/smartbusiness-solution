@@ -7,6 +7,18 @@ export const ACTIVE_WORKSPACE_STORAGE_KEY = 'active_workspace_id';
 export const CURRENT_TENANT_STORAGE_KEY = 'checkpoint_tenant';
 export const WORKSPACES_STORAGE_KEY = 'checkpoint_workspaces';
 
+// What platform-api says about an invitation link (POST /auth/invitations/inspect).
+export interface InvitationView {
+  email: string;
+  fullName: string;
+  companyName: string;
+  workspaceName: string;
+  inviterName: string | null;
+  expiresAt: string;
+  // Already has a password (set through another invitation): they just sign in.
+  accountReady: boolean;
+}
+
 export interface LoginResponse {
   user: User;
   token: string;
@@ -443,6 +455,33 @@ export const authService = {
   /**
    * Complete password reset using secure token (via platform-api)
    */
+  /**
+   * What an invitation link is for (who invited them, to which workspace), before they
+   * choose a password. accountReady: they already have a password and just sign in.
+   */
+  async inspectInvitation(token: string): Promise<InvitationView> {
+    try {
+      const res = await platformAuthApi.post('/api/v1/auth/invitations/inspect', { token });
+      return res.data.data as InvitationView;
+    } catch (err: any) {
+      throw new Error(err.response?.data?.error?.message || 'This invitation link is invalid.');
+    }
+  },
+
+  /**
+   * Accepts the invitation: the person confirms their name and chooses their own password.
+   * Errors per field (name, password) come back from the server's validation.
+   */
+  async acceptInvitation(token: string, fullName: string, password: string): Promise<void> {
+    try {
+      await platformAuthApi.post('/api/v1/auth/invitations/accept', { token, fullName, password });
+    } catch (err: any) {
+      const details = err.response?.data?.error?.details as Record<string, string[]> | undefined;
+      const firstFieldError = details ? Object.values(details)[0]?.[0] : undefined;
+      throw new Error(firstFieldError || err.response?.data?.error?.message || 'Could not finish setting up your account.');
+    }
+  },
+
   async resetPassword(token: string, password: string): Promise<string> {
     try {
       const res = await platformAuthApi.post('/api/v1/auth/reset-password', { token, password });

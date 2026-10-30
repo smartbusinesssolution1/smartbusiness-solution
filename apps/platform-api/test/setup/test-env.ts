@@ -38,8 +38,8 @@ export function applyTestEnv(): void {
   process.env.JWT_SECRET = TEST_JWT_SECRET;
   process.env.ACCESS_TOKEN_EXPIRES_IN = "15m";
   process.env.REFRESH_TOKEN_EXPIRES_DAYS = "7";
-  // Both frontends, like the default: Check Printing (5173) and Clock-In (5174).
-  process.env.CORS_ORIGIN = "http://localhost:5173,http://localhost:5174";
+  // The frontends, like the default: Check Printing (5173), Clock-In (5174), the portal (3003).
+  process.env.CORS_ORIGIN = "http://localhost:5173,http://localhost:5174,http://localhost:3003";
   // High limits so the suite is not throttled; rate-limiter.test.ts proves the limiter itself.
   process.env.RATE_LIMIT_MAX = "1000000";
   process.env.AUTH_RATE_LIMIT_MAX = "1000000";
@@ -49,6 +49,7 @@ export function applyTestEnv(): void {
   process.env.EMAIL_TRANSPORT = "memory";
   process.env.EMAIL_FROM = "SmartBusiness <no-reply@smartbusiness.test>";
   process.env.APP_URL = "https://app.smartbusiness.test";
+  process.env.CLOCK_IN_APP_URL = "https://clock.smartbusiness.test";
   process.env.PASSWORD_RESET_TTL_MINUTES = "60";
   process.env.MFA_ENCRYPTION_KEY = "7a".repeat(32);
   // Job queue: the test Redis, database 1 (emptied by global setup); short retry waits.

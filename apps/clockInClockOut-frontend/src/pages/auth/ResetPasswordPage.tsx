@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import {
   TextField,
   Button,
@@ -16,12 +16,13 @@ import LockResetRoundedIcon from '@mui/icons-material/LockResetRounded';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
 import ShieldIcon from '@mui/icons-material/Shield';
 import { authService } from '../../services/authService';
+import { clearLinkToken, useLinkToken } from '../../hooks/useLinkToken';
 import { AttendanceShowcase } from './components/AttendanceShowcase';
 
 export const ResetPasswordPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const token = searchParams.get('token') || '';
+  // From "#token=" (or "?token=" in older emails), then taken out of the address bar.
+  const token = useLinkToken('reset');
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -58,6 +59,7 @@ export const ResetPasswordPage: React.FC = () => {
 
     try {
       await authService.resetPassword(token, password);
+      clearLinkToken('reset');
       setIsSuccess(true);
     } catch (err: any) {
       setError(err?.message || 'Failed to reset password. The link may have expired or is invalid.');

@@ -45,7 +45,8 @@ export const envSchema = z
 
     CORS_ORIGIN: z
       .string()
-      .default("http://localhost:5173,http://localhost:5174")
+      // Check Printing (5173), Clock-In (5174), the portal where companies sign up (3003).
+      .default("http://localhost:5173,http://localhost:5174,http://localhost:3003")
       .transform((value) =>
         value
           .split(",")
@@ -73,6 +74,11 @@ export const envSchema = z
     // The web app's address. Every link in an email is built from this, never from the
     // request, so a forged Host header cannot put someone else's site into our emails.
     APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5173"),
+
+    // Clock-In's web app: links in emails for Clock-In employees (their invitation, "you
+    // now have access") open it instead of Check Printing (APP_URL). Production:
+    // https://clock.<domain>.
+    CLOCK_IN_APP_URL: z.url({ protocol: /^https?$/ }).default("http://localhost:5174"),
 
     // How emails are delivered: "smtp" sends them (Mailpit locally, AWS SES in production),
     // "file" writes them to EMAIL_FILE_DIRECTORY, "memory" keeps them in a list (tests).

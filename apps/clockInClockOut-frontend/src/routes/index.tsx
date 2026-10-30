@@ -12,6 +12,7 @@ const RegisterPage = lazy(() => import('../pages/auth/RegisterPage'));
 const ForgotPasswordPage = lazy(() => import('../pages/auth/ForgotPasswordPage'));
 const ResetPasswordPage = lazy(() => import('../pages/auth/ResetPasswordPage'));
 const SubscriptionExpiredPage = lazy(() => import('../pages/auth/SubscriptionExpiredPage'));
+const AcceptInvitationPage = lazy(() => import('../pages/auth/AcceptInvitationPage'));
 
 // Admin Pages (lazy-loaded)
 const AdminDashboard = lazy(() => import('../pages/admin/AdminDashboard'));
@@ -93,6 +94,10 @@ export const AppRoutes: React.FC = () => {
         <Route path="/subscription-required" element={<Navigate to="/subscription-expired" replace />} />
         {/* <Route path="/create-workspace" element={user ? <Navigate to={defaultRedirect} replace /> : <RegisterPage />} /> */}
         {/* <Route path="/register" element={<Navigate to="/create-workspace" replace />} /> */}
+        {/* Employees choose their own password here (link in their invitation email) */}
+        <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
+        <Route path="/create-workspace" element={user ? <Navigate to="/admin/dashboard" replace /> : <RegisterPage />} />
+        <Route path="/register" element={<Navigate to="/create-workspace" replace />} />
 
         {/* Protected Layout Routes */}
         <Route

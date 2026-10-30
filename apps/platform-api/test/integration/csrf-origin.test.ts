@@ -14,6 +14,7 @@ import { AuthClient, getApp, parseSetCookies, VALID_PASSWORD } from "../helpers/
 const LOGIN = "/api/v1/auth/login";
 const EVIL = "https://evil.example";
 const WEB = "http://localhost:5173";
+const PORTAL = "http://localhost:3003";
 const CREDENTIALS = { email: "maria@greenacres.test", password: VALID_PASSWORD };
 
 beforeEach(async () => {
@@ -41,6 +42,16 @@ describe("login CSRF", () => {
 describe("what keeps working", () => {
   it("our web app signs in", async () => {
     expect((await request(getApp()).post(LOGIN).set("Origin", WEB).send(CREDENTIALS)).status).toBe(200);
+  });
+
+  it("the portal (platform-web) can create accounts and sign in", async () => {
+    const register = await request(getApp())
+      .post("/api/v1/auth/register")
+      .set("Origin", PORTAL)
+      .send({ fullName: "David Park", email: "david@portal.test", password: VALID_PASSWORD, companyName: "Portal Co" });
+    expect(register.status).toBe(201);
+
+    expect((await request(getApp()).post(LOGIN).set("Origin", PORTAL).send(CREDENTIALS)).status).toBe(200);
   });
 
   it("the Clock-In web app signs in (its address is on the list)", async () => {

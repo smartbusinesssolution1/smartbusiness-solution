@@ -1,4 +1,4 @@
-﻿import type { Request, Response } from "express";
+import type { Request, Response } from "express";
 import type { TypedQueue, EmailJobs } from "@smartbusiness/jobs";
 import type { AuthService } from "./auth.service.js";
 import type {
@@ -21,9 +21,9 @@ import {
   server,
   cookie,
   refreshToken as refreshTokenConfig,
-  cors as corsConfig,
 } from "../../config/index.js";
 import { logger } from "../../shared/services/logger.js";
+import { isAllowedOrigin } from "../../shared/utils/allowed-origin.js";
 
 export class AuthController {
   private cookieConfig: CookieConfig;
@@ -68,6 +68,8 @@ export class AuthController {
       result.tokens.refreshToken,
     );
 
+    await this.queueWelcomeEmail(result.user.id, this.ourAppUrl(req));
+
     if (this.isAppPlatform(req)) {
       sendCreated(res, {
         user: result.user,
@@ -80,6 +82,36 @@ export class AuthController {
       sendCreated(res, { user: result.user, tenants: result.tenants });
     }
   };
+
+  // The welcome email goes through the job queue like every other email: retried if
+  // sending fails, and sign-up doesn't wait for the mail server. The job holds only the
+  // user's id and app address, never the password. One job per user (the job id), so a
+  // repeated request can't send two. If the queue is unreachable the account still
+  // exists and works; only the welcome email is missing, so this never fails sign-up.
+  private async queueWelcomeEmail(userId: string, appUrl: string | undefined): Promise<void> {
+    try {
+      await this.emailQueue.add("welcome-email", { userId, appUrl }, { jobId: `welcome-${userId}` });
+    } catch (err) {
+      logger.warn({ err: (err as Error)?.message, userId }, "Could not queue the welcome email; the account was created");
+    }
+  }
+
+  // Which of OUR apps a link in an email should open (the portal for a sign-up, Clock-In
+  // for a Clock-In user's reset): from redirectUrl, Origin or Referer, but only if it is
+  // one of our websites, by the same rule as CORS. Anyone can send any value here;
+  // accepting other addresses would put a genuine link to someone else's site (or a laptop
+  // on the office network) into our emails. undefined: use the configured APP_URL.
+  private ourAppUrl(req: Request, redirectUrl?: string): string | undefined {
+    try {
+      const candidate = redirectUrl || (req.headers.origin as string) || (req.headers.referer as string);
+      if (!candidate) return undefined;
+      const origin = new URL(candidate).origin;
+      return isAllowedOrigin(origin) ? origin : undefined;
+    } catch {
+      // Not a URL (a malformed Referer, say).
+      return undefined;
+    }
+  }
 
   login = async (req: Request, res: Response): Promise<void> => {
     const result = await this.authService.login(req.body as LoginInputType, {
@@ -169,24 +201,9 @@ export class AuthController {
   forgotPassword = async (req: Request, res: Response): Promise<void> => {
     const { email, redirectUrl } = req.body as ForgotPasswordInput;
 
-    // Detect client app URL from redirectUrl, Origin, or Referer if it matches allowed CORS/trusted origins
-    let clientAppUrl: string | undefined;
-    const candidate = redirectUrl || (req.headers.origin as string) || (req.headers.referer ? new URL(req.headers.referer).origin : undefined);
-    if (candidate) {
-      try {
-        const parsedUrl = new URL(candidate);
-        const origin = parsedUrl.origin;
-        if (
-          parsedUrl.hostname === "localhost" ||
-          parsedUrl.hostname === "127.0.0.1" ||
-          parsedUrl.hostname.startsWith("192.168.") ||
-          parsedUrl.hostname.startsWith("10.") ||
-          (corsConfig.origin as readonly string[]).includes(origin)
-        ) {
-          clientAppUrl = origin.replace(/\/+$/, "");
-        }
-      } catch { }
-    }
+    // Which app the reset link opens (so a Clock-In user lands on Clock-In): only ever one
+    // of our own websites (see ourAppUrl), otherwise the configured APP_URL.
+    const clientAppUrl = this.ourAppUrl(req, redirectUrl);
 
     try {
       await this.emailQueue.add("password-reset", { email, ipAddress: req.ip, appUrl: clientAppUrl });

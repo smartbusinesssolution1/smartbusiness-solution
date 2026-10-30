@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRight, MailCheck } from "lucide-react";
-import { useAcceptInvitation, useForgotPassword, useInvitation, useLogin, useRegister, useResetPassword } from "@/api/auth";
+// useRegister: sign-up moved to the portal (see SignUpPage below).
+import { useAcceptInvitation, useForgotPassword, useInvitation, useLogin, /* useRegister, */ useResetPassword } from "@/api/auth";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { InlineAlert } from "@/components/app/layout";
 import { ApiError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/forms";
 import { clearLinkToken, useLinkToken } from "@/lib/link-token";
+import { portalSignUpUrl } from "@/lib/portal";
 import { AuthLayout } from "./auth-layout";
 import { PasswordInput, PasswordRules, passwordProblem } from "./password-input";
 
@@ -41,6 +43,7 @@ export function SignInPage() {
   // Too many wrong passwords: the server says for how long; resetting unlocks it now.
   const [locked, setLocked] = React.useState<string | null>(null);
   const { register, handleSubmit, setError, formState: { errors } } = useForm<{ email: string; password: string }>();
+  const signUpUrl = portalSignUpUrl();
 
   const onSubmit = handleSubmit((values) => {
     setFormError(null);
@@ -59,12 +62,18 @@ export function SignInPage() {
       title="Sign in"
       subtitle="Welcome back. Sign in to your company's check printing."
       footer={
-        <>
-          New here?{" "}
-          <Link to="/sign-up" className="font-medium text-ink underline-offset-4 hover:underline">
-            Create an account
-          </Link>
-        </>
+        // Companies create their account on the SmartBusiness portal; team members are
+        // invited by email and never need to.
+        signUpUrl ? (
+          <>
+            New to SmartBusiness?{" "}
+            <a href={signUpUrl} className="font-medium text-ink underline-offset-4 hover:underline">
+              Create your company account
+            </a>
+          </>
+        ) : (
+          <>New to SmartBusiness? Create your company account on the SmartBusiness website.</>
+        )
       }
     >
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
@@ -106,32 +115,18 @@ export function SignInPage() {
   );
 }
 
-interface SignUpValues {
-  fullName: string;
-  companyName: string;
-  email: string;
-  password: string;
-}
+// /sign-up now: old links and bookmarks land here and are sent on to the portal's sign-up.
+export function SignUpMovedPage() {
+  const signUpUrl = portalSignUpUrl();
 
-export function SignUpPage() {
-  const navigate = useNavigate();
-  const registerUser = useRegister();
-  const [formError, setFormError] = React.useState<string | null>(null);
-  const { register, handleSubmit, setError, watch, formState: { errors } } = useForm<SignUpValues>();
-  const password = watch("password") ?? "";
-
-  const onSubmit = handleSubmit((values) => {
-    setFormError(null);
-    registerUser.mutate(values, {
-      onSuccess: () => navigate("/workspaces/new", { replace: true }),
-      onError: (err) => setFormError(applyServerErrors(err, setError, ["fullName", "companyName", "email", "password"])),
-    });
-  });
+  React.useEffect(() => {
+    if (signUpUrl) window.location.replace(signUpUrl);
+  }, [signUpUrl]);
 
   return (
     <AuthLayout
-      title="Create your account"
-      subtitle="14-day trial. No card needed."
+      title="Create your company account"
+      subtitle="Accounts are created on the SmartBusiness website, then Check Printing opens already signed in."
       footer={
         <>
           Already have an account?{" "}
@@ -141,30 +136,85 @@ export function SignUpPage() {
         </>
       }
     >
-      <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
-        <FormError message={formError} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Your name" htmlFor="fullName" error={errors.fullName?.message}>
-            <Input autoComplete="name" autoFocus placeholder="Maria Rodriguez" {...register("fullName", { required: "Enter your name", maxLength: { value: 255, message: "Too long" } })} />
-          </Field>
-          <Field label="Company" htmlFor="companyName" error={errors.companyName?.message}>
-            <Input autoComplete="organization" placeholder="Green Acres LLC" {...register("companyName", { required: "Enter your company", maxLength: { value: 255, message: "Too long" } })} />
-          </Field>
-        </div>
-        <Field label="Work email" htmlFor="email" error={errors.email?.message}>
-          <Input type="email" autoComplete="email" placeholder="you@company.com" {...register("email", { required: "Enter your email", pattern: { value: EMAIL, message: "That doesn't look like an email address" } })} />
-        </Field>
-        <Field label="Password" htmlFor="password" error={errors.password?.message}>
-          <PasswordInput autoComplete="new-password" {...register("password", { required: "Choose a password", validate: passwordProblem })} />
-        </Field>
-        <PasswordRules value={password} />
-        <Button type="submit" size="lg" loading={registerUser.isPending} className="mt-1 w-full">
-          Create account <ArrowRight />
+      {signUpUrl ? (
+        <Button size="lg" className="w-full" asChild>
+          <a href={signUpUrl}>
+            Continue to SmartBusiness <ArrowRight />
+          </a>
         </Button>
-      </form>
+      ) : (
+        <InlineAlert tone="info">Create your company account on the SmartBusiness website, then sign in here.</InlineAlert>
+      )}
     </AuthLayout>
   );
 }
+
+// ─── Sign-up: moved to the SmartBusiness portal ───────────────────────────────────────
+// Companies now create their account on the portal (apps/platform-web), which calls the
+// same platform-api /auth/register; they then open Check Printing already signed in.
+// /sign-up here redirects to the portal (see router.tsx). Kept, commented out, in case
+// Check Printing ever needs its own sign-up again: uncomment this, useRegister in
+// api/auth.ts, and the route in router.tsx.
+
+// interface SignUpValues {
+//   fullName: string;
+//   companyName: string;
+//   email: string;
+//   password: string;
+// }
+//
+// export function SignUpPage() {
+//   const navigate = useNavigate();
+//   const registerUser = useRegister();
+//   const [formError, setFormError] = React.useState<string | null>(null);
+//   const { register, handleSubmit, setError, watch, formState: { errors } } = useForm<SignUpValues>();
+//   const password = watch("password") ?? "";
+//
+//   const onSubmit = handleSubmit((values) => {
+//     setFormError(null);
+//     registerUser.mutate(values, {
+//       onSuccess: () => navigate("/workspaces/new", { replace: true }),
+//       onError: (err) => setFormError(applyServerErrors(err, setError, ["fullName", "companyName", "email", "password"])),
+//     });
+//   });
+//
+//   return (
+//     <AuthLayout
+//       title="Create your account"
+//       subtitle="14-day trial. No card needed."
+//       footer={
+//         <>
+//           Already have an account?{" "}
+//           <Link to="/sign-in" className="font-medium text-ink underline-offset-4 hover:underline">
+//             Sign in
+//           </Link>
+//         </>
+//       }
+//     >
+//       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+//         <FormError message={formError} />
+//         <div className="grid gap-4 sm:grid-cols-2">
+//           <Field label="Your name" htmlFor="fullName" error={errors.fullName?.message}>
+//             <Input autoComplete="name" autoFocus placeholder="Maria Rodriguez" {...register("fullName", { required: "Enter your name", maxLength: { value: 255, message: "Too long" } })} />
+//           </Field>
+//           <Field label="Company" htmlFor="companyName" error={errors.companyName?.message}>
+//             <Input autoComplete="organization" placeholder="Green Acres LLC" {...register("companyName", { required: "Enter your company", maxLength: { value: 255, message: "Too long" } })} />
+//           </Field>
+//         </div>
+//         <Field label="Work email" htmlFor="email" error={errors.email?.message}>
+//           <Input type="email" autoComplete="email" placeholder="you@company.com" {...register("email", { required: "Enter your email", pattern: { value: EMAIL, message: "That doesn't look like an email address" } })} />
+//         </Field>
+//         <Field label="Password" htmlFor="password" error={errors.password?.message}>
+//           <PasswordInput autoComplete="new-password" {...register("password", { required: "Choose a password", validate: passwordProblem })} />
+//         </Field>
+//         <PasswordRules value={password} />
+//         <Button type="submit" size="lg" loading={registerUser.isPending} className="mt-1 w-full">
+//           Create account <ArrowRight />
+//         </Button>
+//       </form>
+//     </AuthLayout>
+//   );
+// }
 
 export function ForgotPasswordPage() {
   const forgot = useForgotPassword();

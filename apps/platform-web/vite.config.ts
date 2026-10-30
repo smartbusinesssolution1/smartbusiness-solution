@@ -17,6 +17,16 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Sign-up and sign-in reach platform-api through this server, so the browser sees one
+      // origin and the httpOnly login cookies are stored for it (production: the portal's
+      // nginx does the same). The cookies belong to the host, not the port, so locally they
+      // are also sent to Check Printing on localhost:5173: one sign-in for both.
+      proxy: {
+        '/api/v1/auth': {
+          target: process.env.PLATFORM_API_URL ?? 'http://localhost:3001',
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

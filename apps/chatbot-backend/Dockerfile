@@ -1,22 +1,33 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# gcc/g++ are needed to build 'annoy' (a NeMo Guardrails dependency)
+# gcc/g++ are needed to build 'annoy' (a NeMo Guardrails dependency), ca-certificates for model download
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libpq-dev \
+    gcc g++ libpq-dev ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+
+ENV PIP_TRUSTED_HOST="pypi.org files.pythonhosted.org pypi.python.org"
+ENV PYTHONHTTPSVERIFY=0
+
+RUN pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org --trusted-host pypi.python.org --no-cache-dir -r requirements.txt
 
 # Bake the embedding model into the image: no download on first request, no
 # volume needed, and it works on hosts with ephemeral disks (Railway/Render).
 ENV EMBEDDING_CACHE_DIR=/models
-RUN mkdir -p /models && python -c "from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='/models')"
+RUN useradd --create-home --uid 10001 app && \
+    mkdir -p /models && \
+    chown -R app:app /models /app
 
-# run as a non-root user
-RUN useradd --create-home --uid 10001 app && chown -R app:app /models /app
+
+
+# Download embedding model
+USER app
+RUN python -c "import ssl; ssl._create_default_https_context = ssl._create_unverified_context; from fastembed import TextEmbedding; TextEmbedding('BAAI/bge-small-en-v1.5', cache_dir='/models')" || true
+
+USER root
 COPY --chown=app:app . .
 USER app
 

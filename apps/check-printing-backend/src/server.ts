@@ -1,9 +1,11 @@
-import { server as serverConfig } from "./config/index.js";
+import { server as serverConfig, storage as storageConfig } from "./config/index.js";
 import { createApp } from "./app.js";
 import { prisma } from "@smartbusiness/database";
 import { logger } from "./shared/services/logger.js";
 import { pdfRenderer } from "./modules/pdf/index.js";
 import { closeQueues } from "./jobs/queues.js";
+import { fileStorage } from "./shared/storage/instance.js";
+import { verifyStorageAtStartup } from "./shared/storage/index.js";
 
 // A bad MICR font must not stop the rest of the API, so this only reports;
 // in strict mode the renderer itself refuses to print.
@@ -29,6 +31,21 @@ async function startServer() {
     logger.info("Database connected");
 
     await reportMicrFont();
+
+    // Write, read and delete a test file in the configured storage (S3 on servers).
+    // Production and staging stop here if it fails; development only warns.
+    await verifyStorageAtStartup(
+      fileStorage,
+      {
+        driver: storageConfig.driver,
+        bucket: storageConfig.s3.bucket,
+        prefix: storageConfig.s3.prefix,
+        region: storageConfig.s3.region,
+        localDirectory: storageConfig.localDirectory,
+      },
+      serverConfig.nodeEnv,
+      logger,
+    );
 
     const app = createApp();
 

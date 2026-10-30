@@ -305,7 +305,7 @@ export const CreateEmployee: React.FC = () => {
           Onboard New Employee
         </h1>
         <p className="text-xs sm:text-sm text-muted leading-relaxed">
-          Register credentials, upload biometric face photo, and configure shift working schedule.
+          Add the employee's details, biometric face photo and shift schedule. They get an email to choose their own password.
         </p>
       </div>
 

@@ -1,16 +1,39 @@
 import * as React from "react";
-import { Navigate, Outlet, useLocation, useNavigate, useParams } from "react-router";
+import { Navigate, Outlet, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { motion } from "motion/react";
 import { chooseTenant, sessionKey, useSession } from "@/api/auth";
 import { useWorkspace } from "@/api/workspace";
-import { ApiError, onSessionEnded, onTwoFactorNeeded } from "@/lib/api";
+import { ApiError, onSessionEnded, onTwoFactorNeeded, tenantStore } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/app/layout";
 import { BrandMark } from "@/components/app/brand";
+import { isProductNotAvailable, portalUrl } from "@/lib/portal";
 import { WorkspaceProvider } from "./workspace-context";
 import { AppShell } from "./shell";
+
+// Signed in (accounts live on the portal now), but this company has no Check Printing:
+// say so plainly and send them to the portal, where products are added.
+export function NoProductAccess() {
+  const { data: session } = useSession();
+  const portal = portalUrl();
+  const company = session?.tenants.find((t) => t.tenantId === tenantStore.get())?.tenantName;
+  return (
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-4 p-8 text-center">
+      <BrandMark className="size-10" />
+      <p className="text-lg font-semibold">{company ? `${company} doesn't have Check Printing yet` : "Your company doesn't have Check Printing yet"}</p>
+      <p className="text-sm text-muted">
+        Your account works, but Check Printing isn't part of your company's plan, or its access has ended. Your company's owner can add it on SmartBusiness.
+      </p>
+      {portal && (
+        <Button asChild>
+          <a href={portal}>Go to SmartBusiness</a>
+        </Button>
+      )}
+    </div>
+  );
+}
 
 export function Splash() {
   return (
@@ -62,6 +85,9 @@ export function RequireAuth() {
   useTwoFactorHandler();
   const { data: session, isPending, error, refetch } = useSession();
   const location = useLocation();
+  // The portal's "Open Check Printing" names the company it was opened for.
+  const [params] = useSearchParams();
+  const requestedTenant = params.get("tenant");
 
   if (isPending) return <Splash />;
   if (error) return <div className="mx-auto max-w-md p-8"><ErrorState error={error} onRetry={() => refetch()} /></div>;
@@ -69,7 +95,7 @@ export function RequireAuth() {
     const next = location.pathname + location.search;
     return <Navigate to={next === "/" ? "/sign-in" : `/sign-in?next=${encodeURIComponent(next)}`} replace />;
   }
-  chooseTenant(session);
+  chooseTenant(session, requestedTenant);
   if (session.tenants.length === 0) {
     return (
       <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-3 p-8 text-center">
@@ -104,6 +130,7 @@ export function WorkspaceLayout() {
   }, [wid]);
 
   if (isPending) return <Splash />;
+  if (isProductNotAvailable(error)) return <NoProductAccess />;
   if (error) {
     const status = error instanceof ApiError ? error.status : 0;
     if (status === 404 || status === 403) {

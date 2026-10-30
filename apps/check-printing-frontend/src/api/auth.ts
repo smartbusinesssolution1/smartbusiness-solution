@@ -31,9 +31,15 @@ export function useIsCompanyOwner(): boolean {
 }
 
 // Keep the chosen company if the user still belongs to it, else take the first one.
-export function chooseTenant(session: Session): string | null {
+// requested: the company the portal's "Open Check Printing" link names (?tenant=), for
+// people in more than one company. Only one of the user's own companies is ever taken;
+// anything else is ignored (and the API checks membership on every request regardless).
+export function chooseTenant(session: Session, requested?: string | null): string | null {
   const current = tenantStore.get();
-  const tenant = session.tenants.find((t) => t.tenantId === current) ?? session.tenants[0];
+  const tenant =
+    session.tenants.find((t) => t.tenantId === requested) ??
+    session.tenants.find((t) => t.tenantId === current) ??
+    session.tenants[0];
   tenantStore.set(tenant?.tenantId ?? null);
   return tenant?.tenantId ?? null;
 }
@@ -55,14 +61,17 @@ export function useLogin() {
   });
 }
 
-export function useRegister() {
-  const signedIn = useSignedIn();
-  return useMutation({
-    mutationFn: async (input: { fullName: string; email: string; password: string; companyName: string }) =>
-      (await api<Session>("/auth/register", { method: "POST", body: input })).data,
-    onSuccess: signedIn,
-  });
-}
+// Sign-up moved to the SmartBusiness portal (apps/platform-web): companies create their
+// account there, then open Check Printing already signed in. Kept, commented out, in case
+// Check Printing ever needs its own sign-up again.
+// export function useRegister() {
+//   const signedIn = useSignedIn();
+//   return useMutation({
+//     mutationFn: async (input: { fullName: string; email: string; password: string; companyName: string }) =>
+//       (await api<Session>("/auth/register", { method: "POST", body: input })).data,
+//     onSuccess: signedIn,
+//   });
+// }
 
 export function useLogout() {
   const qc = useQueryClient();

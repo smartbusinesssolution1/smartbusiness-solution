@@ -1,5 +1,6 @@
 import React from 'react';
-import { Printer, RefreshCw, ChevronRight, MessageSquare, DollarSign, Star, ShieldCheck } from 'lucide-react';
+import { RefreshCw, ChevronRight, MessageSquare, DollarSign, Star, ShieldCheck } from 'lucide-react';
+import { CheckPrintingLogo } from '../common/CheckPrintingLogo';
 
 interface HeroSectionProps {
   onExploreService: (serviceName: string) => void;
@@ -10,19 +11,6 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreService }) =>
     <section className="relative pt-12 pb-16 sm:pt-16 sm:pb-24 overflow-hidden bg-gradient-to-b from-white via-slate-50/30 to-white">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
-        {/* Top Centered Pill Badge */}
-        <div className="flex justify-center mb-6">
-          <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white border border-slate-200/80 shadow-xs hover:border-slate-300 transition-all">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-[11px] sm:text-xs font-bold text-indigo-600 tracking-wider">
-              NEW RELEASE
-            </span>
-            <span className="text-slate-300">|</span>
-            <span className="text-[11px] sm:text-xs font-medium text-slate-700">
-              Next-Gen Check Automation Platform
-            </span>
-          </div>
-        </div>
 
         {/* Hero Headline */}
         <div className="text-center max-w-4xl mx-auto">
@@ -51,9 +39,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreService }) =>
             <div className="absolute -top-12 -right-12 w-36 h-36 bg-cyan-100/50 rounded-full blur-2xl pointer-events-none" />
 
             <div className="relative z-10">
-              <div className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-sm mb-4 group-hover:scale-105 transition-transform">
-                <Printer className="w-6 h-6" />
-              </div>
+              <CheckPrintingLogo size={48} className="drop-shadow-sm mb-4 group-hover:scale-105 transition-transform" />
 
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold text-indigo-700 bg-indigo-50 uppercase tracking-wider mb-2">
                 CORE SERVICE 01
@@ -72,7 +58,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreService }) =>
 
           {/* Core Service 02: Clock In Clock Out */}
           <div
-            onClick={() => onExploreService('clock-in-out')}
+            onClick={() => onExploreService('clock-in-clock-out')}
             className="group relative overflow-hidden rounded-2xl border border-slate-100 bg-white p-6 shadow-xs hover:shadow-md hover:border-indigo-100 transition-all cursor-pointer"
           >
             {/* Soft decorative background glow */}

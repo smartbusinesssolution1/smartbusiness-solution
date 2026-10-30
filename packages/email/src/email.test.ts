@@ -15,7 +15,7 @@ import {
   MemoryEmailSender,
   passwordChangedEmail,
   passwordResetEmail,
-  welcomeCredentialsEmail,
+  welcomeEmail,
   safeLink,
   type EmailMessage,
 } from "./index.js";
@@ -278,21 +278,45 @@ describe("createEmailSender", () => {
   });
 });
 
-describe("welcomeCredentialsEmail", () => {
-  it("renders credentials with username, password, and login url", () => {
-    const email = welcomeCredentialsEmail({
-      to: "owner@acme.com",
+// The email after sign-up: it confirms the account and links back to the app, and never
+// carries a password (it has no way to: the template takes none).
+describe("welcomeEmail", () => {
+  const welcome = (overrides: Partial<Parameters<typeof welcomeEmail>[0]> = {}) =>
+    welcomeEmail({
       name: "Alice Owner",
-      password: "SB123456!2026",
-      loginUrl: "https://app.smartbusiness.test/login",
       companyName: "Acme Corp",
+      email: "owner@acme.com",
+      appUrl: "https://app.smartbusiness.test",
+      ...overrides,
     });
 
-    expect(email.subject).toContain("Your Login Credentials - Acme Corp");
-    expect(email.html).toContain("owner@acme.com");
-    expect(email.html).toContain("SB123456!2026");
-    expect(email.html).toContain("https://app.smartbusiness.test/login");
-    expect(email.text).toContain("SB123456!2026");
-    expect(email.attachments).toHaveLength(8);
+  it("welcomes the owner by name and company, and links back to the app", () => {
+    const email = welcome();
+
+    expect(email.tag).toBe("welcome");
+    expect(email.subject).toBe("Welcome to SmartBusiness, Acme Corp");
+    expect(email.text).toContain("Hi Alice Owner,");
+    expect(email.text).toContain("account for Acme Corp is ready");
+    expect(email.text).toContain("owner@acme.com");
+    expect(email.text).toContain("https://app.smartbusiness.test");
+    expect(email.html).toContain('href="https://app.smartbusiness.test/"');
+  });
+
+  it("has no password and no place for one", () => {
+    const email = welcome();
+
+    expect(`${email.html}${email.text}`).not.toMatch(/password\s*:/i);
+    expect(email.text).toContain("the password you chose");
+  });
+
+  it("escapes names typed at sign-up and keeps the subject on one line", () => {
+    const email = welcome({ name: "<script>x</script>", companyName: "Evil\r\nBcc: a@b.test" });
+
+    expect(email.html).not.toContain("<script>");
+    expect(email.subject).not.toMatch(/[\r\n]/);
+  });
+
+  it("refuses a link that isn't http(s)", () => {
+    expect(() => welcome({ appUrl: "javascript:alert(1)" })).toThrow();
   });
 });

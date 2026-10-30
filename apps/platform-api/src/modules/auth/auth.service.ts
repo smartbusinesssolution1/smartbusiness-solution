@@ -1,19 +1,19 @@
-﻿import {
+import {
   AuthRepository,
   type TenantInfo,
+  type TenantInfoWithProducts,
   type UserWithTenants,
 } from "./auth.repository.js";
 import type { LoginInputType, RegisterInputType } from "./auth.schema.js";
 import { AuthError } from "@smartbusiness/auth";
 import { AccountLockedError, AppError, ConflictError } from "../../shared/errors/index.js";
 import { TokenService, PasswordService, UserTokenService, type TokenProblem } from "@smartbusiness/auth";
-import crypto from "node:crypto";
 import {
   addedToWorkspaceEmail,
   invitationEmail,
   passwordChangedEmail,
   passwordResetEmail,
-  welcomeCredentialsEmail,
+  welcomeEmail,
   type EmailSender,
 } from "@smartbusiness/email";
 import { AuditService } from "../../shared/services/audit.service.js";
@@ -45,6 +45,8 @@ interface SessionContext {
 // Settings for the links this service emails.
 export interface PasswordResetSettings {
   appUrl: string;
+  // Clock-In's web app, for invitation emails of Clock-In employees.
+  clockInAppUrl: string;
   // Password reset links
   ttlMinutes: number;
   // Workspace invitation links
@@ -128,6 +130,31 @@ export class AuthService {
     private resetSettings: PasswordResetSettings,
   ) { }
 
+  // WELCOME EMAIL (runs in the job worker)
+  //
+  // Sent once after a company signs up. The job carries only the user's id (and which of
+  // our apps they signed up on): the owner is looked up when it runs, so a deleted or
+  // deactivated account gets nothing. The email never contains the password: they chose
+  // it, and an email stays in inboxes, syncs to phones and gets forwarded.
+  async processWelcomeEmailJob(data: { userId: string; appUrl?: string }): Promise<void> {
+    const user = await this.authRepository.findUserById(data.userId);
+    if (!user || !user.isActive) return;
+    const tenants = this.extractTenants(user);
+    const company = tenants.find((t) => t.role === "OWNER") ?? tenants[0];
+    if (!company) return;
+
+    await this.emailSender.send({
+      to: user.email,
+      ...welcomeEmail({
+        name: user.fullName,
+        companyName: company.tenantName,
+        email: user.email,
+        appUrl: data.appUrl || this.resetSettings.appUrl,
+      }),
+    });
+    logger.info({ userId: user.id }, "Welcome email sent");
+  }
+
   // ═════════════════════════════════════════════════════════════
   // FORGOT PASSWORD (runs in the job worker)
   //
@@ -164,9 +191,13 @@ export class AuthService {
 
     // Built from configuration only: never from the request's Host header.
     const baseUrl = opts.appUrl || this.resetSettings.appUrl;
-    const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-    logger.info({ resetUrl, email: user.email }, `Generated password reset URL: ${resetUrl}`);
-    console.log(`\n========================================\n🔑 PASSWORD RESET LINK FOR ${user.email}:\n${resetUrl}\n========================================\n`);
+    // The token goes after "#": a browser never sends that part to any server, so it stays
+    // out of web-server and load-balancer logs, Referer headers and proxies. (Check Printing
+    // and Clock-In read "#token=", and still accept "?token=" from older emails.)
+    const resetUrl = `${baseUrl}/reset-password#token=${token}`;
+    // The link is as good as the account's password for the next hour: log THAT it was
+    // made, never the link or the token. Locally the email (with the link) is in Mailpit.
+    logger.info({ userId: user.id, appUrl: baseUrl }, "Password reset link created");
     // If sending fails, this throws and the queue retries the whole job later.
     await this.emailSender.send({
       to: user.email,
@@ -224,14 +255,8 @@ export class AuthService {
       throw new ConflictError("An account with this email already exists.");
     }
 
-    const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
-    const generatedPassword = `SB${randomSuffix}!2026`;
-    const rawPassword =
-      data.password && data.password.trim() !== "" && data.password !== "Password1!"
-        ? data.password
-        : generatedPassword;
-
-    const passwordHash = await this.passwordService.hash(rawPassword);
+    // Exactly the password they chose: no generated one, no substitutions.
+    const passwordHash = await this.passwordService.hash(data.password);
 
     const user = await this.authRepository.createUserWithTenant({
       email: data.email,
@@ -248,24 +273,8 @@ export class AuthService {
 
     const tokens = await this.createSession(user.id, user.email, ctx);
 
-    // Dispatch welcome credentials email with random password to the organization owner
-    try {
-      const loginUrl = `${this.resetSettings.appUrl}/login`;
-      await this.emailSender.send({
-        to: user.email,
-        ...welcomeCredentialsEmail({
-          to: user.email,
-          name: user.fullName,
-          password: rawPassword,
-          loginUrl,
-          companyName: data.companyName,
-        }),
-      });
-      logger.info({ email: user.email, companyName: data.companyName }, "Welcome credentials email dispatched to organization owner");
-      console.log(`\n========================================\n📧 WELCOME CREDENTIALS EMAIL FOR ${user.email}:\nPassword: ${rawPassword}\nLogin URL: ${loginUrl}\n========================================\n`);
-    } catch (emailErr) {
-      logger.error({ emailErr, email: user.email }, "Failed to dispatch welcome credentials email to owner");
-    }
+    // The welcome email is queued by the controller and sent by the job worker
+    // (processWelcomeEmailJob): it never contains the password.
 
     await this.auditService.log({
       tenantId: primaryTenant.tenantId,
@@ -482,16 +491,30 @@ export class AuthService {
     });
   }
 
+  // Who is signed in, their companies, and which products each company can open: the
+  // portal uses the products to show "Open" for what the company has.
   async getCurrentUser(userId: string): Promise<{
     user: AuthUser;
-    tenants: TenantInfo[];
+    tenants: TenantInfoWithProducts[];
   } | null> {
-    const user = await this.authRepository.findUserById(userId);
+    const user = await this.authRepository.findUserWithTenantProducts(userId);
     if (!user) return null;
+
+    const productsByTenant = new Map(
+      user.tenantMembers.map((tm) => [
+        tm.tenant.id,
+        tm.tenant.subscriptions.map((s) => ({
+          slug: s.product.slug,
+          name: s.product.name,
+          status: s.status,
+          trialEndsAt: s.trialEndsAt,
+        })),
+      ]),
+    );
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
-      tenants: this.extractTenants(user),
+      tenants: this.extractTenants(user).map((t) => ({ ...t, products: productsByTenant.get(t.tenantId) ?? [] })),
     };
   }
 
@@ -515,7 +538,19 @@ export class AuthService {
   // Safe to run again: a retry sends a fresh link, which replaces the unsent one.
   // ═════════════════════════════════════════════════════════════
 
-  async processWorkspaceInvitationJob(data: { userId: string; workspaceId: string; invitedById: string }): Promise<void> {
+  async processWorkspaceInvitationJob(data: {
+    userId: string;
+    workspaceId: string;
+    invitedById: string;
+    product?: "check-printing" | "clock-in-clock-out";
+  }): Promise<void> {
+    // Which app the links open, from configuration (never from a request): Clock-In
+    // employees accept on Clock-In and sign in there (/login); everyone else on Check
+    // Printing (/sign-in).
+    const isClockIn = data.product === "clock-in-clock-out";
+    const appUrl = isClockIn ? this.resetSettings.clockInAppUrl : this.resetSettings.appUrl;
+    const signInPath = isClockIn ? "/login" : "/sign-in";
+
     const ctx = await this.authRepository.findInvitationContext(data.userId, data.workspaceId, data.invitedById);
     const { user, workspace } = ctx;
     if (!user || !workspace || !ctx.membershipActive || workspace.tenant.status !== "ACTIVE") {
@@ -537,7 +572,7 @@ export class AuthService {
       });
       // Built from configuration only: never from a request's Host header. The token goes
       // after "#", which a browser never sends to any server (see the reset link).
-      const acceptUrl = `${this.resetSettings.appUrl}/accept-invitation#token=${token}`;
+      const acceptUrl = `${appUrl}/accept-invitation#token=${token}`;
       // If sending fails, this throws and the queue retries the whole job later.
       await this.emailSender.send({
         to: user.email,
@@ -559,7 +594,7 @@ export class AuthService {
           inviterName,
           companyName: workspace.tenant.name,
           workspaceName: workspace.businessName,
-          signInUrl: `${this.resetSettings.appUrl}/sign-in`,
+          signInUrl: `${appUrl}${signInPath}`,
         }),
       });
       action = "WORKSPACE_ACCESS_EMAIL_SENT";

@@ -157,6 +157,12 @@ export const EditEmployee: React.FC = () => {
     }
   }, [employee, orgSettings, reset]);
 
+  // "Send invitation again": the employee lost the email, the link expired, or they were
+  // inactive when added. They choose their own password through the new link.
+  const resendInvitation = useMutation({
+    mutationFn: () => employeeService.resendInvitation(id || ''),
+  });
+
   // Update Mutation
   const updateMutation = useMutation({
     mutationFn: (formData: FormData) => employeeService.updateEmployee(id || '', formData),
@@ -566,7 +572,25 @@ export const EditEmployee: React.FC = () => {
         </Card>
 
         {/* Submit Actions */}
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex flex-wrap items-center justify-end gap-3 pt-2">
+          <div className="mr-auto flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => resendInvitation.mutate()}
+              disabled={resendInvitation.isPending}
+              className="gap-2"
+            >
+              {resendInvitation.isPending ? <RotateCw className="size-4 animate-spin" /> : <Mail className="size-4" />}
+              <span>Send sign-in invitation again</span>
+            </Button>
+            {resendInvitation.isSuccess && (
+              <span className="text-xs text-emerald-600">Invitation sent. They choose their own password from the email.</span>
+            )}
+            {resendInvitation.isError && (
+              <span className="text-xs text-red-600">{(resendInvitation.error as Error).message}</span>
+            )}
+          </div>
           <Button
             type="button"
             variant="outline"

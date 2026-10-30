@@ -289,6 +289,79 @@ describe("access token", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// /me: WHICH PRODUCTS EACH COMPANY CAN OPEN (the portal's product list)
+//
+// The same rule as requireProduct at each product's door: ACTIVE or TRIALING, product
+// active. Listing anything else would offer an "Open" button that ends in a 403.
+// ═══════════════════════════════════════════════════════════════
+describe("/me products", () => {
+  async function registerWithClockIn(): Promise<AuthClient> {
+    await prisma.product.create({ data: { slug: "clock-in-clock-out", name: "Clock-In Clock-Out", isActive: true } });
+    const client = new AuthClient();
+    await client.register();
+    return client;
+  }
+
+  it("lists the trial products a new company gets, with when the trial ends", async () => {
+    const client = await registerWithClockIn();
+
+    const res = await client.me();
+
+    expect(res.status).toBe(200);
+    const products = res.body.data.tenants[0].products;
+    expect(products.map((p: { slug: string }) => p.slug)).toEqual(["check-printing", "clock-in-clock-out"]);
+    expect(products[0]).toEqual({
+      slug: "check-printing",
+      name: "Check Printing",
+      status: "TRIALING",
+      trialEndsAt: expect.any(String),
+    });
+  });
+
+  it("leaves out a product whose access ended (canceled or expired)", async () => {
+    const client = await registerWithClockIn();
+    await prisma.productSubscription.updateMany({
+      where: { product: { slug: "clock-in-clock-out" } },
+      data: { status: "CANCELED" },
+    });
+
+    const res = await client.me();
+
+    expect(res.body.data.tenants[0].products.map((p: { slug: string }) => p.slug)).toEqual(["check-printing"]);
+  });
+
+  it("leaves out a product we have switched off for everyone", async () => {
+    const client = await registerWithClockIn();
+    await prisma.product.update({ where: { slug: "clock-in-clock-out" }, data: { isActive: false } });
+
+    const res = await client.me();
+
+    expect(res.body.data.tenants[0].products.map((p: { slug: string }) => p.slug)).toEqual(["check-printing"]);
+  });
+
+  it("shows each company only its own products", async () => {
+    const maria = await registerWithClockIn();
+    await new AuthClient().register({ email: "david@sunshine.test", companyName: "Sunshine Pools" });
+    // Sunshine's Check Printing ends; Maria's company must be unaffected.
+    const sunshine = await prisma.tenant.findFirstOrThrow({ where: { name: "Sunshine Pools" } });
+    await prisma.productSubscription.updateMany({ where: { tenantId: sunshine.id }, data: { status: "EXPIRED" } });
+
+    const res = await maria.me();
+
+    expect(res.body.data.tenants).toHaveLength(1);
+    expect(res.body.data.tenants[0].products).toHaveLength(2);
+  });
+
+  it("is only on /me: sign-in keeps its answer unchanged for the apps that read it", async () => {
+    await registerWithClockIn();
+
+    const res = await new AuthClient().login();
+
+    expect(res.body.data.tenants[0]).not.toHaveProperty("products");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // REFRESH (swapping the reservation slip)
 // ═══════════════════════════════════════════════════════════════
 describe("refresh", () => {

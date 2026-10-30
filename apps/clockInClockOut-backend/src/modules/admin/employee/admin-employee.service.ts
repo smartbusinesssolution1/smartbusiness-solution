@@ -1,13 +1,9 @@
-import crypto from "crypto";
 import { prisma } from "@smartbusiness/database";
-import { PasswordService } from "@smartbusiness/auth";
 import { AdminEmployeeRepository } from "./admin-employee.repository.js";
 import { NotFoundError, ValidationError, AppError, ForbiddenError } from "../../../shared/errors/index.js";
-import { emailService } from "../../../shared/services/email.service.js";
 import { memoryCache } from "../../../shared/services/cache.service.js";
 import { storageService } from "../../../shared/services/storage.service.js";
 import { emailQueue, isRedisAvailable } from "../../../shared/services/redis.service.js";
-import { renderWelcomeEmail } from "../../../shared/templates/welcome-email.template.js";
 import { logger } from "../../../shared/services/logger.js";
 import type {
   CreateEmployeeInput,
@@ -31,9 +27,38 @@ export const buildGeneralWeeklySchedule = (startTime = "09:00", endTime = "18:00
 ];
 
 export class AdminEmployeeService {
-  private passwordService = new PasswordService();
-
   constructor(private employeeRepo: AdminEmployeeRepository) { }
+
+  // Asks platform-api to email this person their way in, exactly as Check Printing does.
+  // A new person gets a one-time link to choose their own password (on Clock-In's
+  // /accept-invitation); someone who already has an account gets "you now have access".
+  // The job holds ids only: no password, no link token (the worker creates the token
+  // when it sends). Nobody is ever emailed a password.
+  // Returns false when the queue can't be reached: the employee exists, and the admin
+  // can send the invitation again (resendInvitation).
+  private async queueInvitation(userId: string, workspaceId: string, invitedById: string): Promise<boolean> {
+    if (!isRedisAvailable()) {
+      logger.warn({ userId, workspaceId }, "Job queue unavailable: invitation not sent; the admin can send it again");
+      return false;
+    }
+    try {
+      await emailQueue.add("workspace-invitation", { userId, workspaceId, invitedById, product: "clock-in-clock-out" });
+      logger.info({ userId, workspaceId }, "Employee invitation queued");
+      return true;
+    } catch (err) {
+      logger.warn({ err: (err as Error)?.message, userId, workspaceId }, "Could not queue the employee invitation; the admin can send it again");
+      return false;
+    }
+  }
+
+  // "Send invitation again": the email was lost, the link expired, or the employee was
+  // inactive when created (platform-api sends nothing to an inactive account).
+  async resendInvitation(employeeId: string, tenantId: string, invitedById: string): Promise<{ invitationQueued: boolean }> {
+    const employee = await this.employeeRepo.findEmployeeById(employeeId, tenantId);
+    if (!employee) throw new NotFoundError("Employee");
+    const { userId, workspaceId } = employee.workspaceMember;
+    return { invitationQueued: await this.queueInvitation(userId, workspaceId, invitedById) };
+  }
 
   /**
    * Helper to format an employee model instance into the client-facing DTO
@@ -256,6 +281,7 @@ export class AdminEmployeeService {
     avatarFile?: Express.Multer.File,
     callerRole?: string,
     workspaceId?: string,
+    callerUserId?: string,
   ) {
     const isOwner = (callerRole || "").toUpperCase() === "OWNER";
     if (input.role === "admin" && !isOwner) {
@@ -292,10 +318,8 @@ export class AdminEmployeeService {
     // 3. Determine employee code (user-provided or smart sequential e.g. EMP-GA004...)
     const employeeCode = await this.determineEmployeeCode(tenantId, workspaceId, input.employeeId);
 
-    // 4. Generate secure readable temporary password and hash it with PasswordService (Argon2id)
-    const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
-    const temporaryPassword = `GA${randomSuffix}!2026`;
-    const passwordHash = await this.passwordService.hash(temporaryPassword);
+    // 4. No password is made up here: a new employee chooses their own through the
+    //    invitation link (step 7). Until then the account has no password and can't sign in.
 
     // 5. Ensure weeklySchedule is populated as 7-day array
     if (input.shiftType === "general" || !input.weeklySchedule) {
@@ -314,63 +338,14 @@ export class AdminEmployeeService {
       input,
       employeeCode,
       biometricPhotoUrl,
-      passwordHash,
     });
 
-    // 7. Dispatch welcome onboarding email with login credentials
-    try {
-      const [tenant, ws] = await Promise.all([
-        prisma.tenant.findUnique({
-          where: { id: tenantId },
-          select: { name: true },
-        }),
-        prisma.workspace.findUnique({
-          where: { id: workspaceId },
-          select: { businessName: true },
-        }),
-      ]);
-
-      let queued = false;
-      if (isRedisAvailable()) {
-        try {
-          const loginUrl = process.env.PORTAL_LOGIN_URL || "http://localhost:5173/login";
-          const { subject, html, text } = renderWelcomeEmail({
-            to: input.email,
-            employeeName: input.name,
-            employeeCode,
-            temporaryPassword,
-            loginUrl,
-          });
-
-          await emailQueue.add("notification-email", {
-            to: input.email,
-            tag: "welcome-email",
-            subject,
-            html,
-            text,
-          });
-          queued = true;
-          logger.info({ to: input.email, employeeCode }, "Welcome credentials email queued to BullMQ");
-        } catch (queueErr) {
-          logger.warn({ err: queueErr }, "Failed to enqueue welcome email, falling back to direct send");
-        }
-      }
-
-      if (!queued) {
-        await emailService.sendEmployeeWelcomeEmail({
-          to: input.email,
-          employeeName: input.name,
-          employeeCode,
-          role: input.role,
-          temporaryPassword,
-          organizationName: tenant?.name,
-          workspaceName: ws?.businessName,
-        });
-      }
-    } catch (emailErr) {
-      // Non-blocking: Log warning if email fails, employee creation still succeeds
-      logger.warn({ err: emailErr }, "[AdminEmployeeService] Failed to dispatch welcome email");
-    }
+    // 7. Invitation: platform-api emails a one-time "choose your password" link (or, for
+    //    someone who already has an account, "you now have access"). Never a password.
+    const invitedUser = newEmployee.workspaceMember.user;
+    const invitationQueued = callerUserId
+      ? await this.queueInvitation(invitedUser.id, newEmployee.workspaceMember.workspaceId, callerUserId)
+      : false;
 
     // Invalidate cached attendance analytics for tenant
     memoryCache.invalidatePattern(`active_employees:${tenantId}`);
@@ -382,7 +357,8 @@ export class AdminEmployeeService {
     memoryCache.del(`cache:face:baseline:${newEmployee.id}`);
     memoryCache.delPattern(`cache:emp:${tenantId}:*`);
 
-    return this.formatEmployeeDto(newEmployee);
+    // invitationQueued false: the employee exists but no email went out; the admin can send it again.
+    return { ...this.formatEmployeeDto(newEmployee), invitationQueued };
   }
 
   /**

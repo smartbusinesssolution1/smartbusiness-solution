@@ -313,344 +313,35 @@ Download our mobile app on Google Play or App Store.
   };
 }
 
-/** Sent upon organization registration or employee creation with login credentials. */
-export function welcomeCredentialsEmail(input: {
-  to: string;
+// Sent once after a company signs up on the portal. Never contains a password: they chose
+// it and know it, and an email stays in inboxes, syncs to phones and gets forwarded. It only
+// confirms the account and links back to the app they signed up on.
+export function welcomeEmail(input: {
   name: string;
-  password: string;
-  loginUrl: string;
-  companyName?: string;
-  playStoreUrl?: string;
-  appStoreUrl?: string;
+  companyName: string;
+  email: string;
+  appUrl: string;
 }): EmailTemplate {
-  const {
-    to,
-    name,
-    password,
-    loginUrl,
-    companyName = "SmartBusiness",
-    playStoreUrl = "#",
-    appStoreUrl = "#",
-  } = input;
-  const safeLoginUrl = safeLink(loginUrl);
-
-  const subject = `Your Login Credentials - ${oneLine(companyName)}`;
-  const font = `'Segoe UI', Arial, Helvetica, sans-serif`;
-
-  const html = `
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" lang="en">
-<head>
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${escapeHtml(subject)}</title>
-  
-  <!--[if mso]>
-  <style type="text/css">
-    body, table, td, h1, p, a, div, span {
-      font-family: 'Segoe UI', Arial, sans-serif !important;
-    }
-  </style>
-  <![endif]-->
-
-  <style type="text/css">
-    body, table, td, h1, p, a, div, span {
-      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
-    }
-    body {
-      margin: 0 !important;
-      padding: 0 !important;
-      background-color: #ebf3fb !important;
-      -webkit-font-smoothing: antialiased !important;
-    }
-    table {
-      border-collapse: separate !important;
-    }
-    img {
-      border: 0 !important;
-      outline: none !important;
-      text-decoration: none !important;
-      -ms-interpolation-mode: bicubic;
-    }
-    @media only screen and (max-width: 620px) {
-      .card-wrap {
-        padding: 24px 16px !important;
-        border-radius: 18px !important;
-      }
-      .main-title {
-        font-size: 26px !important;
-      }
-      .logo-title {
-        font-size: 16px !important;
-      }
-      .logo-sub {
-        font-size: 13px !important;
-      }
-      .app-button {
-        display: block !important;
-        margin: 6px auto !important;
-      }
-    }
-  </style>
-</head>
-<body bgcolor="#ebf3fb" style="margin: 0; padding: 0; background-color: #ebf3fb; font-family: ${font}; -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%;">
-
-  <!-- Background Wrapper -->
-  <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#ebf3fb" style="width: 100%; background-color: #ebf3fb !important; margin: 0; padding: 36px 12px; font-family: ${font};">
-    <tr>
-      <td align="center" bgcolor="#ebf3fb" style="background-color: #ebf3fb !important; font-family: ${font};">
-        
-        <!-- Center Main White Card -->
-        <table width="640" class="card-wrap" border="0" cellspacing="0" cellpadding="0" bgcolor="#ffffff" style="max-width: 640px; width: 100%; background-color: #ffffff !important; border-radius: 26px; border: 1px solid #d2e4f7; box-shadow: 0 12px 40px rgba(37,99,235,0.08); overflow: hidden; margin: 0 auto; font-family: ${font};">
-          <tr>
-            <td bgcolor="#ffffff" style="padding: 38px 44px 44px 44px; background-color: #ffffff !important; font-family: ${font};">
-              
-              <!-- Header Row: Both Logos -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
-                <tr>
-                  <!-- Left: SmartBusiness Solutions -->
-                  <td align="left" valign="middle" style="font-family: ${font}; text-align: left;">
-                    <table border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
-                      <tr>
-                        <td valign="middle" style="width: 44px; font-family: ${font};">
-                          <img src="cid:smart-logo@smartbusiness.com" width="44" height="44" border="0" alt="" style="display: block; border-radius: 10px; border: 0; width: 44px; height: 44px;" />
-                        </td>
-                        <td valign="middle" style="padding-left: 10px; font-family: ${font}; text-align: left;">
-                          <div class="logo-title" style="font-family: ${font}; font-size: 18px; font-weight: 800; color: #000000; line-height: 1.15; letter-spacing: -0.3px;">SmartBusiness</div>
-                          <div class="logo-sub" style="font-family: ${font}; font-size: 15px; font-weight: 700; color: #4338ca; line-height: 1.15;">Solutions</div>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-
-                  <!-- Right: Clock In Clock Out -->
-                  <td align="right" valign="middle" style="font-family: ${font}; text-align: right;">
-                    <table border="0" cellspacing="0" cellpadding="0" style="margin-left: auto; font-family: ${font};">
-                      <tr>
-                        <td valign="middle" style="width: 44px; font-family: ${font};">
-                          <img src="cid:clockin-logo@smartbusiness.com" width="44" height="44" border="0" alt="" style="display: block; border-radius: 10px; border: 0; width: 44px; height: 44px;" />
-                        </td>
-                        <td valign="middle" style="padding-left: 10px; font-family: ${font}; text-align: left;">
-                          <div class="logo-title" style="font-family: ${font}; font-size: 18px; font-weight: 800; color: #000000; line-height: 1.15; letter-spacing: -0.3px;">Clock In</div>
-                          <div class="logo-sub" style="font-family: ${font}; font-size: 15px; font-weight: 700; color: #6366f1; line-height: 1.15;">Clock Out</div>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Main Title & Subtitle -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-top: 42px; font-family: ${font};">
-                <tr>
-                  <td align="center" style="font-family: ${font}; text-align: center;">
-                    <h1 class="main-title" style="margin: 0; font-family: ${font}; font-size: 34px; font-weight: 800; color: #000000; letter-spacing: -0.8px; line-height: 1.2;">
-                      Your Login <span style="color: #0066ff;">Credentials</span>
-                    </h1>
-                    <p style="margin: 12px auto 34px auto; font-family: ${font}; font-size: 14px; color: #556476; line-height: 1.6; max-width: 480px; font-weight: 400;">
-                      Welcome <strong>${escapeHtml(name)}</strong>! Your account and organization <strong>${escapeHtml(companyName)}</strong> have been successfully set up. Please find your administrator login credentials below.
-                    </p>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Primary Action Button -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 24px; font-family: ${font};">
-                <tr>
-                  <td align="center" style="font-family: ${font}; text-align: center;">
-                    <a href="${safeLoginUrl}" target="_blank" style="display: inline-block; background-color: #0066ff; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 700; padding: 14px 34px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0, 102, 255, 0.35);">
-                      Sign In to Console
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Credential Input Cards (Light Blue Pill Boxes) -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
-                
-                <!-- Row 1: Username / Email -->
-                <tr>
-                  <td style="padding-bottom: 12px; font-family: ${font};">
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#edf5fd" style="background-color: #edf5fd !important; border-radius: 12px; border: 1px solid #d9eaf9; padding: 12px 18px; font-family: ${font};">
-                      <tr>
-                        <td width="34" valign="middle" bgcolor="#edf5fd" style="width: 34px; background-color: #edf5fd !important; font-family: ${font};">
-                          <img src="cid:user-icon@smartbusiness.com" width="34" height="34" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 34px; height: 34px;" />
-                        </td>
-                        <td width="120" valign="middle" bgcolor="#edf5fd" style="width: 120px; background-color: #edf5fd !important; padding-left: 14px; font-family: ${font}; font-size: 14px; font-weight: 700; color: #0f172a;">
-                          Username
-                        </td>
-                        <td valign="middle" bgcolor="#edf5fd" style="background-color: #edf5fd !important; font-family: ${font}; font-size: 14px; color: #0f172a; font-weight: 600;">
-                          ${escapeHtml(to)}
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- Row 2: Password -->
-                <tr>
-                  <td style="padding-bottom: 12px; font-family: ${font};">
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#edf5fd" style="background-color: #edf5fd !important; border-radius: 12px; border: 1px solid #d9eaf9; padding: 12px 18px; font-family: ${font};">
-                      <tr>
-                        <td width="34" valign="middle" bgcolor="#edf5fd" style="width: 34px; background-color: #edf5fd !important; font-family: ${font};">
-                          <img src="cid:lock-icon@smartbusiness.com" width="34" height="34" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 34px; height: 34px;" />
-                        </td>
-                        <td width="120" valign="middle" bgcolor="#edf5fd" style="width: 120px; background-color: #edf5fd !important; padding-left: 14px; font-family: ${font}; font-size: 14px; font-weight: 700; color: #0f172a;">
-                          Password
-                        </td>
-                        <td valign="middle" bgcolor="#edf5fd" style="background-color: #edf5fd !important; font-family: ${font}; font-size: 14px; color: #0f172a; font-weight: 700; letter-spacing: 0.5px;">
-                          ${escapeHtml(password)}
-                        </td>
-                        <td width="26" align="right" valign="middle" bgcolor="#edf5fd" style="width: 26px; background-color: #edf5fd !important; font-family: ${font}; text-align: right;">
-                          <img src="cid:eye-icon@smartbusiness.com" width="18" height="18" border="0" alt="" style="display: block; opacity: 0.6; border: 0; width: 18px; height: 18px;" />
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- Row 3: Login URL -->
-                <tr>
-                  <td style="padding-bottom: 34px; font-family: ${font};">
-                    <table width="100%" border="0" cellspacing="0" cellpadding="0" bgcolor="#edf5fd" style="background-color: #edf5fd !important; border-radius: 12px; border: 1px solid #d9eaf9; padding: 12px 18px; font-family: ${font};">
-                      <tr>
-                        <td width="34" valign="middle" bgcolor="#edf5fd" style="width: 34px; background-color: #edf5fd !important; font-family: ${font};">
-                          <img src="cid:link-icon@smartbusiness.com" width="34" height="34" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 34px; height: 34px;" />
-                        </td>
-                        <td width="120" valign="middle" bgcolor="#edf5fd" style="width: 120px; background-color: #edf5fd !important; padding-left: 14px; font-family: ${font}; font-size: 14px; font-weight: 700; color: #0f172a;">
-                          Login URL
-                        </td>
-                        <td valign="middle" bgcolor="#edf5fd" style="background-color: #edf5fd !important; font-family: ${font};">
-                          <a href="${safeLoginUrl}" target="_blank" style="font-family: ${font}; font-size: 14px; color: #0066ff; text-decoration: none; font-weight: 600; word-break: break-all;">
-                            ${safeLoginUrl}
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-
-              <!-- Download Mobile App Section -->
-              <table width="100%" border="0" cellspacing="0" cellpadding="0" style="font-family: ${font};">
-                <tr>
-                  <td align="center" style="padding-bottom: 14px; font-family: ${font}; text-align: center;">
-                    <div style="font-family: ${font}; font-size: 11px; font-weight: 800; color: #556476; letter-spacing: 0.8px; text-transform: uppercase;">
-                      DOWNLOAD THESE MOBILE APP
-                    </div>
-                  </td>
-                </tr>
-                <tr>
-                  <td align="center" style="font-family: ${font}; text-align: center;">
-                    <table border="0" cellspacing="0" cellpadding="0" align="center" style="margin: 0 auto; font-family: ${font};">
-                      <tr>
-                        <td style="padding: 0 6px;">
-                          <a href="${playStoreUrl}" class="app-button" style="text-decoration: none; display: inline-block;">
-                            <img src="cid:google-play@smartbusiness.com" width="148" height="44" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 148px; height: 44px;" />
-                          </a>
-                        </td>
-                        <td style="padding: 0 6px;">
-                          <a href="${appStoreUrl}" class="app-button" style="text-decoration: none; display: inline-block;">
-                            <img src="cid:app-store@smartbusiness.com" width="148" height="44" border="0" alt="" style="display: block; border-radius: 8px; border: 0; width: 148px; height: 44px;" />
-                          </a>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-              </table>
-
-            </td>
-          </tr>
-        </table>
-
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `.trim();
-
-  const text = `
-Your Login Credentials - ${companyName}
-
-Hi ${name},
-
-Your account and organization "${companyName}" have been successfully set up. Here are your administrator sign-in credentials:
-
-Username: ${to}
-Password: ${password}
-Login URL: ${loginUrl}
-
-Sign in to your console:
-${loginUrl}
-  `.trim();
-
-  const attachments = [
-    {
-      filename: "smart-logo.png",
-      content: emailAssets.smartLogo,
-      cid: "smart-logo@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "clockin-logo.png",
-      content: emailAssets.clockinLogo,
-      cid: "clockin-logo@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "user-icon.png",
-      content: emailAssets.userIcon,
-      cid: "user-icon@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "lock-icon.png",
-      content: emailAssets.lockIcon,
-      cid: "lock-icon@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "link-icon.png",
-      content: emailAssets.linkIcon,
-      cid: "link-icon@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "eye-icon.png",
-      content: emailAssets.eyeIcon,
-      cid: "eye-icon@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "google-play.png",
-      content: emailAssets.googlePlay,
-      cid: "google-play@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-    {
-      filename: "app-store.png",
-      content: emailAssets.appStore,
-      cid: "app-store@smartbusiness.com",
-      contentType: "image/png",
-      contentDisposition: "inline" as const,
-    },
-  ];
-
+  const href = safeLink(input.appUrl);
   return {
-    tag: "welcome-credentials",
-    subject,
-    html,
-    text,
-    attachments,
+    tag: "welcome",
+    subject: oneLine(`Welcome to ${PRODUCT}, ${input.companyName}`),
+    html: layout(
+      `Welcome to ${PRODUCT}`,
+      [
+        `Hi ${escapeHtml(input.name)},`,
+        `Your ${PRODUCT} account for <strong>${escapeHtml(input.companyName)}</strong> is ready.`,
+        `Sign in with this email address (${escapeHtml(input.email)}) and the password you chose. One account opens every ${PRODUCT} product your company uses.`,
+        `If you didn't create this account, you can ignore this email.`,
+      ],
+      { label: `Open ${PRODUCT}`, href },
+    ),
+    text:
+      `Hi ${input.name},\n\n` +
+      `Your ${PRODUCT} account for ${input.companyName} is ready.\n\n` +
+      `Sign in with this email address (${input.email}) and the password you chose. One account opens every ${PRODUCT} product your company uses:\n\n` +
+      `${input.appUrl}\n\n` +
+      `If you didn't create this account, you can ignore this email.\n`,
   };
 }
 
@@ -738,7 +429,7 @@ export function addedToWorkspaceEmail(input: {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Check approvals Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Check approvals ───────────────────────────────────────
 // The check is named by number, amount and payee so it can be recognised from the inbox.
 // Never a bank or account number, and the link only opens the check: it does not sign in.
 

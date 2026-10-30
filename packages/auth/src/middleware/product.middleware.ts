@@ -12,6 +12,8 @@ interface CachedProductSubscription {
 
 export const productSubscriptionCache = new SimpleCache<CachedProductSubscription>(60);
 
+export const PRODUCT_NOT_AVAILABLE = "PRODUCT_NOT_AVAILABLE";
+
 export function requireProduct(productSlug: string) {
   return async function productMiddleware(
     req: Request,

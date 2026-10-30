@@ -30,8 +30,34 @@ export interface TenantInfo {
   status: string;
 }
 
+// A product the company can open right now: the same rule the products' own APIs apply at
+// their door (requireProduct in @smartbusiness/auth), so the portal never offers a product
+// that would then refuse the user.
+export interface TenantProduct {
+  slug: string;
+  name: string;
+  status: string;
+  trialEndsAt: Date | null;
+}
+
+export interface TenantInfoWithProducts extends TenantInfo {
+  products: TenantProduct[];
+}
+
+export const PRODUCT_ACCESS_STATUSES = ["ACTIVE", "TRIALING"] as const;
+
 export interface UserWithTenants extends User {
   tenantMembers: (TenantMember & { tenant: Tenant })[];
+}
+
+type SubscriptionWithProduct = {
+  status: string;
+  trialEndsAt: Date | null;
+  product: { slug: string; name: string };
+};
+
+export interface UserWithTenantProducts extends User {
+  tenantMembers: (TenantMember & { tenant: Tenant & { subscriptions: SubscriptionWithProduct[] } })[];
 }
 
 export interface SessionWithUser extends Session {
@@ -251,6 +277,30 @@ export class AuthRepository {
         },
       },
     }) as Promise<UserWithTenants | null>;
+  }
+
+  // The same user and companies, plus the products each company can open (for /me only:
+  // sign-in and refresh don't need them and stay one query lighter).
+  async findUserWithTenantProducts(userId: string): Promise<UserWithTenantProducts | null> {
+    return prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      include: {
+        tenantMembers: {
+          where: { deletedAt: null },
+          include: {
+            tenant: {
+              include: {
+                subscriptions: {
+                  where: { status: { in: [...PRODUCT_ACCESS_STATUSES] }, product: { isActive: true } },
+                  select: { status: true, trialEndsAt: true, product: { select: { slug: true, name: true } } },
+                  orderBy: { product: { name: "asc" } },
+                },
+              },
+            },
+          },
+        },
+      },
+    }) as Promise<UserWithTenantProducts | null>;
   }
 
   // ─── Session Operations ─────────────────────────────────────────
