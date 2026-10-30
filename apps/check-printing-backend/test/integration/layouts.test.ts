@@ -145,7 +145,9 @@ describe("changing the layout means different paper, so verification starts over
     expect((await profilesApi().verify(id, middle)).body.data.passed).toBe(false);
   });
 
-  it.each(["CHECK_BOTTOM", "THREE_PER_PAGE"])("prints a %s verification sample", async (layout) => {
+  // The sample has a MICR line, so it needs the font (not in git; CI has it only when the
+  // MICR_FONT_BASE64 secret is set). Without it the server rightly refuses to print.
+  it.skipIf(!hasFont).each(["CHECK_BOTTOM", "THREE_PER_PAGE"])("prints a %s verification sample", async (layout) => {
     const id = await newProfile(layout);
     const res = await profilesApi().verificationPage(id);
     expect(res.status).toBe(200);
