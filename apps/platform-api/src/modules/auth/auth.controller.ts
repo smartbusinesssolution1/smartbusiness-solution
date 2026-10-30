@@ -208,12 +208,12 @@ export class AuthController {
     try {
       await this.emailQueue.add("password-reset", { email, ipAddress: req.ip, appUrl: clientAppUrl });
     } catch (err) {
-      logger.warn({ err: (err as any)?.message }, "Could not queue password reset to Redis, running directly as fallback");
-      try {
-        await this.authService.processPasswordResetJob(email, { isRetry: false, ipAddress: req.ip, appUrl: clientAppUrl });
-      } catch (fallbackErr) {
-        logger.error({ err: fallbackErr }, "Direct password reset processing also failed");
-      }
+      // No fallback that does the work inside the request: looking the account up and
+      // sending the email takes longer for an account that exists, so the response time
+      // would tell anyone which emails have accounts. This answer is the same for every
+      // email, so it reveals nothing. The email is not logged.
+      logger.error({ err: (err as Error)?.message }, "Could not queue a password reset");
+      throw new AppError("We couldn't start the reset right now. Try again in a moment.", 503, "SERVICE_UNAVAILABLE");
     }
 
     sendSuccess(

@@ -52,6 +52,7 @@ export function passwordResetEmail(input: {
   appStoreUrl?: string;
 }): EmailTemplate {
   const {
+    name,
     resetUrl,
     expiresInMinutes = 15,
     playStoreUrl = "#",
@@ -173,6 +174,7 @@ export function passwordResetEmail(input: {
                       Reset Your <span style="color: #0066ff;">Password</span>
                     </h1>
                     <p style="margin: 12px auto 34px auto; font-family: ${font}; font-size: 14px; color: #556476; line-height: 1.6; max-width: 480px; font-weight: 400;">
+                      Hi ${escapeHtml(name)},<br />
                       We received a request to reset your password. Please find your secure reset link below to choose a new password for your account. This link will expire in ${expiresInMinutes} minutes.
                     </p>
                   </td>
@@ -253,8 +255,10 @@ export function passwordResetEmail(input: {
 </html>
   `.trim();
 
+  // The subject already says "Reset Your Password - SmartBusiness"; the body opens with
+  // the person's name, so they can tell it was sent to them and not copied from elsewhere.
   const text = `
-Reset Your Password - SmartBusiness
+Hi ${name},
 
 We received a request to reset your password. Please find your secure reset link below to choose a new password for your account:
 
