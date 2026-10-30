@@ -1,6 +1,8 @@
 import React, { Suspense, lazy } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { notify } from '../context/NotificationContext';
+import { authService } from '../services/authService';
 import BrandLoader from '../components/BrandLoader';
 
 // Layout
@@ -68,6 +70,8 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   if (!isAdmin) {
+    notify('Access Restricted: Employees must use the SmartBusiness Mobile App.', 'error');
+    authService.logout().catch(() => {});
     return <Navigate to="/login" replace />;
   }
 

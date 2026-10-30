@@ -298,6 +298,19 @@ export const authService = {
         // Silently use account credentials
       }
 
+      const empRole = (employeeProfile?.role || '').toLowerCase();
+      if (empRole === 'employee') {
+        await platformAuthApi.post('/api/v1/auth/logout').catch(() => {});
+        markSignedOut();
+        localStorage.removeItem(ACTIVE_TENANT_STORAGE_KEY);
+        localStorage.removeItem(ACTIVE_WORKSPACE_STORAGE_KEY);
+        localStorage.removeItem(CURRENT_TENANT_STORAGE_KEY);
+        localStorage.removeItem(WORKSPACES_STORAGE_KEY);
+        throw new Error(
+          'Access Restricted: The Clock-In Web Console is exclusively for Administrators and Managers. Employees must use the SmartBusiness Mobile App to clock in and out.'
+        );
+      }
+
       const user: User = {
         id: authUser.id,
         employeeId: employeeProfile?.employeeCode || '',

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useAuthStore } from '../../store/authStore';
 import { platformAuthApi } from '../../services/apiClient';
 import { authService } from '../../services/authService';
+import { notify } from '../../context/NotificationContext';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -88,6 +89,7 @@ export const LoginPage: React.FC = () => {
         setIsMemberBlocked(true);
       }
       setError(msg);
+      notify(msg, 'error');
     } finally {
       setIsSubmitting(false);
     }
