@@ -4,8 +4,9 @@ import { cn } from "@/lib/utils";
 export const PRODUCT_NAME = "SmartBusiness Checks";
 
 // The Check Printing mark: an outlined printer with a tick (Lucide "printer-check", ISC)
-// in primary-600 on a pale blue tile. The same drawing is public/favicon.svg; platform-web's
-// CheckPrintingLogo draws it white on dark blue. Change them together.
+// in primary-600 on a pale blue tile. platform-web's CheckPrintingLogo draws it white on
+// the button blue, and public/favicon.svg is a copy of that one (it stands out in a browser
+// tab). Change them together.
 export function BrandMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 64 64" className={cn("size-8", className)} aria-hidden="true">
