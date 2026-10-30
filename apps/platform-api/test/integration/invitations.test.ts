@@ -226,5 +226,6 @@ describe("accepting an invitation", () => {
 it("the invitation links are only ever sent to the invited address", async () => {
   await sendInvitation();
   await waitForEmail(INVITEE, "invitation");
-  expect(outbox.sent.map((e) => e.to)).toEqual([INVITEE]);
+  // Only invitation emails: the owner's own welcome email (from signing up) may be there too.
+  expect(outbox.sent.filter((e) => e.tag === "invitation").map((e) => e.to)).toEqual([INVITEE]);
 });

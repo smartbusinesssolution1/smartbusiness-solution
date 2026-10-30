@@ -29,6 +29,11 @@ export interface EmailJobs {
   // link replaces older ones); otherwise a "you now have access" email. Checked again at
   // send time, so a cancelled invitation sends nothing.
   "workspace-invitation": { userId: string; workspaceId: string; invitedById: string };
+  // A company signed up (on the portal). The worker looks the owner up when it runs and
+  // sends the welcome email: no password, ever (they chose it and know it), only a link
+  // back to the app they signed up on. appUrl is one of our own addresses (checked when
+  // the job is added); without it, the configured APP_URL.
+  "welcome-email": { userId: string; appUrl?: string };
   // A finished email from a product (Check Printing's approval notices): the product
   // knows its own data and builds the email; the worker only sends it. It holds the
   // recipient and the text of a notice, never a link token or other secret.

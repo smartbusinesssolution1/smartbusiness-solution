@@ -23,6 +23,7 @@ export function startEmailWorker(): { worker: Worker; close: () => Promise<void>
           appUrl: data.appUrl,
         }),
       "workspace-invitation": (data) => authService.processWorkspaceInvitationJob(data),
+      "welcome-email": (data) => authService.processWelcomeEmailJob(data),
       // Already built by the product; checked by the sender (one address, one-line subject).
       // An unsafe message can never become safe on a retry, so it fails for good at once.
       "notification-email": async (data) => {

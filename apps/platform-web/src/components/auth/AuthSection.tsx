@@ -170,12 +170,13 @@ export const AuthSection: React.FC<AuthSectionProps> = ({ initialMode = 'signin'
                   </button>
                 </div>
 
-                <div className="relative flex items-center justify-center">
-                  <div className="border-t border-slate-200 w-full"></div>
-                  <span className="bg-white px-3 text-xs text-slate-400 font-medium uppercase tracking-wider relative">
-                    Or with work email
-                  </span>
-                </div>
+                <div className="flex items-center my-3">
+              <div className="flex-1 border-t border-slate-200"></div>
+              <span className="shrink-0 px-3 text-xs text-slate-400 font-medium uppercase tracking-wider">
+                Or with work email
+              </span>
+              <div className="flex-1 border-t border-slate-200"></div>
+            </div>
               </>
             )}
 

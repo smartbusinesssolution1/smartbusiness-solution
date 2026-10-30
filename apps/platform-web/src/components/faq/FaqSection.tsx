@@ -47,17 +47,19 @@ export const FaqSection: React.FC<FaqSectionProps> = ({ onOpenChat }) => {
           </p>
 
           {/* Search Bar */}
-          <div className="pt-4 max-w-xl mx-auto relative">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <Search className="w-5 h-5" />
+           <div className="pt-4 max-w-xl mx-auto">
+            <div className="relative flex items-center">
+              <div className="absolute left-3.5 flex items-center justify-center pointer-events-none text-slate-400">
+                <Search className="w-5 h-5" />
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search questions by topic or keyword (e.g. trial, SOC2, webhook)..."
+                className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs transition-all flex items-center"
+              />
             </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search questions by topic or keyword (e.g. trial, SOC2, webhook)..."
-              className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 shadow-xs transition-all"
-            />
           </div>
 
           {/* Category Filter Tabs */}

@@ -15,6 +15,11 @@ beforeEach(async () => {
   await resetDatabase();
   await seedProducts();
   await new AuthClient().register();
+  // Signing up queues a welcome email. Let it go out first, so each test starts with an
+  // empty queue and counts (or makes fail) only its own jobs.
+  await waitForEmail(EMAIL, "welcome");
+  await waitForQueueIdle();
+  await emailQueue.raw.obliterate({ force: true });
   outbox.clear();
 });
 

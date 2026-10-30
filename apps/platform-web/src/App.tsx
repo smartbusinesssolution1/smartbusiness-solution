@@ -19,6 +19,7 @@ import { FloatingChatWidget } from './components/chat/FloatingChatWidget';
 import { ToastProvider, useToast } from './components/ui/Toast';
 import { LogOut, UserCheck } from 'lucide-react';
 import { fetchSession, logout, type PortalSession } from './lib/auth';
+import { SolutionDetailView } from './components/solutions/SolutionDetailView';
 
 function AppContent() {
   const [currentRoute, setCurrentRoute] = useState<PageRoute>('home');
@@ -45,6 +46,17 @@ function AppContent() {
       setCurrentRoute('signin');
     }
   }, []);
+
+
+   const handleStartTrial = () => {
+    if (currentUser) {
+      showToast(`Logged in as ${currentUser}. Accessing check dashboard...`, 'success');
+      return;
+    }
+    setCurrentRoute('signin');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast('Log in or sign up to start check automation', 'info');
+  };
 
   const goTo = (route: PageRoute) => {
     setCurrentRoute(route);
@@ -105,17 +117,26 @@ function AppContent() {
   };
 
   const handleExploreService = (serviceName: string) => {
-    if (currentRoute !== 'home') {
-      setCurrentRoute('home');
-      setTimeout(() => {
+    if (serviceName === 'check-printing') {
+      setCurrentRoute('check-printing');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast('Viewing Check Printing Solutions', 'info');
+    } else if (serviceName === 'clock-in-clock-out' || serviceName === 'clock-in-out') {
+      setCurrentRoute('clock-in-clock-out');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      showToast('Viewing Clock In Clock Out Solutions', 'info');
+    } else {
+      if (currentRoute !== 'home') {
+        setCurrentRoute('home');
+        setTimeout(() => {
+          const servicesEl = document.getElementById('services-section');
+          servicesEl?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else {
         const servicesEl = document.getElementById('services-section');
         servicesEl?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    } else {
-      const servicesEl = document.getElementById('services-section');
-      servicesEl?.scrollIntoView({ behavior: 'smooth' });
+      }
     }
-    showToast(`Viewing ${serviceName === 'check-printing' ? 'Check Printing' : 'Clock In Clock Out'} details`, 'info');
   };
 
   return (
@@ -175,6 +196,23 @@ function AppContent() {
             <ContactSection />
           </div>
         )}
+
+          {/* 1 Reusable Component working as two different pages */}
+        {(currentRoute === 'check-printing' || currentRoute === 'clock-in-clock-out') && (
+          <SolutionDetailView
+            solutionType={currentRoute}
+            onStartTrial={handleStartTrial}
+            onNavigateHome={() => {
+              setCurrentRoute('home');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onSwitchSolution={(type) => {
+              setCurrentRoute(type);
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          />
+        )}
+
 
         {currentRoute === 'services' && (
           <div className="pt-8 pb-16">

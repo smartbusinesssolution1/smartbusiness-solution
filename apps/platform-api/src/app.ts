@@ -2,7 +2,6 @@ import express, { type Express, type Request, type Response } from "express";
 import corsMiddleware from "cors";
 import helmet from "helmet";
 import cookieParser from "cookie-parser";
-import { cors as corsConfig, server } from "./config/index.js";
 import { globalRateLimiter } from "./middleware/rate-limiter.js";
 import { requestLoggerMiddleware } from "./middleware/request-logger.js";
 import { requestIdMiddleware } from "./middleware/request-id.js";
@@ -13,31 +12,10 @@ import { createOriginGuard } from "@smartbusiness/auth";
 import apiRouter from "./routes/index.js";
 import { producerConnection } from "./jobs/queues.js";
 
-// This machine, or a private (RFC 1918) address on the local network: 10.0.0.0/8,
-// 172.16.0.0/12 and 192.168.0.0/16. Only 172.16–172.31 is private; the rest of 172.* is
-// the public internet.
-export function isLocalNetworkOrigin(origin: string): boolean {
-  let hostname: string;
-  try {
-    hostname = new URL(origin).hostname;
-  } catch {
-    return false;
-  }
-  if (hostname === "localhost" || hostname === "127.0.0.1") return true;
-  const octets = hostname.split(".");
-  if (octets.length !== 4 || !octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255)) return false;
-  const [a, b] = octets.map(Number) as [number, number, number, number];
-  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-}
-
-// The websites allowed to call this API from a browser: CORS lets them read our answers,
-// and the origin guard lets only them make changes.
-export function isAllowedOrigin(origin: string): boolean {
-  if ((corsConfig.origin as readonly string[]).includes(origin)) return true;
-  // Phones and other computers testing against a developer's machine. Development
-  // only: staging and tests are as strict as production.
-  return server.isDev && isLocalNetworkOrigin(origin);
-}
+// Which websites count as ours (CORS, the origin guard, links in emails): one rule, kept in
+// shared/utils so the auth module can use it without importing the app.
+import { isAllowedOrigin } from "./shared/utils/allowed-origin.js";
+export { isAllowedOrigin, isLocalNetworkOrigin } from "./shared/utils/allowed-origin.js";
 
 // The mobile app announces itself with this header. A forged request can't carry it: a
 // form can't set headers, and a script on another site can't send one without a preflight,

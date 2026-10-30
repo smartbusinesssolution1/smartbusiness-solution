@@ -1,4 +1,6 @@
-export type PageRoute = 'home' | 'services' | 'pricing' | 'faq' | 'contact' | 'signin' | 'account';
+export type PageRoute = 'home' | 'services' | 'pricing' | 'faq' | 'contact' | 'signin' | 'account' | 'check-printing' | 'clock-in-clock-out';;
+
+export type SolutionType = 'check-printing' | 'clock-in-clock-out';
 
 export interface PricingPlan {
   id: string;

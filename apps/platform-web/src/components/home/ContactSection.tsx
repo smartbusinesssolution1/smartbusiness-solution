@@ -31,7 +31,7 @@ export const ContactSection: React.FC = () => {
   };
 
   return (
-    <section id="contact-section" className="py-16 sm:py-24 bg-white">
+     <section id="contact-section" className="py-16 sm:py-24 bg-white">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Section Header */}
@@ -48,19 +48,19 @@ export const ContactSection: React.FC = () => {
         </div>
 
         {/* 2-Column Container */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
           
           {/* Left Column: Image & Official Email Card (5 cols) */}
-          <div className="lg:col-span-5 flex flex-col space-y-4">
+          <div className="lg:col-span-5 flex flex-col justify-between gap-4 h-full">
             
             {/* Consultant Image with badge overlay */}
-            <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 bg-slate-100 h-80 sm:h-96">
+            <div className="relative rounded-2xl overflow-hidden shadow-xs border border-slate-100 bg-slate-100 flex-1 min-h-[300px] sm:min-h-[360px]">
               <img
                 src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=800&q=80"
                 alt="Checks Concierge Consultant"
-                className="w-full h-full object-cover object-top"
+                className="w-full h-full object-cover object-top absolute inset-0"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent pointer-events-none" />
 
               {/* Bottom pill badge overlay */}
               <div className="absolute bottom-4 left-4 right-4">
@@ -74,7 +74,7 @@ export const ContactSection: React.FC = () => {
             </div>
 
             {/* Official Email White Card */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 flex items-center gap-4 shadow-xs">
+            <div className="bg-white rounded-2xl border border-slate-200/80 p-5 flex items-center gap-4 shadow-xs shrink-0">
               <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                 <Mail className="w-5 h-5" />
               </div>
@@ -94,7 +94,7 @@ export const ContactSection: React.FC = () => {
           </div>
 
           {/* Right Column: Contact Form (7 cols) */}
-          <div className="lg:col-span-7 bg-slate-50/70 border border-slate-100/90 rounded-3xl p-6 sm:p-10 shadow-xs">
+          <div className="lg:col-span-7 bg-slate-50/70 border border-slate-100/90 rounded-3xl p-6 sm:p-10 shadow-xs flex flex-col justify-between h-full">
             <h3 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2">
               Send a message
             </h3>
