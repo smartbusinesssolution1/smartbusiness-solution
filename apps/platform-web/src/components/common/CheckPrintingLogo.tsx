@@ -3,8 +3,8 @@ import React from 'react';
 // The Check Printing product mark on the portal: an outlined printer with a tick (Lucide
 // "printer-check", ISC) in white on Check Printing's button blue (#2156e8, primary-600 in
 // apps/check-printing-frontend/src/index.css). Used wherever the portal shows Check
-// Printing as a product, and as the portal's favicon (public/check-printing-favicon.svg);
-// the SmartBusiness company logo (SmartBusinessLogo) stays in the header and footer. Check
+// Printing as a product; the SmartBusiness company logo (SmartBusinessLogo, and smart.png as
+// the favicon) stays the portal's own brand. Check
 // Printing itself draws the same mark in blue on a pale tile (BrandMark): change them
 // together.
 export const CHECK_PRINTING_BLUE = '#2156e8';
