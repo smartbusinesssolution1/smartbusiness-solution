@@ -11,7 +11,11 @@ export class AdminEmployeeRepository {
    * Uses a single high-performance SQL query with COUNT(*) OVER() to eliminate multiple
    * round-trips over remote database connections (reducing query latency from ~2.5s down to ~240ms).
    */
-  async listEmployees(tenantId: string, query: EmployeeListQueryInput, callerUserId?: string) {
+  async listEmployees(
+    tenantId: string,
+    query: EmployeeListQueryInput,
+    callerUserId?: string,
+  ) {
     const conditions: Prisma.Sql[] = [
       Prisma.sql`e.deleted_at IS NULL`,
       Prisma.sql`wm.deleted_at IS NULL`,
@@ -36,8 +40,14 @@ export class AdminEmployeeRepository {
       conditions.push(Prisma.sql`e.role = ${query.role}`);
     }
 
-    if (query.department && query.department !== "all" && query.department.trim()) {
-      conditions.push(Prisma.sql`LOWER(e.department) = LOWER(${query.department.trim()})`);
+    if (
+      query.department &&
+      query.department !== "all" &&
+      query.department.trim()
+    ) {
+      conditions.push(
+        Prisma.sql`LOWER(e.department) = LOWER(${query.department.trim()})`,
+      );
     }
 
     if (query.search && query.search.trim()) {
@@ -49,7 +59,7 @@ export class AdminEmployeeRepository {
           e.department ILIKE ${term} OR
           u.full_name ILIKE ${term} OR
           u.email ILIKE ${term}
-        )`
+        )`,
       );
     }
 
@@ -156,7 +166,10 @@ export class AdminEmployeeRepository {
   /**
    * Get all active employeeCodes in tenant/workspace to determine next sequential ID
    */
-  async getExistingEmployeeCodes(tenantId: string, workspaceId?: string): Promise<string[]> {
+  async getExistingEmployeeCodes(
+    tenantId: string,
+    workspaceId?: string,
+  ): Promise<string[]> {
     const records = await prisma.attendanceEmployeeDetails.findMany({
       where: {
         deletedAt: null,
@@ -286,7 +299,8 @@ export class AdminEmployeeRepository {
     employeeCode: string;
     biometricPhotoUrl: string;
   }) {
-    const { tenantId, workspaceId, input, employeeCode, biometricPhotoUrl } = params;
+    const { tenantId, workspaceId, input, employeeCode, biometricPhotoUrl } =
+      params;
 
     return prisma.$transaction(async (tx) => {
       // 1. Find or create user
@@ -295,18 +309,17 @@ export class AdminEmployeeRepository {
       });
 
       if (user) {
-        const existingWorkspaceMember =
-          await tx.workspaceMember.findUnique({
-            where: {
-              workspaceId_userId: {
-                workspaceId,
-                userId: user.id,
-              },
+        const existingWorkspaceMember = await tx.workspaceMember.findUnique({
+          where: {
+            workspaceId_userId: {
+              workspaceId,
+              userId: user.id,
             },
-          });
+          },
+        });
         if (existingWorkspaceMember) {
           throw new Error(
-            "An employee with this email already exists in this workspace."
+            "An employee with this email already exists in this workspace.",
           );
         }
 
@@ -447,7 +460,9 @@ export class AdminEmployeeRepository {
           data: {
             ...(input.name ? { fullName: input.name } : {}),
             ...(input.email ? { email: input.email } : {}),
-            ...(input.status !== undefined ? { isActive: input.status === "active" } : {}),
+            ...(input.status !== undefined
+              ? { isActive: input.status === "active" }
+              : {}),
           },
         });
       }
@@ -469,16 +484,20 @@ export class AdminEmployeeRepository {
 
       // Update AttendanceEmployeeDetails
       const updateData: Prisma.AttendanceEmployeeDetailsUpdateInput = {};
-      if (input.employeeId !== undefined) updateData.employeeCode = input.employeeId;
-      if (input.designation !== undefined) updateData.designation = input.designation;
-      if (input.department !== undefined) updateData.department = input.department;
+      if (input.employeeId !== undefined)
+        updateData.employeeCode = input.employeeId;
+      if (input.designation !== undefined)
+        updateData.designation = input.designation;
+      if (input.department !== undefined)
+        updateData.department = input.department;
       if (input.phone !== undefined) updateData.phone = input.phone;
       if (input.role !== undefined) updateData.role = input.role;
       if (input.shiftType !== undefined) updateData.shiftType = input.shiftType;
       if (input.weeklySchedule !== undefined) {
         updateData.weeklySchedule = input.weeklySchedule ?? Prisma.JsonNull;
       }
-      if (input.status !== undefined) updateData.isActive = input.status === "active";
+      if (input.status !== undefined)
+        updateData.isActive = input.status === "active";
       if (newAvatarUrl) updateData.biometricPhotoUrl = newAvatarUrl;
 
       const updated = await tx.attendanceEmployeeDetails.update({

@@ -1,12 +1,15 @@
-import React, { useId } from 'react';
+import React from 'react';
 
 // The Check Printing product mark on the portal: an outlined printer with a tick (Lucide
-// "printer-check", ISC) in white on a dark blue tile. Used wherever the portal shows Check
-// Printing as a product; the SmartBusiness company logo (SmartBusinessLogo) stays the
-// portal's own brand. Check Printing itself draws the same mark in blue on a pale tile
-// (apps/check-printing-frontend: BrandMark, favicon): change them together.
+// "printer-check", ISC) in white on Check Printing's button blue (#2156e8, primary-600 in
+// apps/check-printing-frontend/src/index.css). Used wherever the portal shows Check
+// Printing as a product, and as the portal's favicon (public/check-printing-favicon.svg);
+// the SmartBusiness company logo (SmartBusinessLogo) stays in the header and footer. Check
+// Printing itself draws the same mark in blue on a pale tile (BrandMark): change them
+// together.
+export const CHECK_PRINTING_BLUE = '#2156e8';
+
 export const CheckPrintingLogo: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = '' }) => {
-  const id = useId();
   return (
     <svg
       width={size}
@@ -16,13 +19,7 @@ export const CheckPrintingLogo: React.FC<{ size?: number; className?: string }> 
       role="img"
       aria-label="Check Printing"
     >
-      <defs>
-        <linearGradient id={`${id}-tile`} x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#1a3a8f" />
-          <stop offset="1" stopColor="#0b1f4d" />
-        </linearGradient>
-      </defs>
-      <rect width="64" height="64" rx="15" fill={`url(#${id}-tile)`} />
+      <rect width="64" height="64" rx="15" fill={CHECK_PRINTING_BLUE} />
       <g
         transform="translate(16 16) scale(1.3333)"
         fill="none"

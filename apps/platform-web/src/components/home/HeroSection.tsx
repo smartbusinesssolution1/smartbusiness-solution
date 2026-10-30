@@ -1,5 +1,6 @@
 import React from 'react';
-import { Printer, RefreshCw, ChevronRight, MessageSquare, DollarSign, Star, ShieldCheck } from 'lucide-react';
+import { RefreshCw, ChevronRight, MessageSquare, DollarSign, Star, ShieldCheck } from 'lucide-react';
+import { CheckPrintingLogo } from '../common/CheckPrintingLogo';
 
 interface HeroSectionProps {
   onExploreService: (serviceName: string) => void;
@@ -38,9 +39,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onExploreService }) =>
             <div className="absolute -top-12 -right-12 w-36 h-36 bg-cyan-100/50 rounded-full blur-2xl pointer-events-none" />
 
             <div className="relative z-10">
-              <div className="w-12 h-12 rounded-xl bg-blue-500 text-white flex items-center justify-center shadow-sm mb-4 group-hover:scale-105 transition-transform">
-                <Printer className="w-6 h-6" />
-              </div>
+              <CheckPrintingLogo size={48} className="drop-shadow-sm mb-4 group-hover:scale-105 transition-transform" />
 
               <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold text-indigo-700 bg-indigo-50 uppercase tracking-wider mb-2">
                 CORE SERVICE 01

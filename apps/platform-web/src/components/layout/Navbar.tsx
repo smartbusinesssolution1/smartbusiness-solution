@@ -8,6 +8,8 @@ interface NavbarProps {
   onRouteChange: (route: PageRoute) => void;
   currentUser: string | null;
   onSignOut: () => void;
+  // "My products": the signed-in person's products, with Open buttons.
+  onOpenAccount: () => void;
   onOpenContact: () => void;
 }
 
@@ -16,6 +18,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRouteChange,
   currentUser,
   onSignOut,
+  onOpenAccount,
   onOpenContact,
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -162,6 +165,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 {currentUser}
               </span>
               <button
+                onClick={onOpenAccount}
+                className="text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors px-3 py-1.5 rounded-full cursor-pointer"
+              >
+                My products
+              </button>
+              <button
                 onClick={onSignOut}
                 className="text-xs font-semibold text-slate-600 hover:text-red-600 transition-colors px-3 py-1.5 border border-slate-200 rounded-full cursor-pointer"
               >
@@ -253,15 +262,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             <div className="pt-3 border-t border-slate-100">
               {currentUser ? (
-                <button
-                  onClick={() => {
-                    onSignOut();
-                    setMobileMenuOpen(false);
-                  }}
-                  className="w-full text-center py-2.5 px-4 text-sm font-semibold text-red-600 bg-red-50 rounded-xl"
-                >
-                  Sign Out ({currentUser})
-                </button>
+                <>
+                  <button
+                    onClick={() => {
+                      onOpenAccount();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full mb-2 text-center py-2.5 px-4 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl"
+                  >
+                    My products
+                  </button>
+                  <button
+                    onClick={() => {
+                      onSignOut();
+                      setMobileMenuOpen(false);
+                    }}
+                    className="w-full text-center py-2.5 px-4 text-sm font-semibold text-red-600 bg-red-50 rounded-xl"
+                  >
+                    Sign Out ({currentUser})
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={() => handleNavClick('signin')}
