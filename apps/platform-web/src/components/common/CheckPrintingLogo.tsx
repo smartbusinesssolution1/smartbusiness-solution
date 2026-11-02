@@ -5,8 +5,9 @@ import React from 'react';
 // apps/check-printing-frontend/src/index.css). Used wherever the portal shows Check
 // Printing as a product; the SmartBusiness company logo (SmartBusinessLogo, and smart.png as
 // the favicon) stays the portal's own brand. Check
-// Printing itself draws the same mark in blue on a pale tile (BrandMark): change them
-// together.
+// Printing itself draws the same mark in blue on a pale tile (BrandMark), and uses this
+// white-on-blue version as its favicon (check-printing-frontend/public/favicon.svg): change
+// them together.
 export const CHECK_PRINTING_BLUE = '#2156e8';
 
 export const CheckPrintingLogo: React.FC<{ size?: number; className?: string }> = ({ size = 48, className = '' }) => {

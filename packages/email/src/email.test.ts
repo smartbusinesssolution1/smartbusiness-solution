@@ -98,6 +98,17 @@ describe("templates", () => {
     }
   });
 
+  it("greets the person by name in a password reset, in both versions", () => {
+    expect(reset.text).toMatch(/^Hi Jennifer,/);
+    expect(reset.html).toContain("Hi Jennifer,");
+  });
+
+  it("escapes the name in a password reset's HTML", () => {
+    const evil = passwordResetEmail({ name: ATTACK, resetUrl: "https://app.smartbusiness.test/reset-password#token=T", expiresInMinutes: 60 });
+    expect(evil.html).not.toContain('<a href="https://evil.example');
+    expect(evil.html).toContain("&lt;a href=&quot;https://evil.example/login&quot;&gt;");
+  });
+
   it("tells the reader how long the link lasts", () => {
     expect(reset.text).toContain("expires in 60 minutes");
     expect(invite.text).toContain("expires in 7 days");
