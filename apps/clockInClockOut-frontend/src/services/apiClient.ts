@@ -2,8 +2,8 @@ import axios, { AxiosError } from 'axios';
 import { notify } from '../context/NotificationContext';
 
 
-export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || `http://localhost:3001`;
-export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || `http://localhost:3000`;
+export const PLATFORM_API_URL = import.meta.env.VITE_PLATFORM_API_URL || `http://192.168.1.100:3001`;
+export const CLOCKIN_API_URL = import.meta.env.VITE_CLOCKIN_API_URL || import.meta.env.VITE_API_URL || `http://192.168.1.100:3000`;
 
 function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
   if (!data) return fallback;
@@ -213,7 +213,7 @@ clockInApi.interceptors.response.use(
     const isSubscriptionError =
       error.response?.status === 403 &&
       (errorMsg.toLowerCase().includes('subscription') ||
-       errorMsg.toLowerCase().includes('active subscription'));
+        errorMsg.toLowerCase().includes('active subscription'));
 
     if (isSubscriptionError) {
       if (window.location.pathname !== '/subscription-expired') {
