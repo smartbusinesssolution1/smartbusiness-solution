@@ -5,3 +5,5 @@ export * from './MetricCard';
 export * from './SearchInput';
 export * from './Modal';
 export * from './Drawer';
+export * from './LoadingState';
+export * from './Pagination';

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Badge } from '../../components/common/Badge';
+import { Pagination } from '../../components/common/Pagination';
 import { Printer, RefreshCw, Layers } from 'lucide-react';
 import { formatCurrency } from '../../utils/formatCurrency';
 import { formatDate } from '../../utils/formatDate';
@@ -8,23 +9,23 @@ import type { SubscriptionRecord, SubscriptionStatus, ServiceType } from '../../
 
 export interface SubscriptionTableProps {
   subscriptions: SubscriptionRecord[];
-  statusFilter: string;
-  serviceFilter: string;
+  total: number;
+  currentPage: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   onManage: (sub: SubscriptionRecord) => void;
 }
 
 export const SubscriptionTable: React.FC<SubscriptionTableProps> = ({
   subscriptions,
-  statusFilter,
-  serviceFilter,
+  total,
+  currentPage,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
   onManage,
 }) => {
-  const filtered = subscriptions.filter((sub) => {
-    const matchesStatus = statusFilter === 'ALL' || sub.status === statusFilter;
-    const matchesService = serviceFilter === 'ALL' || sub.service === serviceFilter;
-    return matchesStatus && matchesService;
-  });
-
   const getStatusBadge = (status: SubscriptionStatus) => {
     switch (status) {
       case 'ACTIVE':
@@ -59,91 +60,110 @@ export const SubscriptionTable: React.FC<SubscriptionTableProps> = ({
     switch (service) {
       case 'CHECK_PRINTING':
         return (
-          <span className="inline-flex items-center gap-1 text-primary-700 font-semibold">
-            <Printer className="size-3.5 text-primary-600" />
-            Check Printing
-          </span>
+          <Badge variant="blue">
+            <Printer className="size-3 mr-1" /> Check Printing
+          </Badge>
         );
       case 'CLOCK_IN_CLOCK_OUT':
         return (
-          <span className="inline-flex items-center gap-1.5 text-primary-700 font-semibold">
-            <RefreshCw className="size-3.5 text-primary-600 stroke-[2.4]" />
-            ClockIn-ClockOut
-          </span>
+          <Badge variant="indigo">
+            <RefreshCw className="size-3 mr-1" /> Clock-In
+          </Badge>
         );
       case 'BOTH':
         return (
-          <span className="inline-flex items-center gap-1 text-purple-700 font-semibold">
-            <Layers className="size-3.5 text-purple-600" />
-            Both (Bundle)
-          </span>
+          <Badge variant="purple">
+            <Layers className="size-3 mr-1" /> Both
+          </Badge>
         );
     }
   };
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs text-ink-soft">
-        <thead className="bg-subtle text-[11px] font-bold uppercase tracking-wider text-muted border-b border-line select-none">
-          <tr>
-            <th className="py-3 px-4">Organization / Tenant</th>
-            <th className="py-3 px-4">Service</th>
-            <th className="py-3 px-4">Plan Name</th>
-            <th className="py-3 px-4">Duration</th>
-            <th className="py-3 px-4">Amount</th>
-            <th className="py-3 px-4">Stripe ID</th>
-            <th className="py-3 px-4">Status</th>
-            <th className="py-3 px-4">Renews At</th>
-            <th className="py-3 px-4 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line font-medium">
-          {filtered.length === 0 ? (
-            <tr>
-              <td colSpan={9} className="py-8 text-center text-muted">
-                No subscription records match the selected filters.
-              </td>
+    <div className="flex flex-col">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-subtle/70 border-b border-line text-muted uppercase tracking-wider font-bold text-[11px] font-mono select-none">
+              <th className="py-3 px-4">Organization / Tenant</th>
+              <th className="py-3 px-4">Subscribed Plan</th>
+              <th className="py-3 px-4">Service</th>
+              <th className="py-3 px-4">Amount</th>
+              <th className="py-3 px-4">Stripe Customer</th>
+              <th className="py-3 px-4">Status</th>
+              <th className="py-3 px-4">Current Period End</th>
+              <th className="py-3 px-4 text-right">Actions</th>
             </tr>
-          ) : (
-            filtered.map((sub) => (
-              <tr key={sub.id} className="hover:bg-subtle transition-colors">
-                <td className="py-3.5 px-4">
-                  <div className="font-bold text-ink">{sub.tenantName}</div>
-                  <div className="text-[11px] text-muted">{sub.billingEmail}</div>
-                </td>
-                <td className="py-3.5 px-4">{getServiceBadge(sub.service)}</td>
-                <td className="py-3.5 px-4 font-semibold text-ink">{sub.planName}</td>
-                <td className="py-3.5 px-4">
-                  <span className="inline-block text-[11px] font-mono px-2 py-0.5 rounded bg-subtle border border-line text-ink-soft font-semibold">
-                    {formatDuration(sub.durationCount, sub.durationUnit)}
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 font-bold text-ink font-mono">
-                  {formatCurrency(sub.amount)}
-                  <span className="text-[10px] text-muted font-normal">
-                    /{formatDurationShort(sub.durationCount, sub.durationUnit)}
-                  </span>
-                </td>
-                <td className="py-3.5 px-4 font-mono text-[11px] text-muted">
-                  {sub.stripeCustomerId}
-                </td>
-                <td className="py-3.5 px-4">{getStatusBadge(sub.status)}</td>
-                <td className="py-3.5 px-4 text-muted font-mono text-[11px]">
-                  {formatDate(sub.currentPeriodEndsAt)}
-                </td>
-                <td className="py-3.5 px-4 text-right">
-                  <button
-                    onClick={() => onManage(sub)}
-                    className="text-primary-600 hover:text-primary-800 font-bold hover:underline cursor-pointer"
-                  >
-                    Manage
-                  </button>
+          </thead>
+          <tbody className="divide-y divide-line/60">
+            {subscriptions.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="py-12 text-center text-muted">
+                  No subscriptions match the selected criteria.
                 </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              subscriptions.map((sub) => (
+                <tr
+                  key={sub.id}
+                  className="hover:bg-primary-50/20 transition-colors group cursor-pointer"
+                  onClick={() => onManage(sub)}
+                >
+                  <td className="py-3.5 px-4 font-bold text-ink">
+                    <div className="flex flex-col">
+                      <span>{sub.tenantName}</span>
+                      <span className="text-[10px] text-muted font-normal font-mono">
+                        {sub.billingEmail}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4 font-semibold text-ink-soft">
+                    {sub.planName}
+                    <div className="text-[10px] text-muted font-normal">
+                      {formatDuration(sub.durationCount, sub.durationUnit)} recurring
+                    </div>
+                  </td>
+                  <td className="py-3.5 px-4">
+                    {getServiceBadge(sub.service)}
+                  </td>
+                  <td className="py-3.5 px-4 font-bold text-ink font-mono">
+                    {formatCurrency(sub.amount)}
+                    <span className="text-[10px] text-muted font-normal">
+                      /{formatDurationShort(sub.durationCount, sub.durationUnit)}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 font-mono text-[11px] text-muted">
+                    {sub.stripeCustomerId}
+                  </td>
+                  <td className="py-3.5 px-4">{getStatusBadge(sub.status)}</td>
+                  <td className="py-3.5 px-4 text-muted font-mono text-[11px]">
+                    {formatDate(sub.currentPeriodEndsAt)}
+                  </td>
+                  <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      type="button"
+                      onClick={() => onManage(sub)}
+                      className="text-primary-600 hover:text-primary-800 font-bold hover:underline cursor-pointer"
+                    >
+                      Manage
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {total > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={total}
+          pageSize={pageSize}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+        />
+      )}
     </div>
   );
 };

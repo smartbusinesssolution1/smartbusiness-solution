@@ -1,16 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Trash2, Download, RefreshCw, Radio } from 'lucide-react';
 import { Button } from '../../components/common/Button';
+import { TableSkeleton } from '../../components/common/LoadingState';
 import { DiagnosticBar } from './DiagnosticBar';
 import { LogToolbar } from './LogToolbar';
 import { LogTable } from './LogTable';
 import { TraceInspectorModal } from './TraceInspectorModal';
-import { fetchTelemetryLogs, MOCK_ERROR_LOGS } from '../../api/telemetry.api';
+import { fetchTelemetryLogs } from '../../api/telemetry.api';
 import type { ErrorLogRecord } from '../../types';
 import { toast } from 'sonner';
 
 export const TelemetryView: React.FC = () => {
-  const [logs, setLogs] = useState<ErrorLogRecord[]>(MOCK_ERROR_LOGS);
+  const [logs, setLogs] = useState<ErrorLogRecord[]>([]);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedService, setSelectedService] = useState('ALL');
   const [selectedLevel, setSelectedLevel] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -18,25 +24,43 @@ export const TelemetryView: React.FC = () => {
   const [selectedLog, setSelectedLog] = useState<ErrorLogRecord | null>(null);
   const [isTraceModalOpen, setIsTraceModalOpen] = useState(false);
 
+  const loadLogs = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetchTelemetryLogs({
+        page: currentPage,
+        pageSize,
+        search: searchQuery.trim() || undefined,
+        severity: selectedLevel !== 'ALL' ? selectedLevel : undefined,
+        service: selectedService !== 'ALL' ? selectedService : undefined,
+      });
+      setLogs(res.items);
+      setTotalLogs(res.pagination.total);
+    } catch {
+      toast.error('Failed to load telemetry logs from platform.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentPage, pageSize, searchQuery, selectedLevel, selectedService]);
+
   useEffect(() => {
-    fetchTelemetryLogs().then(setLogs);
-  }, []);
+    loadLogs();
+  }, [loadLogs]);
 
-  const filteredLogs = logs.filter((log) => {
-    const matchService = selectedService === 'ALL' || log.service === selectedService;
-    const matchLevel = selectedLevel === 'ALL' || log.severity === selectedLevel;
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    setCurrentPage(1);
+  };
 
-    const q = searchQuery.toLowerCase();
-    const matchQuery =
-      !q ||
-      log.traceId.toLowerCase().includes(q) ||
-      log.message.toLowerCase().includes(q) ||
-      (log.tenantName && log.tenantName.toLowerCase().includes(q)) ||
-      (log.tenantId && log.tenantId.toLowerCase().includes(q)) ||
-      log.endpoint.toLowerCase().includes(q);
+  const handleServiceChange = (service: string) => {
+    setSelectedService(service);
+    setCurrentPage(1);
+  };
 
-    return matchService && matchLevel && matchQuery;
-  });
+  const handleLevelChange = (level: string) => {
+    setSelectedLevel(level);
+    setCurrentPage(1);
+  };
 
   const toggleLiveStream = () => {
     setIsLiveStream((prev) => {
@@ -51,13 +75,12 @@ export const TelemetryView: React.FC = () => {
   };
 
   const handleRefresh = async () => {
-    const updated = await fetchTelemetryLogs();
-    setLogs(updated);
+    await loadLogs();
     toast.success('Telemetry event stream refreshed.');
   };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(filteredLogs, null, 2)], {
+    const blob = new Blob([JSON.stringify(logs, null, 2)], {
       type: 'application/json',
     });
     const url = URL.createObjectURL(blob);
@@ -71,6 +94,7 @@ export const TelemetryView: React.FC = () => {
 
   const clearLogs = () => {
     setLogs([]);
+    setTotalLogs(0);
     toast.success('Developer error logs view cleared.');
   };
 
@@ -113,6 +137,7 @@ export const TelemetryView: React.FC = () => {
             variant="outline"
             size="sm"
             onClick={handleRefresh}
+            isLoading={isLoading}
             icon={<RefreshCw className="size-3.5 text-muted" />}
           >
             Refresh
@@ -144,17 +169,29 @@ export const TelemetryView: React.FC = () => {
       {/* Filter and Search Toolbar */}
       <LogToolbar
         selectedService={selectedService}
-        onServiceChange={setSelectedService}
+        onServiceChange={handleServiceChange}
         selectedLevel={selectedLevel}
-        onLevelChange={setSelectedLevel}
+        onLevelChange={handleLevelChange}
         searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        filteredCount={filteredLogs.length}
+        onSearchChange={handleSearchChange}
+        filteredCount={totalLogs}
       />
 
-      {/* Log Console Table */}
+      {/* Log Console Table with Server-side Pagination */}
       <div className="bg-panel rounded-2xl border border-line shadow-card overflow-hidden">
-        <LogTable logs={filteredLogs} onInspect={handleInspect} />
+        {isLoading ? (
+          <TableSkeleton rows={pageSize > 10 ? 10 : pageSize} columns={6} />
+        ) : (
+          <LogTable
+            logs={logs}
+            total={totalLogs}
+            currentPage={currentPage}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={setPageSize}
+            onInspect={handleInspect}
+          />
+        )}
       </div>
 
       {/* Trace Inspector Modal */}

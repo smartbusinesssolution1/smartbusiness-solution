@@ -6,17 +6,42 @@ import type { DashboardMetrics } from '../../types';
 
 export interface KpiGridProps {
   metrics: DashboardMetrics;
+  timeRange?: '30d' | 'quarter' | 'ytd';
 }
 
-export const KpiGrid: React.FC<KpiGridProps> = ({ metrics }) => {
+export const KpiGrid: React.FC<KpiGridProps> = ({ metrics, timeRange = '30d' }) => {
+  const mrrSubtext =
+    timeRange === 'quarter'
+      ? 'vs last quarter ($103.2k)'
+      : timeRange === 'ytd'
+        ? 'vs start of year ($78.2k)'
+        : 'vs last month ($124.4k)';
+
+  const tenantsSubtext =
+    timeRange === 'quarter'
+      ? 'new tenants this quarter'
+      : timeRange === 'ytd'
+        ? 'new tenants year-to-date'
+        : 'new tenants this month';
+
+  const checksTitle =
+    timeRange === 'quarter'
+      ? 'Checks Processed (QTD)'
+      : timeRange === 'ytd'
+        ? 'Checks Processed (YTD)'
+        : 'Checks Processed (MTD)';
+
+  const mrrGrowthSuffix =
+    timeRange === 'quarter' ? 'QoQ' : timeRange === 'ytd' ? 'YTD' : 'MoM';
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       <MetricCard
         title="Total MRR (Stripe USD)"
         value={formatCurrency(metrics.mrrAmount)}
-        changeText={`+${metrics.mrrGrowthMoM}%`}
+        changeText={`+${metrics.mrrGrowthMoM}% ${mrrGrowthSuffix}`}
         changeType="positive"
-        subtext="vs last month ($124.4k)"
+        subtext={mrrSubtext}
         icon={<DollarSign className="w-4 h-4" />}
         iconBgColor="bg-emerald-50 text-emerald-600"
       />
@@ -26,7 +51,7 @@ export const KpiGrid: React.FC<KpiGridProps> = ({ metrics }) => {
         value={metrics.activeTenants.toLocaleString()}
         changeText={`+${metrics.newTenantsThisMonth}`}
         changeType="positive"
-        subtext="new tenants this month"
+        subtext={tenantsSubtext}
         icon={<Building2 className="w-4 h-4" />}
         iconBgColor="bg-blue-50 text-blue-600"
       />
@@ -42,7 +67,7 @@ export const KpiGrid: React.FC<KpiGridProps> = ({ metrics }) => {
       />
 
       <MetricCard
-        title="Checks Processed (MTD)"
+        title={checksTitle}
         value={formatCurrency(metrics.checksVolumeMtdUsd, { compact: true })}
         changeText={`${metrics.checksCountMtd.toLocaleString()} checks`}
         changeType="neutral"

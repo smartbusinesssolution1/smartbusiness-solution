@@ -4,6 +4,7 @@ import { validate } from "../../middleware/validate.js";
 import {
   createOrganizationSchema,
   createPlanSchema,
+  paginationQuerySchema,
   superAdminLoginSchema,
   telemetryQuerySchema,
   updatePlanSchema,
@@ -27,7 +28,7 @@ router.use(requireSuperAdmin);
 
 router.get("/auth/me", superAdminController.me);
 router.get("/dashboard", superAdminController.getDashboard);
-router.get("/users", superAdminController.getUsers);
+router.get("/users", validate(paginationQuerySchema, "query"), superAdminController.getUsers);
 router.post("/users/:userId/unlock", superAdminController.unlockUser);
 router.post(
   "/organizations",
@@ -45,9 +46,23 @@ router.put(
   validate(updatePlanSchema),
   superAdminController.updatePlan,
 );
-router.get("/subscriptions", superAdminController.getSubscriptions);
+router.patch(
+  "/plans/:id",
+  validate(updatePlanSchema),
+  superAdminController.updatePlan,
+);
+router.delete("/plans/:id", superAdminController.deletePlan);
+router.get("/subscriptions", validate(paginationQuerySchema, "query"), superAdminController.getSubscriptions);
+router.patch("/subscriptions/:id", superAdminController.updateSubscription);
+router.post("/stripe/sync", superAdminController.syncStripe);
 
 // Engineering & Dev Telemetry (Restricted strictly to DEV_SUPER_ADMIN)
+router.get(
+  "/telemetry",
+  requireDevSuperAdmin,
+  validate(telemetryQuerySchema, "query"),
+  superAdminController.getTelemetryLogs,
+);
 router.get(
   "/telemetry/logs",
   requireDevSuperAdmin,

@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { RotateCw } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { RotateCw, AlertCircle, RefreshCw } from 'lucide-react';
 import { Button } from '../../components/common/Button';
+import { DashboardSkeleton, EmptyState } from '../../components/common/LoadingState';
 import { KpiGrid } from './KpiGrid';
 import { RevenueChart } from './RevenueChart';
 import { ProductAdoptionChart } from './ProductAdoptionChart';
 import { RecentActivityFeed } from './RecentActivityFeed';
 import { BusinessHealthOverview } from './BusinessHealthOverview';
-import { fetchDashboardData, MOCK_DASHBOARD_DATA } from '../../api/dashboard.api';
+import { fetchDashboardData, type DashboardTimeRange } from '../../api/dashboard.api';
 import type { SystemOverview } from '../../types';
 import { toast } from 'sonner';
 
@@ -19,26 +20,31 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToUsers,
   onNavigateToPayments,
 }) => {
-  const [data, setData] = useState<SystemOverview>(MOCK_DASHBOARD_DATA);
-  const [isLoading, setIsLoading] = useState(false);
-  const [timeRange, setTimeRange] = useState<'30d' | 'quarter' | 'ytd'>('30d');
+  const [data, setData] = useState<SystemOverview | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<DashboardTimeRange>('30d');
 
-  const loadData = async () => {
+  const loadData = useCallback(async (isManualRefresh = false) => {
     setIsLoading(true);
+    setLoadError(null);
     try {
-      const res = await fetchDashboardData();
+      const res = await fetchDashboardData(timeRange);
       setData(res);
-      toast.success('Business revenue and tenant statistics refreshed.');
+      if (isManualRefresh) {
+        toast.success('Business revenue and tenant statistics refreshed.');
+      }
     } catch {
+      setLoadError('Failed to load dashboard metrics from platform services.');
       toast.error('Failed to sync latest statistics.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [timeRange]);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(false);
+  }, [loadData]);
 
   return (
     <div className="space-y-6">
@@ -85,8 +91,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={loadData}
-            isLoading={isLoading}
+            onClick={() => loadData(true)}
+            isLoading={isLoading && Boolean(data)}
             icon={<RotateCw className="size-3.5 text-muted" />}
           >
             Refresh
@@ -94,25 +100,47 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* Top 4 Business KPI Metrics */}
-      <KpiGrid metrics={data.metrics} />
+      {/* Loading Skeleton */}
+      {isLoading && !data && <DashboardSkeleton />}
 
-      {/* Analytical Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <RevenueChart data={data.revenueTrend} />
-        <ProductAdoptionChart products={data.productAdoption} />
-      </div>
+      {/* Error State */}
+      {!isLoading && !data && (
+        <EmptyState
+          icon={<AlertCircle className="size-8 text-rose-500" />}
+          title="Unable to load dashboard data"
+          description={loadError || 'An error occurred while connecting to the platform services.'}
+          action={
+            <Button variant="primary" size="sm" onClick={() => loadData(true)}>
+              <RefreshCw className="size-3.5 mr-1.5" /> Retry Connection
+            </Button>
+          }
+        />
+      )}
 
-      {/* Business Activity & Conversion Funnel Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RecentActivityFeed
-          activities={data.recentActivity}
-          onViewAllTenants={onNavigateToUsers}
-        />
-        <BusinessHealthOverview
-          onViewExpiringTrials={onNavigateToPayments}
-        />
-      </div>
+      {/* Real Live Dashboard Content */}
+      {data && (
+        <>
+          {/* Top 4 Business KPI Metrics */}
+          <KpiGrid metrics={data.metrics} timeRange={timeRange} />
+
+          {/* Analytical Charts Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <RevenueChart data={data.revenueTrend} timeRange={timeRange} />
+            <ProductAdoptionChart products={data.productAdoption} />
+          </div>
+
+          {/* Business Activity & Conversion Funnel Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <RecentActivityFeed
+              activities={data.recentActivity}
+              onViewAllTenants={onNavigateToUsers}
+            />
+            <BusinessHealthOverview
+              onViewExpiringTrials={onNavigateToPayments}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 };

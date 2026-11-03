@@ -61,33 +61,119 @@ export class SuperAdminRepository {
     });
   }
 
-  async getUsersWithTenants() {
-    return prisma.user.findMany({
-      include: {
-        tenantMembers: {
-          include: {
+  async getUsersWithTenants(options: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    service?: string;
+    status?: string;
+  } = {}) {
+    const page = options.page && options.page > 0 ? options.page : 1;
+    const pageSize = options.pageSize && options.pageSize > 0 ? options.pageSize : 10;
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.UserWhereInput = {
+      tenantMembers: {
+        some: {
+          role: "OWNER",
+        },
+      },
+    };
+
+    if (options.search) {
+      const q = options.search.trim();
+      where.OR = [
+        { fullName: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+        {
+          tenantMembers: {
+            some: {
+              tenant: {
+                name: { contains: q, mode: "insensitive" },
+              },
+            },
+          },
+        },
+      ];
+    }
+
+    if (options.status && options.status !== "ALL") {
+      if (options.status === "LOCKED") {
+        where.lockedUntil = { gt: new Date() };
+      } else if (options.status === "ACTIVE") {
+        where.isActive = true;
+      } else if (options.status === "SUSPENDED") {
+        where.isActive = false;
+      }
+    }
+
+    if (options.service && options.service !== "ALL") {
+      const slugMatch =
+        options.service === "CHECK_PRINTING"
+          ? "check"
+          : options.service === "CLOCK_IN_CLOCK_OUT"
+            ? "clock"
+            : "";
+      if (slugMatch) {
+        where.tenantMembers = {
+          some: {
+            role: "OWNER",
             tenant: {
-              include: {
-                workspaces: {
-                  include: {
-                    _count: {
-                      select: { bankAccounts: true },
-                    },
+              subscriptions: {
+                some: {
+                  product: {
+                    slug: { contains: slugMatch },
                   },
                 },
-                subscriptions: {
-                  include: {
-                    product: true,
+              },
+            },
+          },
+        };
+      }
+    }
+
+    const [total, users] = await Promise.all([
+      prisma.user.count({ where }),
+      prisma.user.findMany({
+        where,
+        skip,
+        take: pageSize,
+        include: {
+          tenantMembers: {
+            where: {
+              role: "OWNER",
+            },
+            include: {
+              tenant: {
+                include: {
+                  workspaces: {
+                    include: {
+                      _count: {
+                        select: { bankAccounts: true },
+                      },
+                    },
+                  },
+                  subscriptions: {
+                    include: {
+                      product: true,
+                    },
                   },
                 },
               },
             },
           },
         },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    return {
+      users,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
   }
 
   async findUserById(userId: string) {
@@ -209,37 +295,90 @@ export class SuperAdminRepository {
     });
   }
 
-  async getSubscriptions() {
-    return prisma.productSubscription.findMany({
-      include: {
-        tenant: true,
-        product: true,
-      },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+  async getSubscriptions(options: {
+    page?: number;
+    pageSize?: number;
+    status?: string;
+    service?: string;
+  } = {}) {
+    const page = options.page && options.page > 0 ? options.page : 1;
+    const pageSize = options.pageSize && options.pageSize > 0 ? options.pageSize : 10;
+    const skip = (page - 1) * pageSize;
+
+    const where: Prisma.ProductSubscriptionWhereInput = {};
+    if (options.status && options.status !== "ALL") {
+      where.status = options.status as any;
+    }
+    if (options.service && options.service !== "ALL") {
+      if (options.service === "CHECK_PRINTING") {
+        where.product = { slug: { contains: "check" } };
+      } else if (options.service === "CLOCK_IN_CLOCK_OUT") {
+        where.product = { slug: { contains: "clock" } };
+      }
+    }
+
+    const [total, subscriptions] = await Promise.all([
+      prisma.productSubscription.count({ where }),
+      prisma.productSubscription.findMany({
+        where,
+        skip,
+        take: pageSize,
+        include: {
+          tenant: true,
+          product: true,
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    return {
+      subscriptions,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
   }
 
   async getAuditLogs(options: {
+    page?: number;
+    pageSize?: number;
     limit?: number;
     search?: string;
+    severity?: string;
+    service?: string;
   } = {}) {
-    const { limit = 50, search } = options;
+    const page = options.page && options.page > 0 ? options.page : 1;
+    const pageSize = options.pageSize || options.limit || 10;
+    const skip = (page - 1) * pageSize;
 
     const where: Prisma.AuditLogWhereInput = {};
-    if (search) {
+    if (options.search) {
+      const q = options.search.trim();
       where.OR = [
-        { action: { contains: search, mode: "insensitive" } },
-        { entityType: { contains: search, mode: "insensitive" } },
-        { entityId: { contains: search, mode: "insensitive" } },
+        { action: { contains: q, mode: "insensitive" } },
+        { entityType: { contains: q, mode: "insensitive" } },
+        { entityId: { contains: q, mode: "insensitive" } },
       ];
     }
 
-    return prisma.auditLog.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-    });
+    const [total, auditLogs] = await Promise.all([
+      prisma.auditLog.count({ where }),
+      prisma.auditLog.findMany({
+        where,
+        skip,
+        take: pageSize,
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    return {
+      auditLogs,
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
   }
 
   async recordAudit(data: {

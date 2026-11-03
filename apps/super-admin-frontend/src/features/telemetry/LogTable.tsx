@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatDateTime } from '../../utils/formatDate';
 import { copyToClipboard } from '../../utils/copyToClipboard';
+import { Pagination } from '../../components/common/Pagination';
 import {
   Printer,
   RefreshCw,
@@ -16,10 +17,23 @@ import { toast } from 'sonner';
 
 export interface LogTableProps {
   logs: ErrorLogRecord[];
+  total?: number;
+  currentPage?: number;
+  pageSize?: number;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (size: number) => void;
   onInspect: (log: ErrorLogRecord) => void;
 }
 
-export const LogTable: React.FC<LogTableProps> = ({ logs, onInspect }) => {
+export const LogTable: React.FC<LogTableProps> = ({
+  logs,
+  total,
+  currentPage = 1,
+  pageSize = 10,
+  onPageChange,
+  onPageSizeChange,
+  onInspect,
+}) => {
   const getSeverityBadge = (severity: LogSeverity, httpStatus?: number) => {
     switch (severity) {
       case 'FATAL':
@@ -59,140 +73,164 @@ export const LogTable: React.FC<LogTableProps> = ({ logs, onInspect }) => {
           </span>
         );
       case 'clockInClockOut-backend':
-      case 'face-recognition':
-        return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-blue-50 text-primary-700 border border-blue-200">
-            <RefreshCw className="size-3 stroke-[2.4] text-primary-600" />
-            ClockIn-ClockOut
-          </span>
-        );
-      case 'stripe-worker':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-            <CreditCard className="size-3 text-indigo-700" />
-            Stripe Worker
+            <RefreshCw className="size-3 text-indigo-700" />
+            Clock-In Backend
+          </span>
+        );
+      case 'platform-api':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+            <ShieldCheck className="size-3 text-purple-700" />
+            Platform API
           </span>
         );
       case 'prisma-database':
         return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+            <Database className="size-3 text-amber-800" />
+            Prisma Engine
+          </span>
+        );
+      case 'stripe-billing':
+        return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Database className="size-3 text-emerald-700" />
-            Prisma Pool
+            <CreditCard className="size-3 text-emerald-700" />
+            Stripe Webhooks
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-            <ShieldCheck className="size-3 text-slate-700" />
-            Platform API
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono bg-subtle text-ink-soft border border-line">
+            <Terminal className="size-3" />
+            {service}
           </span>
         );
     }
   };
 
-  const handleCopyTrace = async (e: React.MouseEvent, traceId: string) => {
+  const handleCopyTraceId = (e: React.MouseEvent, traceId: string) => {
     e.stopPropagation();
-    const ok = await copyToClipboard(traceId);
-    if (ok) toast.success(`Trace ID ${traceId} copied to clipboard.`);
+    copyToClipboard(traceId);
+    toast.success(`Trace ID copied: ${traceId}`);
   };
 
   if (logs.length === 0) {
     return (
-      <div className="py-16 text-center text-muted font-sans">
-        <Terminal className="size-8 mx-auto text-slate-400 mb-2" />
-        <p className="text-sm font-semibold text-ink">No error log events match your filters.</p>
-        <p className="text-xs text-muted mt-1">Try broadening your service or severity criteria.</p>
+      <div className="py-16 text-center text-muted">
+        <Terminal className="size-8 mx-auto mb-2 text-slate-300" />
+        <h3 className="font-bold text-xs text-ink mb-1">No log events recorded</h3>
+        <p className="text-xs text-muted max-w-sm mx-auto">
+          No platform error logs match your query parameters. Try widening your severity level or clearing filters.
+        </p>
       </div>
     );
   }
 
+  const effectiveTotal = total ?? logs.length;
+
   return (
-    <div className="overflow-x-auto max-h-[560px]">
-      <table className="w-full text-left border-collapse text-xs">
-        <thead className="sticky top-0 bg-subtle/80 backdrop-blur-xs border-b border-line text-muted uppercase text-[11px] font-bold font-mono tracking-wider z-10">
-          <tr>
-            <th className="py-3 px-4">Timestamp (UTC)</th>
-            <th className="py-3 px-4">Severity / Code</th>
-            <th className="py-3 px-4">Microservice</th>
-            <th className="py-3 px-4">Endpoint / Action</th>
-            <th className="py-3 px-4">Tenant Organization</th>
-            <th className="py-3 px-4">Exception Message</th>
-            <th className="py-3 px-4 text-right">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {logs.map((log) => (
-            <tr
-              key={log.traceId}
-              onClick={() => onInspect(log)}
-              className="hover:bg-subtle/60 transition group cursor-pointer"
-            >
-              {/* Timestamp & Trace ID */}
-              <td className="py-3.5 px-4 whitespace-nowrap">
-                <div className="text-ink font-bold font-mono">{formatDateTime(log.timestamp)}</div>
-                <div className="flex items-center gap-1.5 text-[10px] text-muted font-mono mt-0.5">
-                  <span className="truncate max-w-[100px]">{log.traceId}</span>
+    <div className="flex flex-col">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-subtle/70 border-b border-line text-muted uppercase tracking-wider font-bold text-[11px] font-mono select-none">
+              <th className="py-3 px-4">Severity & Timestamp</th>
+              <th className="py-3 px-4">Trace ID</th>
+              <th className="py-3 px-4">Microservice</th>
+              <th className="py-3 px-4">Endpoint</th>
+              <th className="py-3 px-4">Tenant / User</th>
+              <th className="py-3 px-4">Error Message</th>
+              <th className="py-3 px-4 text-right">Details</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line/60">
+            {logs.map((log) => (
+              <tr
+                key={log.traceId}
+                onClick={() => onInspect(log)}
+                className="hover:bg-primary-50/20 transition-colors group cursor-pointer"
+              >
+                {/* Severity & Time */}
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  <div className="flex flex-col gap-1 items-start">
+                    {getSeverityBadge(log.severity, log.httpStatus)}
+                    <span className="font-mono text-[10px] text-muted">
+                      {formatDateTime(log.timestamp)}
+                    </span>
+                  </div>
+                </td>
+
+                {/* Trace ID */}
+                <td className="py-3.5 px-4 whitespace-nowrap font-mono">
                   <button
                     type="button"
-                    onClick={(e) => handleCopyTrace(e, log.traceId)}
-                    className="hover:text-ink transition"
+                    onClick={(e) => handleCopyTraceId(e, log.traceId)}
+                    className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-panel hover:bg-subtle border border-line text-ink-soft hover:text-primary-600 transition group/trace"
                     title="Copy Trace ID"
                   >
-                    <Copy className="size-2.5" />
+                    <span className="font-bold text-[11px]">{log.traceId}</span>
+                    <Copy className="size-3 text-muted group-hover/trace:text-primary-600" />
                   </button>
-                </div>
-              </td>
+                </td>
 
-              {/* Severity & Status */}
-              <td className="py-3.5 px-4 whitespace-nowrap">
-                {getSeverityBadge(log.severity, log.httpStatus)}
-              </td>
+                {/* Service */}
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  {renderServiceBadge(log.service)}
+                </td>
 
-              {/* Service */}
-              <td className="py-3.5 px-4 whitespace-nowrap">
-                {renderServiceBadge(log.service)}
-              </td>
+                {/* Endpoint */}
+                <td className="py-3.5 px-4 whitespace-nowrap">
+                  <span className="font-mono text-ink-soft bg-subtle px-2 py-0.5 rounded border border-line text-[11px] font-semibold">
+                    {log.endpoint}
+                  </span>
+                </td>
 
-              {/* Endpoint */}
-              <td className="py-3.5 px-4 whitespace-nowrap">
-                <span className="font-mono text-ink-soft bg-subtle px-2 py-0.5 rounded border border-line text-[11px] font-semibold">
-                  {log.endpoint}
-                </span>
-              </td>
-
-              {/* Tenant */}
-              <td className="py-3.5 px-4">
-                <div className="text-ink font-bold truncate max-w-[160px]">
-                  {log.tenantName ?? log.tenantId ?? 'Global Platform'}
-                </div>
-                {log.userEmail && (
-                  <div className="text-[11px] text-muted truncate max-w-[160px] font-mono">
-                    {log.userEmail}
+                {/* Tenant */}
+                <td className="py-3.5 px-4">
+                  <div className="text-ink font-bold truncate max-w-[160px]">
+                    {log.tenantName ?? log.tenantId ?? 'Global Platform'}
                   </div>
-                )}
-              </td>
+                  {log.userEmail && (
+                    <div className="text-[11px] text-muted truncate max-w-[160px] font-mono">
+                      {log.userEmail}
+                    </div>
+                  )}
+                </td>
 
-              {/* Message */}
-              <td className="py-3.5 px-4">
-                <div className="text-ink-soft font-sans text-xs truncate max-w-sm group-hover:text-ink transition">
-                  {log.message}
-                </div>
-              </td>
+                {/* Message */}
+                <td className="py-3.5 px-4">
+                  <div className="text-ink-soft font-sans text-xs truncate max-w-sm group-hover:text-ink transition">
+                    {log.message}
+                  </div>
+                </td>
 
-              {/* Actions */}
-              <td className="py-3.5 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  onClick={() => onInspect(log)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-subtle text-ink-soft hover:text-ink font-semibold text-xs transition border border-slate-300 shadow-xs hover:border-slate-400 cursor-pointer"
-                >
-                  <ExternalLink className="size-3" /> Details
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+                {/* Actions */}
+                <td className="py-3.5 px-4 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    onClick={() => onInspect(log)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-subtle text-ink-soft hover:text-ink font-semibold text-xs transition border border-slate-300 shadow-xs hover:border-slate-400 cursor-pointer"
+                  >
+                    <ExternalLink className="size-3" /> Details
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {effectiveTotal > 0 && onPageChange && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={effectiveTotal}
+          pageSize={pageSize}
+          onPageChange={onPageChange}
+          onPageSizeChange={onPageSizeChange}
+        />
+      )}
     </div>
   );
 };

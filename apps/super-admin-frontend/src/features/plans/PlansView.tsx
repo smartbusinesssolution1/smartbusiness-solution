@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, RefreshCcw, Printer, RefreshCw, Layers, Sparkles } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Plus, RefreshCcw, Printer, RefreshCw, Layers, Sparkles, Inbox } from 'lucide-react';
 import { Button } from '../../components/common/Button';
 import { Card } from '../../components/common/Card';
+import { CardSkeleton, TableSkeleton } from '../../components/common/LoadingState';
 import { PlanCard } from './PlanCard';
 import { CreateEditPlanModal } from './CreateEditPlanModal';
 import { SubscriptionTable } from './SubscriptionTable';
@@ -14,8 +15,6 @@ import {
   fetchSubscriptions,
   updateSubscription,
   syncStripeWebhooks,
-  MOCK_PLANS,
-  MOCK_SUBSCRIPTIONS,
 } from '../../api/plans.api';
 import type {
   PlanConfig,
@@ -27,8 +26,14 @@ import type {
 import { toast } from 'sonner';
 
 export const PlansView: React.FC = () => {
-  const [plans, setPlans] = useState<PlanConfig[]>(MOCK_PLANS);
-  const [subscriptions, setSubscriptions] = useState<SubscriptionRecord[]>(MOCK_SUBSCRIPTIONS);
+  const [plans, setPlans] = useState<PlanConfig[]>([]);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionRecord[]>([]);
+  const [subTotal, setSubTotal] = useState(0);
+  const [subPage, setSubPage] = useState(1);
+  const [subPageSize, setSubPageSize] = useState(10);
+
+  const [isLoadingPlans, setIsLoadingPlans] = useState(true);
+  const [isLoadingSubs, setIsLoadingSubs] = useState(true);
   const [serviceFilter, setServiceFilter] = useState<string>('ALL');
   const [durationFilter, setDurationFilter] = useState<string>('ALL');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
@@ -40,16 +45,60 @@ export const PlansView: React.FC = () => {
   const [selectedSub, setSelectedSub] = useState<SubscriptionRecord | null>(null);
   const [isManageSubModalOpen, setIsManageSubModalOpen] = useState(false);
 
+  const loadPlans = async () => {
+    setIsLoadingPlans(true);
+    try {
+      const fetchedPlans = await fetchPlans();
+      setPlans(fetchedPlans);
+    } catch {
+      toast.error('Failed to load plans from platform.');
+    } finally {
+      setIsLoadingPlans(false);
+    }
+  };
+
+  const loadSubscriptions = useCallback(async () => {
+    setIsLoadingSubs(true);
+    try {
+      const res = await fetchSubscriptions({
+        page: subPage,
+        pageSize: subPageSize,
+        status: statusFilter !== 'ALL' ? statusFilter : undefined,
+        service: serviceFilter !== 'ALL' ? serviceFilter : undefined,
+      });
+      setSubscriptions(res.items);
+      setSubTotal(res.pagination.total);
+    } catch {
+      toast.error('Failed to load subscriptions.');
+    } finally {
+      setIsLoadingSubs(false);
+    }
+  }, [subPage, subPageSize, statusFilter, serviceFilter]);
+
   useEffect(() => {
-    fetchPlans().then(setPlans);
-    fetchSubscriptions().then(setSubscriptions);
+    loadPlans();
   }, []);
+
+  useEffect(() => {
+    loadSubscriptions();
+  }, [loadSubscriptions]);
+
+  const handleServiceChange = (service: string) => {
+    setServiceFilter(service);
+    setSubPage(1);
+  };
+
+  const handleStatusChange = (status: string) => {
+    setStatusFilter(status);
+    setSubPage(1);
+  };
 
   const handleSyncStripe = async () => {
     setIsSyncing(true);
     try {
       const res = await syncStripeWebhooks();
       toast.success(`Stripe synced successfully. ${res.syncedCount} customer accounts verified.`);
+      loadSubscriptions();
     } catch {
       toast.error('Failed to sync Stripe webhooks.');
     } finally {
@@ -130,13 +179,7 @@ export const PlansView: React.FC = () => {
         status,
         amount,
       });
-      setSubscriptions((prev) =>
-        prev.map((s) =>
-          s.id === subId
-            ? { ...s, planId, planName, service, durationCount, durationUnit, status, amount }
-            : s
-        )
-      );
+      loadSubscriptions();
       toast.success(`Tenant subscription updated to ${planName}.`);
     } catch {
       toast.error('Failed to update tenant subscription.');
@@ -176,6 +219,19 @@ export const PlansView: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              loadPlans();
+              loadSubscriptions();
+            }}
+            isLoading={isLoadingPlans || isLoadingSubs}
+            icon={<RefreshCw className="size-3.5 text-muted" />}
+          >
+            Refresh
+          </Button>
+
           <Button
             variant="primary"
             size="sm"
@@ -217,7 +273,7 @@ export const PlansView: React.FC = () => {
         {/* Service Switcher Tabs */}
         <div className="flex items-center bg-subtle p-1 rounded-[var(--radius-control)] border border-line flex-wrap gap-1">
           <button
-            onClick={() => setServiceFilter('ALL')}
+            onClick={() => handleServiceChange('ALL')}
             className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               serviceFilter === 'ALL'
                 ? 'bg-canvas text-ink shadow-sm border border-line/60'
@@ -228,7 +284,7 @@ export const PlansView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setServiceFilter('CHECK_PRINTING')}
+            onClick={() => handleServiceChange('CHECK_PRINTING')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               serviceFilter === 'CHECK_PRINTING'
                 ? 'bg-canvas text-primary-600 shadow-sm border border-line/60'
@@ -240,7 +296,7 @@ export const PlansView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setServiceFilter('CLOCK_IN_CLOCK_OUT')}
+            onClick={() => handleServiceChange('CLOCK_IN_CLOCK_OUT')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               serviceFilter === 'CLOCK_IN_CLOCK_OUT'
                 ? 'bg-canvas text-primary-600 shadow-sm border border-line/60'
@@ -252,7 +308,7 @@ export const PlansView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setServiceFilter('BOTH')}
+            onClick={() => handleServiceChange('BOTH')}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
               serviceFilter === 'BOTH'
                 ? 'bg-canvas text-purple-600 shadow-sm border border-line/60'
@@ -291,10 +347,14 @@ export const PlansView: React.FC = () => {
         </div>
       </div>
 
-      {/* Grid of Configured Plans */}
-      {filteredPlans.length === 0 ? (
+      {/* Grid of Configured Plans with Loading Skeleton */}
+      {isLoadingPlans ? (
+        <CardSkeleton count={3} />
+      ) : filteredPlans.length === 0 ? (
         <Card className="text-center py-12">
-          <p className="text-muted text-xs">No plans match the selected service or duration filter.</p>
+          <Inbox className="size-8 text-slate-300 mx-auto mb-2" />
+          <h3 className="text-xs font-bold text-ink">No plans match the selected filters</h3>
+          <p className="text-muted text-xs mt-0.5">Try selecting another service or duration, or configure a new plan.</p>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -324,7 +384,7 @@ export const PlansView: React.FC = () => {
           <div className="flex items-center gap-2">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              onChange={(e) => handleStatusChange(e.target.value)}
               className="text-xs border border-line rounded-[var(--radius-control)] px-3 py-1.5 bg-subtle text-ink-soft font-semibold focus:ring-2 focus:ring-primary-500 focus:outline-none cursor-pointer"
             >
               <option value="ALL">All Statuses</option>
@@ -336,12 +396,19 @@ export const PlansView: React.FC = () => {
           </div>
         </div>
 
-        <SubscriptionTable
-          subscriptions={subscriptions}
-          statusFilter={statusFilter}
-          serviceFilter={serviceFilter}
-          onManage={handleManageSubClick}
-        />
+        {isLoadingSubs ? (
+          <TableSkeleton rows={subPageSize > 10 ? 10 : subPageSize} columns={6} />
+        ) : (
+          <SubscriptionTable
+            subscriptions={subscriptions}
+            total={subTotal}
+            currentPage={subPage}
+            pageSize={subPageSize}
+            onPageChange={setSubPage}
+            onPageSizeChange={setSubPageSize}
+            onManage={handleManageSubClick}
+          />
+        )}
       </Card>
 
       {/* Create / Edit Plan Modal */}

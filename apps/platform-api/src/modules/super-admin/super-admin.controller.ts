@@ -40,13 +40,14 @@ export class SuperAdminController {
     sendSuccess(res, req.superAdmin);
   };
 
-  getDashboard = async (_req: Request, res: Response): Promise<void> => {
-    const data = await this.service.getDashboardOverview();
+  getDashboard = async (req: Request, res: Response): Promise<void> => {
+    const timeRange = (req.query.timeRange as string) || "30d";
+    const data = await this.service.getDashboardOverview(timeRange);
     sendSuccess(res, data);
   };
 
-  getUsers = async (_req: Request, res: Response): Promise<void> => {
-    const data = await this.service.getUsers();
+  getUsers = async (req: Request, res: Response): Promise<void> => {
+    const data = await this.service.getUsers(req.query as Record<string, any>);
     sendSuccess(res, data);
   };
 
@@ -77,8 +78,25 @@ export class SuperAdminController {
     sendSuccess(res, data);
   };
 
-  getSubscriptions = async (_req: Request, res: Response): Promise<void> => {
-    const data = await this.service.getSubscriptions();
+  deletePlan = async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const data = await this.service.deletePlan(id);
+    sendSuccess(res, data);
+  };
+
+  getSubscriptions = async (req: Request, res: Response): Promise<void> => {
+    const data = await this.service.getSubscriptions(req.query as Record<string, any>);
+    sendSuccess(res, data);
+  };
+
+  updateSubscription = async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const data = await this.service.updateSubscription(id, req.body);
+    sendSuccess(res, data);
+  };
+
+  syncStripe = async (_req: Request, res: Response): Promise<void> => {
+    const data = await this.service.syncStripe();
     sendSuccess(res, data);
   };
 
