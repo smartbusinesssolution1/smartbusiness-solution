@@ -1,7 +1,16 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { MessageSquare, X, Send, RotateCcw, ChevronDown, Check, ArrowRight, ShieldCheck, Printer } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MessageSquare, X, Send, RotateCcw, ShieldCheck } from 'lucide-react';
 import { ChatMessage } from '../../types';
 import { SmartBusinessLogo } from '../common/SmartBusinessLogo';
+
+/**
+ * SmartBusiness chat widget, connected to the RAG backend (chatbot-backend).
+ * Drop-in replacement for the old mock FloatingChatWidget: same props, same look.
+ *
+ * Needs ONE env var in the web portal (.env):
+ *   VITE_CHAT_API_URL=https://chat-api.yourdomain.com      (local: http://localhost:8001, the default)
+ * and the portal's address must be listed in the backend CORS_ORIGINS.
+ */
 
 interface FloatingChatWidgetProps {
   isOpen: boolean;
@@ -9,27 +18,141 @@ interface FloatingChatWidgetProps {
   onNavigatePricing: () => void;
 }
 
+// ---------- backend connection ----------
+const API_BASE: string = (
+  ((import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_CHAT_API_URL) ||
+  'http://localhost:8001'
+).replace(/\/+$/, '');
+
+const SESSION_KEY = 'sb_chat_session';
+interface Session { token: string; exp: number }
+
+const readSession = (): Session | null => {
+  try {
+    const s = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null') as Session | null;
+    if (s && s.token && s.exp > Date.now() + 5 * 60 * 1000) return s; // refresh 5 min before expiry
+  } catch { /* ignore */ }
+  return null;
+};
+const dropSession = () => { try { localStorage.removeItem(SESSION_KEY); } catch { /* ignore */ } };
+
+let sessionInFlight: Promise<Session> | null = null;
+const ensureSession = (): Promise<Session> => {
+  const s = readSession();
+  if (s) return Promise.resolve(s);
+  if (!sessionInFlight) {
+    sessionInFlight = (async () => {
+      const r = await fetch(`${API_BASE}/v1/session`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      if (r.status === 429) throw new Error('rate_limited');
+      if (!r.ok) throw new Error(`session_failed_${r.status}`);
+      const d = (await r.json()) as { token: string; expires_in: number };
+      const sess = { token: d.token, exp: Date.now() + d.expires_in * 1000 };
+      try { localStorage.setItem(SESSION_KEY, JSON.stringify(sess)); } catch { /* ignore */ }
+      return sess;
+    })().finally(() => { sessionInFlight = null; });
+  }
+  return sessionInFlight;
+};
+
+const postChat = (message: string, s: Session) =>
+  fetch(`${API_BASE}/v1/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Session-Token': s.token },
+    body: JSON.stringify({ message }),
+  });
+
+/** Read the server-sent-events stream and call onText with the full answer so far. */
+async function streamAnswer(resp: Response, onText: (full: string) => void): Promise<boolean> {
+  if (!resp.body) return false;
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let full = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split('\n\n');
+    buffer = blocks.pop() ?? '';
+    for (const block of blocks) {
+      const lines = block.split('\n');
+      if (lines.some((l) => l.trim() === 'event: debug')) continue;
+      const line = lines.find((l) => l.startsWith('data: '));
+      if (!line) continue;
+      const payload = line.slice(6);
+      if (payload === '[DONE]') continue;
+      full += payload.replace(/\\n/g, '\n');
+      onText(full);
+    }
+  }
+  return full.length > 0;
+}
+
+// ---------- tiny markdown (bold, code, bullets, numbers) rendered as React nodes, never raw HTML ----------
+const inline = (text: string): React.ReactNode[] => {
+  const out: React.ReactNode[] = [];
+  const re = /\*\*(.+?)\*\*|`([^`]+?)`/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  let i = 0;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    out.push(
+      m[1] !== undefined
+        ? <strong key={i++}>{m[1]}</strong>
+        : <code key={i++} className="px-1 rounded bg-slate-100 text-[11px]">{m[2]}</code>
+    );
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+};
+
+const Markdown: React.FC<{ text: string }> = ({ text }) => (
+  <>
+    {text.split(/\n{2,}/).map((block, bi) => {
+      const lines = block.split('\n').filter((l) => l.trim() !== '');
+      if (!lines.length) return null;
+      if (lines.every((l) => /^\s*[-*]\s+/.test(l)))
+        return <ul key={bi} className="list-disc pl-4 space-y-0.5">{lines.map((l, i) => <li key={i}>{inline(l.replace(/^\s*[-*]\s+/, ''))}</li>)}</ul>;
+      if (lines.every((l) => /^\s*\d+\.\s+/.test(l)))
+        return <ol key={bi} className="list-decimal pl-4 space-y-0.5">{lines.map((l, i) => <li key={i}>{inline(l.replace(/^\s*\d+\.\s+/, ''))}</li>)}</ol>;
+      return <p key={bi} className={bi ? 'mt-2' : ''}>{lines.map((l, i) => <React.Fragment key={i}>{i > 0 && <br />}{inline(l)}</React.Fragment>)}</p>;
+    })}
+  </>
+);
+
+// ---------- texts ----------
+const WELCOME_TEXT =
+  'Hello! Welcome to SmartBusiness Solutions. How can I help you with high-volume check printing, bank compliance, or Clock In / Clock Out attendance today?';
+const WELCOME_ACTIONS = [
+  'How does batch check printing work?',
+  'Tell me about Clock In Clock Out attendance',
+  'How long is the free trial, and do I need a credit card?',
+  'Is my bank account information secure?',
+];
+const makeWelcome = (id: string): ChatMessage => ({
+  id,
+  sender: 'assistant',
+  text: WELCOME_TEXT,
+  timestamp: 'Just now',
+  suggestedActions: WELCOME_ACTIONS,
+});
+const clock = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
 export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
   isOpen,
   onToggle,
   onNavigatePricing
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'msg-1',
-      sender: 'assistant',
-      text: 'Hello! Welcome to SmartBusiness Solutions. How can I help you with high-volume check printing, bank compliance, or Clock In / Clock Out attendance today?',
-      timestamp: 'Just now',
-      suggestedActions: [
-        'How does batch check printing & dispatch work?',
-        'Tell me about Clock In Clock Out attendance',
-        'Are checks compliant with Federal Reserve MICR standards?',
-        'What are the pricing tiers for high volume?'
-      ]
-    }
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([makeWelcome('msg-1')]);
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isBusy, setIsBusy] = useState(false);
   const [unreadCount, setUnreadCount] = useState(1);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -42,53 +165,85 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
       setUnreadCount(0);
       scrollToBottom();
     }
-  }, [isOpen, messages]);
+  }, [isOpen, messages, isTyping]);
 
-  const handleSendMessage = (textToSend?: string) => {
-    const text = textToSend || inputValue.trim();
-    if (!text) return;
+  // warm up the server session when the chat opens (errors show on first send)
+  useEffect(() => {
+    if (isOpen) ensureSession().catch(() => undefined);
+  }, [isOpen]);
+
+  const addAssistant = useCallback((text: string) => {
+    setMessages((prev) => [...prev, { id: `bot-${Date.now()}-${prev.length}`, sender: 'assistant', text, timestamp: clock() }]);
+  }, []);
+
+  const handleSendMessage = async (textToSend?: string) => {
+    const text = (textToSend ?? inputValue).trim();
+    if (!text || isBusy) return;
 
     const userMsg: ChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'user',
       text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: clock()
     };
 
-    setMessages((prev) => [...prev, userMsg]);
+    // chips are only useful before the first question
+    setMessages((prev) => [...prev.map((m) => (m.suggestedActions ? { ...m, suggestedActions: undefined } : m)), userMsg]);
     if (!textToSend) setInputValue('');
     setIsTyping(true);
+    setIsBusy(true);
 
-    // Context-rich domain assistant response
-    setTimeout(() => {
-      let reply = '';
-      const lower = text.toLowerCase();
-
-      if (lower.includes('printing') || lower.includes('dispatch') || lower.includes('mail') || lower.includes('fedex')) {
-        reply = 'SmartBusiness Solutions prints checks using high-resolution magnetic MICR toner on tamper-evident security check stock. We support automated batch printing with digital signatures and same-day FedEx or USPS dispatch directly to your vendors.';
-      } else if (lower.includes('clock') || lower.includes('attendance') || lower.includes('time')) {
-        reply = 'Our Clock In Clock Out core service provides real-time GPS-geofenced shift tracking, facial verification or PIN sign-in, automated attendance audit trails, and 1-click sync with your payroll software to eliminate missed punch logs.';
-      } else if (lower.includes('micr') || lower.includes('compliance') || lower.includes('check 21') || lower.includes('security')) {
-        reply = 'All checks adhere strictly to Check 21 and ANSI X9 Federal Reserve MICR specifications. Every transaction is guarded with 256-bit SSL encryption and full immutable audit trails.';
-      } else if (lower.includes('pricing') || lower.includes('plan') || lower.includes('cost') || lower.includes('rate')) {
-        reply = 'We provide flexible plans with volume discounts! Plans start at $19/mo for standard businesses up to custom enterprise tiers with dedicated printing mailkits and 99.99% uptime SLAs.';
+    const botId = `bot-${Date.now()}`;
+    let started = false;
+    const showText = (full: string) => {
+      if (!started) {
+        started = true;
+        setIsTyping(false);
+        setMessages((prev) => [...prev, { id: botId, sender: 'assistant', text: full, timestamp: clock() }]);
       } else {
-        reply = `Thank you for your inquiry about "${text}". Our live concierge team is standing by to assist with your check printing volumes and timecard requirements. Feel free to leave your contact details or call us directly!`;
+        setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, text: full } : m)));
       }
+    };
 
-      const botMsg: ChatMessage = {
-        id: `bot-${Date.now()}`,
-        sender: 'assistant',
-        text: reply,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      };
-
-      setMessages((prev) => [...prev, botMsg]);
+    try {
+      let session = await ensureSession();
+      let resp = await postChat(text, session);
+      if (resp.status === 401) { // token expired: get a new session, retry once
+        dropSession();
+        session = await ensureSession();
+        resp = await postChat(text, session);
+      }
+      if (resp.status === 429) {
+        setIsTyping(false);
+        addAssistant("You're sending messages a bit fast. Please wait a moment and try again.");
+        return;
+      }
+      if (!resp.ok) throw new Error(`chat_failed_${resp.status}`);
+      const got = await streamAnswer(resp, showText);
+      if (!got && !started) {
+        setIsTyping(false);
+        addAssistant("Sorry, I didn't get a response. Please try again.");
+      }
+    } catch (err) {
       setIsTyping(false);
-    }, 700);
+      if (!started) {
+        addAssistant(
+          err instanceof Error && err.message === 'rate_limited'
+            ? 'Too many chat sessions started from your network. Please wait a minute and try again.'
+            : 'Sorry, something went wrong reaching the server. Please try again.'
+        );
+      }
+      console.error('chat error:', err);
+    } finally {
+      setIsTyping(false);
+      setIsBusy(false);
+    }
   };
 
   const handleReset = () => {
+    // new conversation = new server session (the server keeps history per session)
+    dropSession();
+    ensureSession().catch(() => undefined);
     setMessages([
       {
         id: 'msg-reset',
@@ -98,7 +253,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
         suggestedActions: [
           'How does batch check printing work?',
           'Clock In Clock Out features',
-          'Explore pricing tiers'
+          'How do I set up my printer for checks?'
         ]
       }
     ]);
@@ -137,6 +292,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
               </button>
               <button
                 onClick={onToggle}
+                aria-label="Close chat"
                 className="p-1.5 text-slate-400 hover:text-white rounded-md transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -159,7 +315,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
           </div>
 
           {/* Messages Scroll Area */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40 text-xs">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/40 text-xs" aria-live="polite">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -174,7 +330,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
                       : 'bg-white border border-slate-200/80 text-slate-800 shadow-2xs rounded-bl-xs'
                   }`}
                 >
-                  <p>{msg.text}</p>
+                  {msg.sender === 'user' ? <p>{msg.text}</p> : <Markdown text={msg.text} />}
                 </div>
                 <span className="text-[10px] text-slate-400 mt-1 px-1">
                   {msg.timestamp}
@@ -212,6 +368,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
             <input
               type="text"
               value={inputValue}
+              maxLength={2000}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
               placeholder="Ask about check printing, clock in/out..."
@@ -219,7 +376,7 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
             />
             <button
               onClick={() => handleSendMessage()}
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() || isBusy}
               className="p-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-40 text-white rounded-xl transition-all cursor-pointer"
               aria-label="Send message"
             >
