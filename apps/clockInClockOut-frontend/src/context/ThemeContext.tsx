@@ -101,6 +101,32 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         borderRadius: 12,
       },
       components: {
+        MuiInputBase: {
+          styleOverrides: {
+            root: {
+              color: isLight ? '#0c1427' : '#f8fafc',
+            },
+            input: {
+              '&::placeholder': {
+                color: isLight ? '#94a3b8' : '#64748b',
+                opacity: 1,
+              },
+            },
+          },
+        },
+        MuiOutlinedInput: {
+          styleOverrides: {
+            root: {
+              color: isLight ? '#0c1427' : '#f8fafc',
+            },
+            input: {
+              '&::placeholder': {
+                color: isLight ? '#94a3b8' : '#64748b',
+                opacity: 1,
+              },
+            },
+          },
+        },
         MuiButton: {
           styleOverrides: {
             root: ({ ownerState }) => ({
