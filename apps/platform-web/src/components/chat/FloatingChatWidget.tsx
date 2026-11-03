@@ -253,3 +253,4 @@ export const FloatingChatWidget: React.FC<FloatingChatWidgetProps> = ({
     </aside>
   );
 };
+
