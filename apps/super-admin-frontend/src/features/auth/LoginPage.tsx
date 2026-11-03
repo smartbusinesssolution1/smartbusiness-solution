@@ -38,21 +38,23 @@ export const LoginPage: React.FC = () => {
         toast.success(`Signed in as ${email}`);
         navigate(from, { replace: true });
       } else {
-        setErrorMessage(res.error || 'Invalid credentials. Please verify your email and password.');
-        toast.error('Authentication failed.');
+        const errorMsg = res.error || 'Invalid credentials. Please verify your email and password.';
+        setErrorMessage(errorMsg);
+        toast.error(errorMsg);
       }
     } catch {
-      setErrorMessage('Unable to connect to authentication server. Please try again.');
+      const connError = 'Unable to connect to authentication server. Please try again.';
+      setErrorMessage(connError);
+      toast.error(connError);
     } finally {
       setIsLoading(false);
     }
   };
 
-
   return (
     <div className="min-h-screen bg-canvas flex flex-col justify-between items-center p-4 sm:p-6 antialiased select-none">
       {/* Top Spacer */}
-      <div className="w-full max-w-md pt-4 sm:pt-8" />
+      <div className="w-full max-w-md pt-4 sm:pt-6" />
 
       {/* Main Center Auth Card */}
       <div className="w-full max-w-[420px] animate-in fade-in zoom-in-95 duration-200">
@@ -67,7 +69,7 @@ export const LoginPage: React.FC = () => {
                 Super Admin Control
               </h1>
               <p className="text-xs text-muted mt-1 leading-relaxed">
-                Sign in to manage plans, organizations, and platform services
+                Dedicated administrative access for platform control and engineering
               </p>
             </div>
           </div>
@@ -85,7 +87,7 @@ export const LoginPage: React.FC = () => {
             {/* Email Field */}
             <div>
               <label className="block text-xs font-bold text-ink mb-1.5 tracking-tight">
-                Email Address
+                Administrative Email
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -96,7 +98,7 @@ export const LoginPage: React.FC = () => {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@smartbusiness.us"
+                  placeholder="Enter administrative email"
                   className="w-full border border-slate-300 rounded-lg pl-9 pr-3.5 py-2.5 bg-white text-ink font-semibold text-xs placeholder:text-slate-400 shadow-xs hover:border-slate-400 focus:border-primary-600 focus:ring-4 focus:ring-primary-500/15 focus:outline-none transition-all"
                 />
               </div>
@@ -108,13 +110,6 @@ export const LoginPage: React.FC = () => {
                 <label className="text-xs font-bold text-ink tracking-tight">
                   Password
                 </label>
-                <button
-                  type="button"
-                  onClick={() => toast.info('Password recovery link sent to administrator email.')}
-                  className="text-[11px] text-primary-600 hover:text-primary-700 font-semibold cursor-pointer"
-                >
-                  Forgot password?
-                </button>
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
@@ -125,7 +120,7 @@ export const LoginPage: React.FC = () => {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder="Enter password"
                   className="w-full border border-slate-300 rounded-lg pl-9 pr-10 py-2.5 bg-white text-ink font-semibold text-xs placeholder:text-slate-400 shadow-xs hover:border-slate-400 focus:border-primary-600 focus:ring-4 focus:ring-primary-500/15 focus:outline-none transition-all"
                 />
                 <button
@@ -148,7 +143,7 @@ export const LoginPage: React.FC = () => {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="rounded border-slate-300 text-primary-600 focus:ring-primary-500/20 size-4 cursor-pointer"
                 />
-                <span>Remember me for 30 days</span>
+                <span>Remember administrative session</span>
               </label>
             </div>
 
@@ -168,7 +163,7 @@ export const LoginPage: React.FC = () => {
                   </span>
                 ) : (
                   <span className="flex items-center gap-1.5">
-                    Sign In <ArrowRight className="size-3.5 ml-0.5" />
+                    Sign In to Super Admin <ArrowRight className="size-3.5 ml-0.5" />
                   </span>
                 )}
               </Button>

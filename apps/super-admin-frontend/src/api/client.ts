@@ -29,10 +29,17 @@ export async function apiClient<T>(
     if (qs) url += (url.includes('?') ? '&' : '?') + qs;
   }
 
+  const storedToken = localStorage.getItem('sb_super_admin_token');
+  const authHeaders: Record<string, string> = {};
+  if (storedToken) {
+    authHeaders['Authorization'] = `Bearer ${storedToken}`;
+  }
+
   const response = await fetch(url, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...authHeaders,
       ...headers,
     },
     ...rest,
@@ -48,5 +55,10 @@ export async function apiClient<T>(
     throw new ApiError(response.status, response.statusText, errorData);
   }
 
-  return response.json() as Promise<T>;
+  const json = await response.json();
+  if (json && typeof json === 'object' && 'data' in json && 'success' in json && json.success === true) {
+    return json.data as T;
+  }
+
+  return json as T;
 }

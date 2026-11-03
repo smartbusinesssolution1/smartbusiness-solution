@@ -29,6 +29,14 @@ const ProtectedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) 
   return <AppShell>{children}</AppShell>;
 };
 
+const DevOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  if (user?.role !== 'DEV_SUPER_ADMIN') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <>{children}</>;
+};
+
 const LoginRouteWrapper: React.FC = () => {
   const { isAuthenticated } = useAuth();
   if (isAuthenticated) {
@@ -108,9 +116,11 @@ export const AppContent: React.FC = () => {
           path="/error-logs"
           element={
             <ProtectedLayout>
-              <AnimatedRoute>
-                <TelemetryView />
-              </AnimatedRoute>
+              <DevOnlyRoute>
+                <AnimatedRoute>
+                  <TelemetryView />
+                </AnimatedRoute>
+              </DevOnlyRoute>
             </ProtectedLayout>
           }
         />

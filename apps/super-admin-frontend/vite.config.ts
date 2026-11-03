@@ -15,7 +15,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/api/v1/super-admin": {
-        target: process.env.PLATFORM_API_URL ?? "http://localhost:3000",
+        target: process.env.PLATFORM_API_URL ?? "http://localhost:3001",
         changeOrigin: true,
       },
     },
