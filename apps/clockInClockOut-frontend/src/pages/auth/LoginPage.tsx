@@ -40,6 +40,44 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+const loginInputSx = {
+  '& .MuiOutlinedInput-root': {
+    borderRadius: '10px',
+    bgcolor: '#FFFFFF',
+    color: '#0F172A',
+    fontSize: '0.9rem',
+    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    '& fieldset': {
+      borderColor: '#E2E8F0',
+      transition: 'border-color 0.2s ease-in-out',
+    },
+    '&:hover fieldset': {
+      borderColor: '#CBD5E1',
+    },
+    '&.Mui-focused': {
+      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
+    },
+    '&.Mui-focused fieldset': {
+      borderColor: '#2563EB',
+    },
+    '& input': {
+      color: '#0F172A',
+      '&::placeholder': {
+        color: '#94A3B8',
+        opacity: 1,
+      },
+      '&::-webkit-input-placeholder': {
+        color: '#94A3B8',
+        opacity: 1,
+      },
+      '&::-moz-placeholder': {
+        color: '#94A3B8',
+        opacity: 1,
+      },
+    },
+  },
+};
+
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -112,7 +150,10 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased flex flex-col selection:bg-[#2563EB] selection:text-white">
+    <div
+      style={{ colorScheme: 'light' }}
+      className="min-h-screen bg-[#F8FAFC] text-[#0F172A] font-sans antialiased flex flex-col selection:bg-[#2563EB] selection:text-white"
+    >
       {/* Main Responsive Grid Layout (Unified #F8FAFC background across both columns) */}
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] transition-all duration-300">
         
@@ -193,27 +234,7 @@ export const LoginPage: React.FC = () => {
                         helperText={errors.email?.message}
                         disabled={isSubmitting}
                         {...register('email')}
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: '10px',
-                            bgcolor: '#FFFFFF',
-                            fontSize: '0.9rem',
-                            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            '& fieldset': {
-                              borderColor: '#E2E8F0',
-                              transition: 'border-color 0.2s ease-in-out',
-                            },
-                            '&:hover fieldset': {
-                              borderColor: '#CBD5E1',
-                            },
-                            '&.Mui-focused': {
-                              boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
-                            },
-                            '&.Mui-focused fieldset': {
-                              borderColor: '#2563EB',
-                            },
-                          },
-                        }}
+                        sx={loginInputSx}
                       />
                     </div>
 
@@ -266,27 +287,7 @@ export const LoginPage: React.FC = () => {
                             ),
                           },
                         }}
-                        sx={{
-                          '& .MuiOutlinedInput-root': {
-                            borderRadius: '10px',
-                            bgcolor: '#FFFFFF',
-                            fontSize: '0.9rem',
-                            fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
-                            '& fieldset': {
-                              borderColor: '#E2E8F0',
-                              transition: 'border-color 0.2s ease-in-out',
-                            },
-                            '&:hover fieldset': {
-                              borderColor: '#CBD5E1',
-                            },
-                            '&.Mui-focused': {
-                              boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.15)',
-                            },
-                            '&.Mui-focused fieldset': {
-                              borderColor: '#2563EB',
-                            },
-                          },
-                        }}
+                        sx={loginInputSx}
                       />
                     </div>
 
@@ -436,6 +437,13 @@ export const LoginPage: React.FC = () => {
                 placeholder="name@company.com"
                 disabled={forgotPasswordLoading}
                 size="small"
+                sx={{
+                  ...loginInputSx,
+                  '& .MuiOutlinedInput-root': {
+                    ...loginInputSx['& .MuiOutlinedInput-root'],
+                    borderRadius: '8px',
+                  },
+                }}
               />
             </Box>
           )}
