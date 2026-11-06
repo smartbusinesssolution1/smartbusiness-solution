@@ -10,6 +10,7 @@
     "check-types": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "test:unit": "vitest run --config vitest.unit.config.ts",
     "test:watch": "vitest",
     "dev:worker": "tsx watch src/worker.ts",
     "start:worker": "node dist/worker.js"

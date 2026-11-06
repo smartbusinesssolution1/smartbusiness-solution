@@ -4,6 +4,21 @@ import { accessToken } from "../../config/index.js";
 
 export type SuperAdminRole = "SUPER_ADMIN" | "DEV_SUPER_ADMIN";
 
+export interface SuperAdminUser {
+  adminId: string;
+  email: string;
+  name: string;
+  role: SuperAdminRole;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      superAdmin?: SuperAdminUser;
+    }
+  }
+}
+
 export interface SuperAdminTokenPayload {
   adminId: string;
   email: string;
