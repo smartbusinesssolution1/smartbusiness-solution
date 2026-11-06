@@ -7,3 +7,4 @@ export * from './Modal';
 export * from './Drawer';
 export * from './LoadingState';
 export * from './Pagination';
+export * from './SmartBusinessLogo';

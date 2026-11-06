@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldAlert, Bell, Command, ChevronRight } from 'lucide-react';
 import { Badge } from '../common/Badge';
+import { SmartBusinessLogo } from '../common/SmartBusinessLogo';
 
 export interface TopHeaderProps {
   onOpenLogs?: () => void;
@@ -11,11 +12,12 @@ export const TopHeader: React.FC<TopHeaderProps> = ({ onOpenLogs, errorCount = 3
   return (
     <header className="h-14 border-b border-line bg-panel/95 backdrop-blur-md sticky top-0 z-40 flex items-center justify-between px-6 select-none">
       {/* Breadcrumb Path */}
-      <div className="flex items-center gap-2 text-xs">
+      <div className="flex items-center gap-2.5 text-xs">
+        <SmartBusinessLogo size="xs" iconOnly />
         <span className="text-muted font-medium">SmartBusiness Solutions</span>
         <ChevronRight className="size-3 text-faint" />
         <span className="text-ink font-semibold">Super Admin Control</span>
-        <Badge variant="blue" size="xs" className="ml-2">
+        <Badge variant="blue" size="xs" className="ml-1.5">
           USA-EAST-1
         </Badge>
       </div>

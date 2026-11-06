@@ -4,13 +4,13 @@ import {
   LayoutDashboard,
   CreditCard,
   Building2,
-  Layers,
   Bug,
   LogOut,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
+import { SmartBusinessLogo } from '../common/SmartBusinessLogo';
 import { toast } from 'sonner';
 import { cn } from '../../utils/cn';
 
@@ -67,14 +67,16 @@ export const Sidebar: React.FC<SidebarProps> = () => {
     <>
       <aside className="w-64 bg-sidebar flex flex-col justify-between border-r border-line shrink-0 select-none">
         <div className="flex flex-col gap-6 p-4 overflow-y-auto">
-          {/* Brand Card */}
+          {/* Brand Card with Authentic SmartBusiness Emblem */}
           <div
             onClick={() => navigate('/dashboard')}
             className="flex items-center gap-3 px-1 py-1 cursor-pointer group transition-opacity hover:opacity-90"
           >
-            <div className="size-9 rounded-xl bg-gradient-to-tr from-primary-700 to-primary-500 flex items-center justify-center text-white shadow-button shrink-0 transition-transform group-hover:scale-105 duration-200">
-              <Layers className="size-5" />
-            </div>
+            <SmartBusinessLogo
+              size="sm"
+              iconOnly
+              className="transition-transform group-hover:scale-105 duration-200"
+            />
             <div className="flex flex-col leading-none">
               <span className="text-[0.9375rem] font-bold text-ink tracking-tight">SmartBusiness</span>
               <div className="flex items-center gap-1.5 mt-1">

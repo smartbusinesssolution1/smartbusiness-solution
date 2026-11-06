@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-  Layers,
   Mail,
   Lock,
   Eye,
@@ -11,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { Button } from '../../components/common/Button';
+import { SmartBusinessLogo } from '../../components/common/SmartBusinessLogo';
 import { toast } from 'sonner';
 
 export const LoginPage: React.FC = () => {
@@ -60,15 +60,15 @@ export const LoginPage: React.FC = () => {
       <div className="w-full max-w-[420px] animate-in fade-in zoom-in-95 duration-200">
         <div className="bg-panel border border-line rounded-2xl shadow-card p-7 sm:p-9 space-y-6">
           {/* Brand & Heading */}
-          <div className="text-center space-y-2">
-            <div className="inline-flex size-12 rounded-2xl bg-gradient-to-tr from-primary-700 to-primary-500 items-center justify-center text-white shadow-button mb-1">
-              <Layers className="size-6" />
+          <div className="text-center space-y-3">
+            <div className="flex justify-center">
+              <SmartBusinessLogo size="lg" layout="stacked" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl font-bold text-ink tracking-tight">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-50 border border-primary-200/80 text-primary-700 font-mono text-[10px] font-bold tracking-wider uppercase mb-1.5">
                 Super Admin Control
-              </h1>
-              <p className="text-xs text-muted mt-1 leading-relaxed">
+              </div>
+              <p className="text-xs text-muted leading-relaxed">
                 Dedicated administrative access for platform control and engineering
               </p>
             </div>

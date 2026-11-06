@@ -1,6 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none">
-  <rect width="24" height="24" rx="6" fill="#1e3a8a"/>
-  <path d="M12 4L4 8L12 12L20 8L12 4Z" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M4 12L12 16L20 12" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M4 16L12 20L20 16" stroke="#93c5fd" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<svg viewBox="0 0 1000 1000" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="smartGrad" x1="88%" y1="8%" x2="12%" y2="92%">
+      <stop offset="0%" stop-color="#7D077E" />
+      <stop offset="50%" stop-color="#4B1095" />
+      <stop offset="100%" stop-color="#114FD8" />
+    </linearGradient>
+  </defs>
+  <rect x="24" y="24" width="952" height="952" rx="220" fill="url(#smartGrad)" />
+  <g stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <polygon points="690,235.0 780,287.0 780,401.0 690,349.0" />
+    <polygon points="310,765.0 220,713.0 220,599.0 310,651.0" />
+    <path d="M 690,235.0 L 500,125.0 L 220,287.0 L 220,447.0 L 780,553.0 L 780,713.0 L 500,875.0 L 310,765.0" />
+    <path d="M 690,273.0 L 500,163.0 L 250,307.3 L 250,427.3 L 750,572.7 L 750,692.7 L 500,837.0 L 310,727.0" />
+    <path d="M 690,311.0 L 500,201.0 L 280,327.7 L 280,407.7 L 720,592.3 L 720,672.3 L 500,799.0 L 310,689.0" />
+    <path d="M 690,349.0 L 500,239.0 L 310,348.0 L 310,388.0 L 690,612.0 L 690,652.0 L 500,761.0 L 310,651.0" />
+  </g>
 </svg>
