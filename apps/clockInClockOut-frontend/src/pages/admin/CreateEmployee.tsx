@@ -20,10 +20,14 @@ import {
   CheckCircle2,
   RotateCw,
   Sparkles,
+  Calendar,
+  CalendarCheck,
 } from 'lucide-react';
 
 import { employeeService, CheckEmployeeEmailResult } from '../../services/employeeService';
 import { settingsService } from '../../services/settingsService';
+import { leaveService, LeavePolicy } from '../../services/leave.service';
+import { notify } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import { DayWiseShiftPicker, DEFAULT_WEEKLY_SCHEDULE } from '../../components/DayWiseShiftPicker';
 import { WeeklySchedule } from '../../types';
@@ -64,8 +68,9 @@ export const CreateEmployee: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { user, currentTenant, isSuperAdmin } = useAuth();
+  const { user, currentTenant, currentWorkspace, isSuperAdmin } = useAuth();
   const isOwner = Boolean(currentTenant?.role === 'OWNER' || isSuperAdmin);
+  const workspaceId = currentWorkspace?.id || '';
 
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -74,6 +79,101 @@ export const CreateEmployee: React.FC = () => {
   const [existingAvatarUrl, setExistingAvatarUrl] = useState<string | null>(null);
   const [isAutoFilling, setIsAutoFilling] = useState<boolean>(false);
   const [weeklySchedule, setWeeklySchedule] = useState<WeeklySchedule>(DEFAULT_WEEKLY_SCHEDULE);
+
+  // Leave Policy Multi-Assignment State
+  interface PolicyAssignmentRow {
+    policyId: string;
+    selected: boolean;
+    allocatedHours: string;
+    carriedOverHours: string;
+  }
+  const [selectedPolicies, setSelectedPolicies] = useState<Record<string, PolicyAssignmentRow>>({});
+
+  // Fetch active leave policies for this workspace
+  const { data: policies = [], isLoading: isPoliciesLoading } = useQuery<LeavePolicy[]>({
+    queryKey: ['leavePolicies', workspaceId],
+    queryFn: () => leaveService.listPolicies(workspaceId, true),
+    enabled: Boolean(workspaceId),
+  });
+
+  // Pre-populate policy assignments whenever policies are loaded
+  useEffect(() => {
+    if (policies && policies.length > 0) {
+      setSelectedPolicies((prev) => {
+        const next = { ...prev };
+        policies.forEach((p) => {
+          if (!next[p.id]) {
+            next[p.id] = {
+              policyId: p.id,
+              selected: true, // Default to true so standard policies are easily assigned
+              allocatedHours: String(p.hoursPerYear ?? 40),
+              carriedOverHours: '0',
+            };
+          }
+        });
+        return next;
+      });
+    }
+  }, [policies]);
+
+  const toggleSelectAllPolicies = (selectAll: boolean) => {
+    setSelectedPolicies((prev) => {
+      const next = { ...prev };
+      policies.forEach((p) => {
+        next[p.id] = {
+          ...(next[p.id] || {
+            policyId: p.id,
+            allocatedHours: String(p.hoursPerYear ?? 40),
+            carriedOverHours: '0',
+          }),
+          selected: selectAll,
+        };
+      });
+      return next;
+    });
+  };
+
+  const togglePolicy = (policyId: string) => {
+    setSelectedPolicies((prev) => {
+      const existing = prev[policyId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [policyId]: {
+          ...existing,
+          selected: !existing.selected,
+        },
+      };
+    });
+  };
+
+  const updatePolicyHours = (policyId: string, hours: string) => {
+    setSelectedPolicies((prev) => {
+      const existing = prev[policyId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [policyId]: {
+          ...existing,
+          allocatedHours: hours,
+        },
+      };
+    });
+  };
+
+  const updatePolicyCarryover = (policyId: string, carryover: string) => {
+    setSelectedPolicies((prev) => {
+      const existing = prev[policyId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [policyId]: {
+          ...existing,
+          carriedOverHours: carryover,
+        },
+      };
+    });
+  };
 
   // Fetch organization settings for standard shift default
   const { data: orgSettings } = useQuery({
@@ -157,14 +257,53 @@ export const CreateEmployee: React.FC = () => {
     }
   }, [orgSettings, setValue]);
 
-  // Create Mutation
+  // Create Mutation with Multi-Leave Policy Assignment
   const mutation = useMutation({
-    mutationFn: (formData: FormData) => employeeService.createEmployee(formData),
-    onSuccess: async () => {
+    mutationFn: async (formData: FormData) => {
+      const createdEmployee = await employeeService.createEmployee(formData);
+
+      // Collect selected leave policies with non-negative hours
+      const activeAssignments = Object.values(selectedPolicies).filter(
+        (sp) => sp.selected && !isNaN(parseFloat(sp.allocatedHours)) && parseFloat(sp.allocatedHours) >= 0
+      );
+
+      if (activeAssignments.length > 0 && createdEmployee?.id) {
+        const assignPromises = activeAssignments.map((sp) =>
+          leaveService
+            .assignOrAdjustBalance({
+              workspaceId: currentWorkspace?.id,
+              employeeId: createdEmployee.id,
+              policyId: sp.policyId,
+              allocatedHours: parseFloat(sp.allocatedHours) || 0,
+              carriedOverHours: parseFloat(sp.carriedOverHours) || 0,
+              year: new Date().getFullYear(),
+              notes: 'Initial leave quota assigned during staff onboarding',
+            })
+            .catch((err) => {
+              console.warn('Failed to assign initial leave policy balance:', sp.policyId, err);
+              return null;
+            })
+        );
+        await Promise.allSettled(assignPromises);
+      }
+
+      return {
+        createdEmployee,
+        assignedCount: activeAssignments.length,
+      };
+    },
+    onSuccess: async (result) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['adminEmployees'], refetchType: 'all' }),
         queryClient.invalidateQueries({ queryKey: ['adminDashboardMetrics'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['workspaceLeaveBalances'], refetchType: 'all' }),
+        queryClient.invalidateQueries({ queryKey: ['leaveBalances'], refetchType: 'all' }),
       ]);
+      if (result?.assignedCount && result.assignedCount > 0) {
+        notify(`Employee onboarded and ${result.assignedCount} leave policies assigned successfully!`, 'success');
+      } else {
+        notify('Employee onboarded successfully!', 'success');
+      }
       navigate('/admin/employees');
     },
     onError: (err: any) => {
@@ -628,6 +767,188 @@ export const CreateEmployee: React.FC = () => {
               </div>
             )}
           </div>
+        </Card>
+
+        {/* Card 5: Leave Policies & Annual Quotas */}
+        <Card className="p-5">
+          <CardHeader className="p-0 pb-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-sm font-semibold">5. Leave Policies & Annual Quotas</CardTitle>
+                  <Badge variant="brand" className="text-[10px] font-mono">
+                    Multi-Policy Assignment
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs mt-0.5">
+                  Select and assign multiple leave policies and annual hour quotas to this employee upon onboarding.
+                </CardDescription>
+              </div>
+
+              {policies.length > 0 && (
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleSelectAllPolicies(true)}
+                    className="h-7 text-xs text-primary-600 hover:text-primary-700"
+                  >
+                    Select All
+                  </Button>
+                  <span className="text-line text-xs">|</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => toggleSelectAllPolicies(false)}
+                    className="h-7 text-xs text-muted hover:text-ink"
+                  >
+                    Deselect All
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardHeader>
+
+          {isPoliciesLoading ? (
+            <div className="flex items-center justify-center p-8 bg-subtle/30 rounded-xl border border-line">
+              <RotateCw className="size-4 animate-spin text-primary-600 mr-2" />
+              <span className="text-xs text-muted">Loading workspace leave policies...</span>
+            </div>
+          ) : policies.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-line p-5 text-center bg-subtle/20">
+              <Calendar className="size-6 text-muted mx-auto mb-2 opacity-50" />
+              <p className="text-xs font-medium text-ink">No leave policies found in this workspace</p>
+              <p className="text-[11px] text-muted mt-1">
+                You can configure policies (such as Sick Leave, PTO, and Vacation) under Leave Management.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-1">
+              <div className="grid grid-cols-1 gap-2.5">
+                {policies.map((policy) => {
+                  const state = selectedPolicies[policy.id] || {
+                    policyId: policy.id,
+                    selected: false,
+                    allocatedHours: String(policy.hoursPerYear ?? 40),
+                    carriedOverHours: '0',
+                  };
+
+                  return (
+                    <div
+                      key={policy.id}
+                      className={cn(
+                        'flex flex-col md:flex-row md:items-center justify-between gap-3 p-3.5 rounded-xl border transition-colors',
+                        state.selected
+                          ? 'border-primary-300 bg-primary-50/20 dark:border-primary-800 dark:bg-primary-950/20'
+                          : 'border-line bg-subtle/30 hover:border-line-hover opacity-75'
+                      )}
+                    >
+                      {/* Checkbox and Policy Info */}
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <input
+                          type="checkbox"
+                          id={`policy-check-${policy.id}`}
+                          checked={state.selected}
+                          onChange={() => togglePolicy(policy.id)}
+                          className="mt-1 size-4 rounded border-line text-primary-600 focus:ring-primary-500 cursor-pointer"
+                        />
+                        <div className="min-w-0">
+                          <label
+                            htmlFor={`policy-check-${policy.id}`}
+                            className="text-xs font-semibold text-ink cursor-pointer flex items-center gap-2 flex-wrap"
+                          >
+                            <span>{policy.name}</span>
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              {policy.code}
+                            </Badge>
+                            <Badge
+                              variant={policy.isPaid ? 'brand' : 'outline'}
+                              className="text-[10px]"
+                            >
+                              {policy.isPaid ? 'Paid' : 'Unpaid'}
+                            </Badge>
+                            <span className="text-[10px] text-muted font-normal">
+                              ({policy.category} • {policy.accrualType.replace(/_/g, ' ')})
+                            </span>
+                          </label>
+                          {policy.description && (
+                            <p className="text-[11px] text-muted line-clamp-1 mt-0.5">
+                              {policy.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quota Inputs */}
+                      <div className="flex items-center gap-3 pl-7 md:pl-0 shrink-0">
+                        <div className="flex items-center gap-1.5">
+                          <Label
+                            htmlFor={`policy-hours-${policy.id}`}
+                            className="text-[11px] text-muted whitespace-nowrap"
+                          >
+                            Allocated:
+                          </Label>
+                          <div className="relative w-20">
+                            <Input
+                              id={`policy-hours-${policy.id}`}
+                              type="number"
+                              step="any"
+                              min="0"
+                              disabled={!state.selected}
+                              value={state.allocatedHours}
+                              onChange={(e) => updatePolicyHours(policy.id, e.target.value)}
+                              className="h-8 text-xs font-mono pr-5"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted pointer-events-none font-mono">
+                              h
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                          <Label
+                            htmlFor={`policy-carryover-${policy.id}`}
+                            className="text-[11px] text-muted whitespace-nowrap"
+                          >
+                            Carryover:
+                          </Label>
+                          <div className="relative w-20">
+                            <Input
+                              id={`policy-carryover-${policy.id}`}
+                              type="number"
+                              step="any"
+                              min="0"
+                              disabled={!state.selected}
+                              value={state.carriedOverHours}
+                              onChange={(e) => updatePolicyCarryover(policy.id, e.target.value)}
+                              className="h-8 text-xs font-mono pr-5"
+                            />
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted pointer-events-none font-mono">
+                              h
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center justify-between text-[11px] text-muted pt-1 px-1">
+                <span>
+                  <strong>
+                    {Object.values(selectedPolicies).filter((s) => s.selected).length}
+                  </strong>{' '}
+                  of {policies.length} policies selected for automatic assignment
+                </span>
+                <span className="text-[10px] text-muted">
+                  Standard annual hours auto-filled from policy settings
+                </span>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Submit Actions */}

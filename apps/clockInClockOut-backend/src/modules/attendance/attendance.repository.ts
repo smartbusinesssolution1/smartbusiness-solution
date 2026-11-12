@@ -183,6 +183,35 @@ export class AttendanceRepository {
   }
 
   /**
+   * Find if an employee has an approved leave spanning the specified date
+   */
+  async findApprovedLeaveOnDate(employeeId: string, date: Date = new Date()) {
+    const dateStr = date.toISOString().split("T")[0];
+    const startOfDay = new Date(`${dateStr}T00:00:00.000Z`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999Z`);
+
+    return prisma.leaveRequest.findFirst({
+      where: {
+        employeeId,
+        status: "APPROVED",
+        startDate: { lte: endOfDay },
+        endDate: { gte: startOfDay },
+      },
+      include: {
+        policy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            category: true,
+            isPaid: true,
+          },
+        },
+      },
+    });
+  }
+
+  /**
    * Find today's attendance record for an employee (active open session takes priority, otherwise most recent)
    */
   async findTodayRecord(employeeId: string, todayDate: Date) {

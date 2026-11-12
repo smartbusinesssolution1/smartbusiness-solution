@@ -86,7 +86,7 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   checkIn: string | null; // HH:mm:ss or null (First clock-in)
   checkOut: string | null; // HH:mm:ss or null (Last clock-out)
-  status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed';
+  status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed' | 'on_leave';
   workingHours: number; // in hours (Total sum)
   notes?: string;
   workspaceId?: string;
@@ -95,6 +95,15 @@ export interface AttendanceRecord {
   sessions?: AttendanceSessionLog[];
   sessionNumber?: number;
   isFirstSession?: boolean;
+  leaveDetails?: {
+    id: string;
+    policyName: string;
+    policyCode: string;
+    category: string;
+    isPaid: boolean;
+    totalHours: number;
+    reason?: string | null;
+  } | null;
 }
 
 export interface AttendanceReportSummary {
@@ -103,6 +112,7 @@ export interface AttendanceReportSummary {
   latePercentage: number;
   averageWorkingHours: number;
   absentCount?: number;
+  onLeaveCount?: number;
 }
 
 export interface AdminAttendanceReportResponse {
@@ -185,6 +195,7 @@ export interface AdminDashboardMetrics {
   presentToday: number;
   lateToday: number;
   autoClosedToday: number;
+  onLeaveToday?: number;
   attendanceRate: number;
   absentCount?: number;
   weeklyStats: {

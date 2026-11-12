@@ -233,12 +233,17 @@ export const authService = {
         email,
         password,
         rememberDevice,
+      }, {
+        headers: {
+          'x-platform': 'app',
+        },
       });
 
-      const { user: authUser, tenants: rawTenants } = loginRes.data.data;
+      const resData = loginRes.data.data;
+      const { user: authUser, tenants: rawTenants } = resData;
+      const accessToken = resData.accessToken || resData.tokens?.accessToken;
 
-      // The session is in httpOnly cookies set by platform-api; only remember that we signed in.
-      markSignedIn();
+      markSignedIn(accessToken);
 
       if (!rawTenants || rawTenants.length === 0) {
         throw new Error('No organization membership found for this user account.');
@@ -375,8 +380,10 @@ export const authService = {
         email,
       });
 
-      const { user: authUser, tenants: rawTenants } = res.data.data;
-      markSignedIn();
+      const resData = res.data.data;
+      const { user: authUser, tenants: rawTenants } = resData;
+      const accessToken = resData.accessToken || resData.tokens?.accessToken;
+      markSignedIn(accessToken);
 
       const privilegedTenant = (rawTenants || []).find((t: any) => {
         const r = (t.role || '').toUpperCase();
@@ -488,7 +495,12 @@ export const authService = {
    */
   async acceptInvitation(token: string, fullName: string, password: string): Promise<void> {
     try {
-      await platformAuthApi.post('/api/v1/auth/invitations/accept', { token, fullName, password });
+      const res = await platformAuthApi.post('/api/v1/auth/invitations/accept', { token, fullName, password });
+      const resData = res.data?.data;
+      const accessToken = resData?.accessToken || resData?.tokens?.accessToken;
+      if (accessToken) {
+        markSignedIn(accessToken);
+      }
     } catch (err: any) {
       const details = err.response?.data?.error?.details as Record<string, string[]> | undefined;
       const firstFieldError = details ? Object.values(details)[0]?.[0] : undefined;

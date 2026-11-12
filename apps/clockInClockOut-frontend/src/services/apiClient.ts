@@ -20,22 +20,23 @@ function extractErrorMessage(data: any, fallback = 'Operation failed'): string {
 }
 
 // ─── Session ────────────────────────────────────────────────
-// The login tokens live only in httpOnly cookies set by platform-api: JavaScript can never
-// read them, so a script injected into the page cannot steal a session. The browser sends
-// the cookies itself (withCredentials). What the app keeps here is only a yes/no flag that
-// it signed in, so it does not call protected APIs while signed out.
 const SESSION_FLAG_KEY = 'session_active';
+const ACCESS_TOKEN_KEY = 'access_token';
 
-// Earlier versions kept the access token in localStorage; remove any left behind.
-try {
-  localStorage.removeItem('access_token');
-} catch {
-  // Storage unavailable
+export function getStoredToken(): string | null {
+  try {
+    return localStorage.getItem(ACCESS_TOKEN_KEY);
+  } catch {
+    return null;
+  }
 }
 
-export function markSignedIn(): void {
+export function markSignedIn(accessToken?: string): void {
   try {
     localStorage.setItem(SESSION_FLAG_KEY, '1');
+    if (accessToken) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+    }
   } catch {
     // Storage unavailable
   }
@@ -44,6 +45,7 @@ export function markSignedIn(): void {
 export function markSignedOut(): void {
   try {
     localStorage.removeItem(SESSION_FLAG_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
   } catch {
     // Storage unavailable
   }
@@ -98,7 +100,7 @@ export const platformAuthApi = axios.create({
   },
 });
 
-// Request interceptor: attach X-Tenant-Id and X-Workspace-Id headers (the session cookie goes by itself)
+// Request interceptor: attach Authorization, X-Tenant-Id, and X-Workspace-Id headers
 clockInApi.interceptors.request.use((config) => {
   const url = config.url || '';
   const isAuthRoute = isPublicAuthRoute(url);
@@ -106,6 +108,12 @@ clockInApi.interceptors.request.use((config) => {
   // Do not hit network for protected routes when signed out
   if (!isSignedIn() && !isAuthRoute) {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
+  }
+
+  // Attach Bearer token if stored in localStorage
+  const token = getStoredToken();
+  if (token && !config.headers.get('Authorization')) {
+    config.headers.set('Authorization', `Bearer ${token}`);
   }
 
   // If sending FormData (file uploads), remove default Content-Type so the browser automatically sets the multipart boundary
@@ -124,7 +132,7 @@ clockInApi.interceptors.request.use((config) => {
   return config;
 });
 
-// Request interceptor for platformAuthApi: attach the X-Tenant-Id header (the session cookie goes by itself)
+// Request interceptor for platformAuthApi: attach Authorization and X-Tenant-Id header
 platformAuthApi.interceptors.request.use((config) => {
   const url = config.url || '';
   const isAuthRoute = isPublicAuthRoute(url);
@@ -134,6 +142,12 @@ platformAuthApi.interceptors.request.use((config) => {
     return Promise.reject(new axios.CanceledError('Not signed in. Request aborted.'));
   }
 
+  // Attach Bearer token if stored in localStorage
+  const token = getStoredToken();
+  if (token && !config.headers.get('Authorization')) {
+    config.headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const tenantId = getTenantId?.() || localStorage.getItem('active_tenant_id');
   if (tenantId && tenantId !== 'undefined' && tenantId !== 'null') {
     config.headers.set('X-Tenant-Id', tenantId);
@@ -141,14 +155,23 @@ platformAuthApi.interceptors.request.use((config) => {
   return config;
 });
 
-// Renews the session cookies once; concurrent callers share the same attempt. The refresh
-// token is replaced on every refresh, so two refreshes at once would make the second fail.
+// Renews the session once; concurrent callers share the same attempt.
 let refreshInFlight: Promise<boolean> | null = null;
 
 export function refreshSession(): Promise<boolean> {
   refreshInFlight ??= platformAuthApi
     .post('/api/v1/auth/refresh')
-    .then(() => true)
+    .then((res) => {
+      const token = res.data?.data?.accessToken || res.data?.data?.tokens?.accessToken;
+      if (token) {
+        try {
+          localStorage.setItem(ACCESS_TOKEN_KEY, token);
+        } catch {
+          // Storage unavailable
+        }
+      }
+      return true;
+    })
     .catch(() => false)
     .finally(() => {
       refreshInFlight = null;
@@ -192,8 +215,13 @@ clockInApi.interceptors.response.use(
 
       // Only a signed-in session can be renewed; otherwise there is nothing to refresh
       if (isSignedIn()) {
-        // Silent session refresh via platform-api: new cookies, then retry the original request
+        // Silent session refresh via platform-api: new token, then retry original request
         if (await refreshSession()) {
+          const newToken = getStoredToken();
+          if (newToken && originalRequest) {
+            originalRequest.headers = originalRequest.headers || {};
+            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+          }
           return clockInApi(originalRequest);
         }
         // Session expired, redirect to login

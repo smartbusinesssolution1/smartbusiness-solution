@@ -26,6 +26,7 @@ import {
 import { settingsService } from '../../services/settingsService';
 import { useAuth } from '../../context/AuthContext';
 import { ShiftTimePicker } from '../../components/ShiftTimePicker';
+import { LeavePolicyManagement } from '../../components/leave/LeavePolicyManagement';
 import { cn } from '../../lib/utils';
 import {
   Button,
@@ -824,6 +825,13 @@ export const OrganizationSettingsPage: React.FC = () => {
             </div>
           </div>
         </form>
+      )}
+
+      {/* ── 3. US Leave Policies & Quotas ── */}
+      {isValidWorkspaceId && (
+        <div className="flex flex-col gap-4">
+          <LeavePolicyManagement workspaceId={activeWorkspaceId} />
+        </div>
       )}
 
       {/* Floating Toast Notification */}

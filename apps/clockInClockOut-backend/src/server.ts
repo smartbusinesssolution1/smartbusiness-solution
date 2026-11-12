@@ -4,6 +4,7 @@ import { prisma } from "@smartbusiness/database"
 import { logger } from "./shared/services/logger.js"
 import { closeRedisConnection } from "./shared/services/redis.service.js"
 import { initAutoClockOutScheduler, stopAutoClockOutScheduler } from "./modules/attendance/auto-clock-out.scheduler.js"
+import { initLeaveRolloverScheduler, stopLeaveRolloverScheduler } from "./modules/leave/leave-rollover.scheduler.js"
 
 // Reload trigger: S3 storage active - Mumbai ap-south-1
 
@@ -21,6 +22,8 @@ async function startServer() {
 
             // Initialize Auto-Clock-Out dual cron jobs (Midnight Day-Shift & Midday Night-Shift)
             initAutoClockOutScheduler();
+            // Initialize Automated Annual Statutory Leave Rollover scheduler (Dec 31 23:59 & Jan 1 00:01)
+            initLeaveRolloverScheduler();
 
             // Pre-warm caches in background so admin users experience instant 1ms response on first load
             setTimeout(async () => {
@@ -100,6 +103,7 @@ async function startServer() {
                     logger.info("Database disconnected")
                     await closeRedisConnection()
                     stopAutoClockOutScheduler()
+                    stopLeaveRolloverScheduler()
 
                     clearTimeout(forceShutdownTimer)
                     logger.info("Shutdown complete")

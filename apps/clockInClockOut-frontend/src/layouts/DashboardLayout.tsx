@@ -6,6 +6,7 @@ import {
   BarChart3,
   Building2,
   UserCheck,
+  CalendarDays,
   Search,
   ShieldCheck,
   LogOut,
@@ -96,6 +97,12 @@ export const DashboardLayout: React.FC = () => {
       path: '/admin/employees',
       icon: Users,
       preload: () => import('../pages/admin/EmployeeList'),
+    },
+    {
+      text: 'Leave Management',
+      path: '/admin/leaves',
+      icon: CalendarDays,
+      preload: () => import('../pages/admin/LeaveManagementPage'),
     },
     {
       text: 'Attendance Reports',

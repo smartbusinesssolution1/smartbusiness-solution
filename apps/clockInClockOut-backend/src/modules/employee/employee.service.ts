@@ -3,6 +3,7 @@ import { AppError, NotFoundError, ValidationError } from "../../shared/errors/in
 import { storageService } from "../../shared/services/storage.service.js";
 import { logger } from "../../shared/services/logger.js";
 import { memoryCache } from "../../shared/services/cache.service.js";
+import { pushNotificationService } from "../../shared/services/push-notification.service.js";
 import type { UpdateProfileInput, RegisterPushTokenInput } from "./employee.schema.js";
 
 /**
@@ -345,10 +346,21 @@ export class EmployeeService {
    * Register push notification token for employee device
    */
   async registerPushToken(userId: string, tenantId: string, payload: RegisterPushTokenInput) {
+    let employeeId: string | undefined;
+    try {
+      const emp = await this.employeeRepo.findEmployeeByUserIdAndTenant(userId, tenantId);
+      employeeId = emp?.id;
+    } catch {
+      // Continue even if employee record lookup is unavailable
+    }
+
+    await pushNotificationService.savePushToken(userId, payload.pushToken, employeeId);
+
     logger.info(
       {
         userId,
         tenantId,
+        employeeId,
         platform: payload.platform || "unknown",
         deviceName: payload.deviceName || "unknown",
         pushToken: payload.pushToken.slice(0, 15) + "...",

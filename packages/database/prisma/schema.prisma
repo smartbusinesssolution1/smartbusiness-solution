@@ -115,6 +115,7 @@ model User {
   sessions                  Session[]
   userTokens                UserToken[]                @relation("UserTokenOwner")
   createdUserTokens         UserToken[]                @relation("UserTokenCreatedBy")
+  reviewedLeaveRequests     LeaveRequest[]             @relation("LeaveReviewer")
 
   @@map("users")
 }
@@ -257,6 +258,8 @@ model Workspace {
 
   // Clock In Clock Out
   attendanceSettings AttendanceSettings?
+  leavePolicies      LeavePolicy[]
+  leaveRequests      LeaveRequest[]
 
   @@index([tenantId])
   @@map("workspaces")
@@ -874,6 +877,8 @@ model AttendanceEmployeeDetails {
 
   workspaceMember   WorkspaceMember    @relation(fields: [workspaceMemberId], references: [id])
   attendanceRecords AttendanceRecord[]
+  leaveBalances     EmployeeLeaveBalance[]
+  leaveRequests     LeaveRequest[]
 
   @@index([workspaceMemberId])
   @@index([employeeCode])
@@ -916,3 +921,123 @@ model AttendanceRecord {
   @@index([clockInDate(sort: Desc), clockInTime(sort: Desc)])
   @@map("attendance_records")
 }
+
+// ─── US Leave Management & Policy Engine ─────────────────────────────────────
+
+enum LeaveCategory {
+  PTO
+  VACATION
+  SICK
+  BEREAVEMENT
+  JURY_DUTY
+  MILITARY
+  UNPAID
+  FMLA
+}
+
+enum LeaveAccrualType {
+  FRONTLOAD
+  HOURLY_ACCRUAL
+  PER_PAY_PERIOD
+  UNLIMITED
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeavePolicy {
+  id                  String           @id @default(uuid())
+  workspaceId         String           @map("workspace_id")
+  name                String
+  code                String
+  description         String?
+  category            LeaveCategory    @default(PTO)
+  accrualType         LeaveAccrualType @default(HOURLY_ACCRUAL) @map("accrual_type")
+  rate                Decimal          @default(0) @db.Decimal(6, 4)
+  hoursPerYear        Decimal          @default(40.0) @map("hours_per_year") @db.Decimal(6, 2)
+  maxCarryoverHours   Decimal          @default(0) @map("max_carryover_hours") @db.Decimal(6, 2)
+  accrualCapHours     Decimal?         @map("accrual_cap_hours") @db.Decimal(6, 2)
+  waitingPeriodDays   Int              @default(0) @map("waiting_period_days")
+  minNoticeDays       Int              @default(0) @map("min_notice_days")
+  isPaid              Boolean          @default(true) @map("is_paid")
+  payoutOnTermination Boolean          @default(false) @map("payout_on_termination")
+  requiresApproval    Boolean          @default(true) @map("requires_approval")
+  requiresDocDays     Int?             @map("requires_doc_days")
+  isActive            Boolean          @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id])
+  balances  EmployeeLeaveBalance[]
+  requests  LeaveRequest[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, isActive, deletedAt])
+  @@map("leave_policies")
+}
+
+model EmployeeLeaveBalance {
+  id               String   @id @default(uuid())
+  employeeId       String   @map("employee_id")
+  policyId         String   @map("policy_id")
+  year             Int
+  allocatedHours   Decimal  @default(0) @map("allocated_hours") @db.Decimal(6, 2)
+  accruedHours     Decimal  @default(0) @map("accrued_hours") @db.Decimal(6, 2)
+  usedHours        Decimal  @default(0) @map("used_hours") @db.Decimal(6, 2)
+  pendingHours     Decimal  @default(0) @map("pending_hours") @db.Decimal(6, 2)
+  carriedOverHours Decimal  @default(0) @map("carried_over_hours") @db.Decimal(6, 2)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  employee AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  policy   LeavePolicy               @relation(fields: [policyId], references: [id])
+
+  @@unique([employeeId, policyId, year])
+  @@index([employeeId])
+  @@index([policyId])
+  @@index([year])
+  @@map("employee_leave_balances")
+}
+
+model LeaveRequest {
+  id             String             @id @default(uuid())
+  workspaceId    String             @map("workspace_id")
+  employeeId     String             @map("employee_id")
+  policyId       String             @map("policy_id")
+  status         LeaveRequestStatus @default(PENDING)
+
+  startDate      DateTime           @map("start_date") @db.Date
+  endDate        DateTime           @map("end_date") @db.Date
+  totalHours     Decimal            @map("total_hours") @db.Decimal(6, 2)
+  isIntermittent Boolean            @default(false) @map("is_intermittent")
+
+  reason         String?
+  attachmentUrl  String?            @map("attachment_url")
+
+  reviewerId     String?            @map("reviewer_id")
+  reviewerNotes  String?            @map("reviewer_notes")
+  reviewedAt     DateTime?          @map("reviewed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  workspace Workspace                 @relation(fields: [workspaceId], references: [id])
+  employee  AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  policy    LeavePolicy               @relation(fields: [policyId], references: [id])
+  reviewer  User?                     @relation("LeaveReviewer", fields: [reviewerId], references: [id])
+
+  @@index([workspaceId])
+  @@index([employeeId])
+  @@index([policyId])
+  @@index([workspaceId, status])
+  @@index([employeeId, startDate])
+  @@map("leave_requests")
+}
+

@@ -163,20 +163,21 @@ export class AdminAttendanceService {
           : this.calculateWorkingHours(rec.workingHours, rec.clockInTime, rec.clockOutTime);
 
       const isAbsent = statusLower === "absent";
+      const isOnLeave = statusLower === "on_leave";
       return {
         id: rec.id,
         date: this.formatDateOnly(rec.clockInDate),
         employeeId: rec.employee.employeeCode,
         employeeName: rec.employee.workspaceMember.user.fullName,
         avatarUrl: rec.employee.biometricPhotoUrl || null,
-        checkIn: isAbsent ? null : this.formatTimeOnly(rec.clockInTime),
-        checkOut: isAbsent ? null : this.formatTimeOnly(rec.clockOutTime),
+        checkIn: isAbsent || isOnLeave ? null : this.formatTimeOnly(rec.clockInTime),
+        checkOut: isAbsent || isOnLeave ? null : this.formatTimeOnly(rec.clockOutTime),
         status: statusLower,
         workingHours: isAbsent ? 0 : hours,
-        notes: this.resolveNotes(rec.notes, statusLower),
+        notes: isOnLeave ? (rec.notes || "Approved Leave") : this.resolveNotes(rec.notes, statusLower),
         workspaceId: rec.employee.workspaceMember.workspace.id,
         workspaceName: rec.employee.workspaceMember.workspace.businessName,
-        totalSessions: rec.totalSessions ?? (isAbsent ? 0 : 1),
+        totalSessions: rec.totalSessions ?? (isAbsent || isOnLeave ? 0 : 1),
         sessions: (rec.sessions || []).map((s: any, idx: number) => ({
           id: s.id,
           sessionNumber: idx + 1,
@@ -194,11 +195,12 @@ export class AdminAttendanceService {
           clockOutLongitude: s.clockOutLongitude ? Number(s.clockOutLongitude) : null,
           isAutoClosed: s.isAutoClosed || false,
         })),
+        leaveDetails: rec.leaveDetails || null,
       };
     });
 
     // Compute high-level summary KPIs from all filtered records
-    const nonAbsentRecords = allSummaryRecords.filter((r) => r.status !== "ABSENT");
+    const nonAbsentRecords = allSummaryRecords.filter((r) => r.status !== "ABSENT" && r.status !== "ON_LEAVE");
     const totalShifts = nonAbsentRecords.length;
     const lateCount = allSummaryRecords.filter((r) => r.status === "LATE").length;
     const latePercentage = totalShifts > 0 ? Math.round((lateCount / totalShifts) * 100) : 0;
@@ -220,6 +222,7 @@ export class AdminAttendanceService {
         : 0;
 
     const absentCount = allSummaryRecords.filter((r) => r.status === "ABSENT").length;
+    const onLeaveCount = allSummaryRecords.filter((r) => r.status === "ON_LEAVE").length;
 
     const summary: AttendanceSummaryMetrics = {
       totalShifts,
@@ -227,6 +230,7 @@ export class AdminAttendanceService {
       latePercentage,
       averageWorkingHours,
       absentCount,
+      onLeaveCount,
     };
 
     const responsePayload = {

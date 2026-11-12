@@ -1,6 +1,7 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
 import { AttendanceRepository } from "./attendance.repository.js";
 import { autoClockOutService } from "./auto-clock-out.service.js";
+import { leaveServiceInstance } from "../leave/leave.service.js";
 import {
   ATTENDANCE_THRESHOLDS,
   resolveAttendanceStatusByHours,
@@ -190,6 +191,24 @@ export class AttendanceService {
 
     const isWithinGeofence = distanceMeters <= radius;
 
+    // Guard: Check if employee is on approved leave today
+    const now = new Date();
+    const approvedLeave = await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now);
+    if (approvedLeave) {
+      const policyName = approvedLeave.policy?.name || "Leave";
+      return {
+        isWithinGeofence,
+        workspaceId: workspace.id,
+        workspaceName: workspace.businessName,
+        distanceMeters,
+        allowedRadiusMeters: radius,
+        canProceedToFaceScan: false,
+        onLeave: true,
+        leavePolicy: policyName,
+        message: `You are on approved ${policyName} today. Clock-in is disabled.`,
+      };
+    }
+
     return {
       isWithinGeofence,
       workspaceId: workspace.id,
@@ -222,6 +241,18 @@ export class AttendanceService {
     captureFiles?: Express.Multer.File[]
   ) {
     const employee = await this.getEmployee(userId, tenantId, input.employeeId);
+
+    // Guard: Prevent clock-in if employee is on approved leave today
+    const now = new Date();
+    const approvedLeave = await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now);
+    if (approvedLeave) {
+      const policyName = approvedLeave.policy?.name || "Leave";
+      throw new AppError(
+        `Cannot clock in. You are on approved ${policyName} today.`,
+        403,
+        "ERR_EMPLOYEE_ON_LEAVE"
+      );
+    }
 
     // Concurrency Lock: Prevent rapid double-tap punch race conditions
     const punchLockKey = `lock:punch:${employee.id}`;
@@ -625,6 +656,16 @@ export class AttendanceService {
     memoryCache.invalidatePattern(`employee:metrics:${employee.id}`);
     memoryCache.invalidatePattern(`employee:today:${employee.id}`);
 
+    // Automatic hourly leave & sick time accrual engine
+    const effectiveWsId = targetWorkspaceId || employee.workspaceMember?.workspaceId;
+    if (sessionWorkingHours > 0 && employee.id && effectiveWsId) {
+      leaveServiceInstance
+        .accrueHourlyLeavesForWorkedShift(employee.id, effectiveWsId, sessionWorkingHours)
+        .catch((err) => {
+          logger.error({ err, employeeId: employee.id }, "Failed to auto-accrue hourly leave on checkout");
+        });
+    }
+
     // Sum cumulative working hours across all completed sessions today
     const allTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
 
@@ -721,9 +762,10 @@ export class AttendanceService {
       };
     }
 
-    const [todaySessions, activeSession] = await Promise.all([
+    const [todaySessions, activeSession, approvedLeave] = await Promise.all([
       this.attendanceRepo.findTodaySessions(employee.id, todayDate),
       this.attendanceRepo.findActiveSession(employee.id),
+      this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now),
     ]);
 
     const ws = employee.workspaceMember.workspace;
@@ -767,6 +809,8 @@ export class AttendanceService {
         : AttendanceStatus.PRESENT
       : firstSession
       ? firstSession.status
+      : approvedLeave
+      ? "ON_LEAVE"
       : "NOT_CLOCKED_IN";
 
     const sessions = todaySessions.map((s, idx) => ({
@@ -802,12 +846,36 @@ export class AttendanceService {
         gracePeriodMin: settings?.graceMinutes ?? 15,
       },
       shift: {
-        state: activeSession ? "checked_in" : todaySessions.length > 0 ? "checked_out" : "not_started",
+        state: activeSession
+          ? "checked_in"
+          : todaySessions.length > 0
+          ? "checked_out"
+          : approvedLeave
+          ? "on_leave"
+          : "not_started",
         checkInTime: checkInStr,
         checkOutTime: checkOutStr,
         hoursWorked: totalWorkingHours,
         targetHours: 8.0,
+        canClockIn: !activeSession && !approvedLeave,
+        isOnLeave: Boolean(approvedLeave),
+        leaveDetails: approvedLeave
+          ? {
+              policyName: approvedLeave.policy?.name || "Leave",
+              category: approvedLeave.policy?.category,
+              code: approvedLeave.policy?.code,
+            }
+          : null,
       },
+      isOnLeave: Boolean(approvedLeave),
+      canClockIn: !activeSession && !approvedLeave,
+      leaveDetails: approvedLeave
+        ? {
+            policyName: approvedLeave.policy?.name || "Leave",
+            category: approvedLeave.policy?.category,
+            code: approvedLeave.policy?.code,
+          }
+        : null,
     };
 
     await memoryCache.set(todayCacheKey, todayDto, 60); // 60s micro-cache

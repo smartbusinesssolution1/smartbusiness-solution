@@ -14,6 +14,7 @@ import adminGeofenceRouter from '../modules/admin/geofence/admin-geofence.routes
 import adminEmployeeRouter from '../modules/admin/employee/admin-employee.routes.js';
 import adminAttendanceRouter from '../modules/admin/attendance/admin-attendance.routes.js';
 import { attendanceRouter } from '../modules/attendance/attendance.router';
+import leaveRouter from '../modules/leave/leave.routes.js';
 
 const apiV1 = express.Router();
 
@@ -78,6 +79,7 @@ apiV1.get('/devtest', devTestRouter);
 apiV1.use('/workspaces', workspaceRouter);
 apiV1.use('/employees', employeeRouter);
 apiV1.use('/attendance', attendanceRouter);
+apiV1.use('/leaves', leaveRouter);
 
 // Admin Routes (Gated by requireAdmin)
 apiV1.use('/admin/attendance/geofences', adminGeofenceRouter);

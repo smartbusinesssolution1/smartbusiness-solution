@@ -185,16 +185,17 @@ export class AdminAttendanceRepository {
   }
 
   /**
-   * Fast in-memory synthetic absence calculation across target dates.
+   * Fast in-memory synthetic absence and approved-leave calculation across target dates.
    * Completely avoids redundant database roundtrips.
    */
   private getSyntheticAbsentRecords(
     targetEmployees: any[],
     targetDates: string[],
     status?: string,
-    preloadedDbItems?: any[]
+    preloadedDbItems?: any[],
+    approvedLeaves?: any[]
   ) {
-    if (status && status !== "all" && status !== "absent") {
+    if (status && status !== "all" && status !== "absent" && status !== "on_leave") {
       return [];
     }
 
@@ -210,6 +211,16 @@ export class AdminAttendanceRepository {
       }
     }
 
+    // Build leaves map by employeeId
+    const leavesByEmp = new Map<string, any[]>();
+    if (approvedLeaves && approvedLeaves.length > 0) {
+      for (const l of approvedLeaves) {
+        const list = leavesByEmp.get(l.employeeId) || [];
+        list.push(l);
+        leavesByEmp.set(l.employeeId, list);
+      }
+    }
+
     const syntheticList: any[] = [];
     for (const targetDateStr of targetDates) {
       const targetDateObj = new Date(`${targetDateStr}T00:00:00.000Z`);
@@ -219,24 +230,70 @@ export class AdminAttendanceRepository {
         if (recordedSet.has(emp.id)) continue;
         if (!this.isWorkDayForEmployee(emp.weeklySchedule, targetDateObj)) continue;
 
-        syntheticList.push({
-          id: `absent-${emp.id}-${targetDateStr}`,
-          clockInDate: targetDateObj,
-          clockInTime: null,
-          clockOutTime: null,
-          status: AttendanceStatus.ABSENT,
-          workingHours: null,
-          notes: "No clock-in recorded · Absent",
-          employeeId: emp.id,
-          employee: emp,
-          createdAt: targetDateObj,
-          updatedAt: targetDateObj,
-          deletedAt: null,
-          confidenceIn: null,
-          confidenceOut: null,
-          shiftScheduleId: null,
-          isAutoClosed: false,
+        // Check if employee has an approved leave request on this date
+        const empLeaves = leavesByEmp.get(emp.id) || [];
+        const activeLeave = empLeaves.find((l) => {
+          const start = this.formatRecDate(l.startDate);
+          const end = this.formatRecDate(l.endDate);
+          return targetDateStr >= start && targetDateStr <= end;
         });
+
+        if (activeLeave) {
+          if (status && status !== "all" && status !== "on_leave") {
+            continue;
+          }
+          const isPaid = Boolean(activeLeave.policy?.isPaid);
+          syntheticList.push({
+            id: `leave-${emp.id}-${targetDateStr}`,
+            clockInDate: targetDateObj,
+            clockInTime: null,
+            clockOutTime: null,
+            status: "ON_LEAVE",
+            workingHours: isPaid ? 8 : 0,
+            notes: `Approved Leave: ${activeLeave.policy?.name || 'Leave'}${activeLeave.reason ? ` · ${activeLeave.reason}` : ''}`,
+            employeeId: emp.id,
+            employee: emp,
+            createdAt: targetDateObj,
+            updatedAt: targetDateObj,
+            deletedAt: null,
+            confidenceIn: null,
+            confidenceOut: null,
+            shiftScheduleId: null,
+            isAutoClosed: false,
+            leaveDetails: {
+              id: activeLeave.id,
+              policyName: activeLeave.policy?.name || 'Leave',
+              policyCode: activeLeave.policy?.code || 'LEAVE',
+              category: activeLeave.policy?.category || 'PTO',
+              isPaid,
+              totalHours: Number(activeLeave.totalHours || (isPaid ? 8 : 0)),
+              reason: activeLeave.reason || null,
+            },
+          });
+        } else {
+          if (status && status !== "all" && status !== "absent") {
+            continue;
+          }
+          syntheticList.push({
+            id: `absent-${emp.id}-${targetDateStr}`,
+            clockInDate: targetDateObj,
+            clockInTime: null,
+            clockOutTime: null,
+            status: AttendanceStatus.ABSENT,
+            workingHours: null,
+            notes: "No clock-in recorded · Absent",
+            employeeId: emp.id,
+            employee: emp,
+            createdAt: targetDateObj,
+            updatedAt: targetDateObj,
+            deletedAt: null,
+            confidenceIn: null,
+            confidenceOut: null,
+            shiftScheduleId: null,
+            isAutoClosed: false,
+            leaveDetails: null,
+          });
+        }
       }
     }
 
@@ -298,10 +355,13 @@ export class AdminAttendanceRepository {
       }
 
       const isSyntheticAbsent = !firstSession.clockInTime;
+      const isOnLeave = firstSession.status === "ON_LEAVE" || String(firstSession.status).toLowerCase() === "on_leave";
       const hasActiveSession = sessionList.some((s) => Boolean(s.clockInTime) && !s.clockOutTime);
       let status = firstSession.status;
 
-      if (isSyntheticAbsent || firstSession.status === "ABSENT" || firstSession.status === AttendanceStatus.ABSENT) {
+      if (isOnLeave) {
+        status = "ON_LEAVE";
+      } else if (isSyntheticAbsent || firstSession.status === "ABSENT" || firstSession.status === AttendanceStatus.ABSENT) {
         status = AttendanceStatus.ABSENT;
       } else if (hasActiveSession) {
         status = anyLate ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
@@ -317,28 +377,33 @@ export class AdminAttendanceRepository {
         status = AttendanceStatus.PRESENT;
       }
 
-      const isAbsent = status === AttendanceStatus.ABSENT;
-
       grouped.push({
         id: firstSession.id,
         employeeId: firstSession.employeeId,
         employee: firstSession.employee,
         clockInDate: firstSession.clockInDate,
-        clockInTime: isSyntheticAbsent ? null : firstSession.clockInTime,
-        clockOutTime: isSyntheticAbsent ? null : lastSession.clockOutTime,
+        clockInTime: (isSyntheticAbsent || isOnLeave) ? null : firstSession.clockInTime,
+        clockOutTime: (isSyntheticAbsent || isOnLeave) ? null : lastSession.clockOutTime,
         status,
-        workingHours: isSyntheticAbsent ? 0 : parseFloat(totalWorkingHours.toFixed(2)),
-        notes: isSyntheticAbsent
-          ? firstSession.notes || "No clock-in recorded · Absent"
-          : totalWorkingHours < 1.0
-            ? "Shift under 1 hr threshold · Absent"
-            : totalWorkingHours < 4.0
-              ? "Half-day shift completed"
-              : sessionList.length > 1
-                ? `${sessionList.length} shift sessions recorded today`
-                : firstSession.notes || null,
-        totalSessions: isSyntheticAbsent ? 0 : sessionList.length,
-        sessions: isSyntheticAbsent ? [] : sessionList,
+        workingHours: isOnLeave
+          ? (Number(firstSession.workingHours) || 0)
+          : isSyntheticAbsent
+            ? 0
+            : parseFloat(totalWorkingHours.toFixed(2)),
+        notes: isOnLeave
+          ? firstSession.notes || "Approved Leave"
+          : isSyntheticAbsent
+            ? firstSession.notes || "No clock-in recorded · Absent"
+            : totalWorkingHours < 1.0
+              ? "Shift under 1 hr threshold · Absent"
+              : totalWorkingHours < 4.0
+                ? "Half-day shift completed"
+                : sessionList.length > 1
+                  ? `${sessionList.length} shift sessions recorded today`
+                  : firstSession.notes || null,
+        totalSessions: (isSyntheticAbsent || isOnLeave) ? 0 : sessionList.length,
+        sessions: (isSyntheticAbsent || isOnLeave) ? [] : sessionList,
+        leaveDetails: firstSession.leaveDetails || null,
       });
     }
 
@@ -348,14 +413,14 @@ export class AdminAttendanceRepository {
       const dateB = b.clockInDate ? new Date(b.clockInDate).getTime() : 0;
       if (dateB !== dateA) return dateB - dateA;
 
-      // Active / punched-in employees COME FIRST before absent personnel
-      const isAbsentA = a.status === AttendanceStatus.ABSENT;
-      const isAbsentB = b.status === AttendanceStatus.ABSENT;
-      if (!isAbsentA && isAbsentB) return -1;
-      if (isAbsentA && !isAbsentB) return 1;
+      // Active / punched-in employees COME FIRST before absent or on-leave personnel
+      const isOutA = a.status === AttendanceStatus.ABSENT || a.status === "ON_LEAVE";
+      const isOutB = b.status === AttendanceStatus.ABSENT || b.status === "ON_LEAVE";
+      if (!isOutA && isOutB) return -1;
+      if (isOutA && !isOutB) return 1;
 
-      // If both are absent, sort alphabetically by name
-      if (isAbsentA && isAbsentB) {
+      // If both are absent or on-leave, sort alphabetically by name
+      if (isOutA && isOutB) {
         const nameA = a.employee?.workspaceMember?.user?.fullName || "";
         const nameB = b.employee?.workspaceMember?.user?.fullName || "";
         return nameA.localeCompare(nameB);
@@ -485,12 +550,37 @@ export class AdminAttendanceRepository {
       targetDates = Array.from(datesSet);
     }
 
-    // 5. In-memory synthetic absences (instant)
+    // 5. Query approved leave requests across target dates
+    let minDateObj: Date;
+    let maxDateObj: Date;
+    if (targetDates.length > 0) {
+      const sortedDates = [...targetDates].sort();
+      minDateObj = new Date(`${sortedDates[0]}T00:00:00.000Z`);
+      maxDateObj = new Date(`${sortedDates[sortedDates.length - 1]}T23:59:59.999Z`);
+    } else {
+      minDateObj = new Date();
+      maxDateObj = new Date();
+    }
+
+    const approvedLeaves = await prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: targetEmpIds },
+        status: "APPROVED",
+        startDate: { lte: maxDateObj },
+        endDate: { gte: minDateObj },
+      },
+      include: {
+        policy: true,
+      },
+    });
+
+    // In-memory synthetic absences and approved leave records
     const syntheticAbsents = this.getSyntheticAbsentRecords(
       targetEmployees,
       targetDates,
       query.status,
-      dbItems
+      dbItems,
+      approvedLeaves
     );
 
     const allGrouped = this.groupRecordsByEmployeeAndDate([...dbItems, ...syntheticAbsents]);
@@ -635,7 +725,24 @@ export class AdminAttendanceRepository {
         .map((r) => r.employeeId)
     ).size;
 
-    const attendanceRate = totalEmployees > 0 ? Math.round((presentToday / totalEmployees) * 100) : 100;
+    // Query approved leaves active today
+    const leavesToday = activeEmpIds.length > 0 ? await prisma.leaveRequest.findMany({
+      where: {
+        employeeId: { in: activeEmpIds },
+        status: "APPROVED",
+        startDate: { lte: new Date(`${todayStr}T23:59:59.999Z`) },
+        endDate: { gte: new Date(`${todayStr}T00:00:00.000Z`) },
+      },
+      select: {
+        employeeId: true,
+      },
+    }) : [];
+
+    const onLeaveEmpIds = new Set(leavesToday.map((l) => l.employeeId));
+    const onLeaveToday = onLeaveEmpIds.size;
+
+    const netActiveEmployees = Math.max(1, totalEmployees - onLeaveToday);
+    const attendanceRate = totalEmployees > 0 ? Math.min(100, Math.round((presentToday / netActiveEmployees) * 100)) : 100;
 
     // 3. Compute Weekly Trend (last 5 business days, distinct employees per day)
     const weeklyStats = weekdays.map((w) => {
@@ -715,6 +822,7 @@ export class AdminAttendanceRepository {
       presentToday,
       lateToday,
       autoClosedToday,
+      onLeaveToday,
       attendanceRate,
       weeklyStats,
       departmentStats,

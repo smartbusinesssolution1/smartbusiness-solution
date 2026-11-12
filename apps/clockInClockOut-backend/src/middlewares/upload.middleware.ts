@@ -44,3 +44,29 @@ export const uploadSelfie = (req: Request, res: Response, next: NextFunction) =>
     next();
   });
 };
+
+/**
+ * Upload middleware for statutory leave documents & doctor's notes.
+ * Accepts PDF, JPEG, PNG, WEBP, DOC, DOCX up to 10MB.
+ */
+export const uploadLeaveDocument = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB max per document
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      "application/pdf",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    if (allowed.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new AppError("Only PDF, JPEG, PNG, or Word documents are allowed for medical certification.", 400, "INVALID_FILE_TYPE"));
+    }
+  },
+});
