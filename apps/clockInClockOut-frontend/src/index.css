@@ -131,6 +131,18 @@ html.dark body {
   background-attachment: fixed;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
+  opacity: 1;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
 .font-mono, code {
   font-family: var(--font-geist-mono);
 }
