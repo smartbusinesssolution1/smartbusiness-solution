@@ -21,6 +21,9 @@ import {
   RotateCcw,
   Check,
   X,
+  Utensils,
+  Coffee,
+  Scale,
 } from 'lucide-react';
 
 import { settingsService } from '../../services/settingsService';
@@ -75,6 +78,18 @@ const schema = z.object({
   defaultShiftEndTime: z
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Time must be in HH:mm 24-hr format (e.g. 18:00)'),
+  enableRegularization: z.boolean(),
+  maxRegularizationPastDays: z.number().int().min(1, 'Min 1 day').max(365, 'Max 365 days'),
+  monthlyRegularizationLimit: z.number().int().min(0, 'Min 0 (0 = unlimited)').max(31, 'Max 31'),
+  compliancePolicy: z.enum(['FEDERAL_STANDARD', 'CALIFORNIA_STRICT', 'CUSTOM']),
+  enableBreakTracking: z.boolean(),
+  mealBreakThresholdHours: z.number().min(1).max(24),
+  minMealBreakMinutes: z.number().int().min(10).max(180),
+  maxMealStartShiftHour: z.number().min(1).max(24),
+  secondMealThresholdHours: z.number().min(5).max(24),
+  restBreakMinutes: z.number().int().min(5).max(60),
+  enforceBreakWaivers: z.boolean(),
+  autoAssessPenalties: z.boolean(),
 });
 
 type SettingsFormValues = z.infer<typeof schema>;
@@ -157,6 +172,9 @@ export const OrganizationSettingsPage: React.FC = () => {
       graceMinutes: 15,
       defaultShiftStartTime: '09:00',
       defaultShiftEndTime: '18:00',
+      enableRegularization: true,
+      maxRegularizationPastDays: 30,
+      monthlyRegularizationLimit: 5,
     },
   });
 
@@ -220,6 +238,18 @@ export const OrganizationSettingsPage: React.FC = () => {
         graceMinutes: g?.graceMinutes ?? 15,
         defaultShiftStartTime: g?.defaultShiftStartTime ?? '09:00',
         defaultShiftEndTime: g?.defaultShiftEndTime ?? '18:00',
+        enableRegularization: g?.enableRegularization ?? true,
+        maxRegularizationPastDays: g?.maxRegularizationPastDays ?? 30,
+        monthlyRegularizationLimit: g?.monthlyRegularizationLimit ?? 5,
+        compliancePolicy: g?.compliancePolicy ?? 'CALIFORNIA_STRICT',
+        enableBreakTracking: g?.enableBreakTracking ?? true,
+        mealBreakThresholdHours: Number(g?.mealBreakThresholdHours ?? 5.0),
+        minMealBreakMinutes: g?.minMealBreakMinutes ?? 30,
+        maxMealStartShiftHour: Number(g?.maxMealStartShiftHour ?? 5.0),
+        secondMealThresholdHours: Number(g?.secondMealThresholdHours ?? 10.0),
+        restBreakMinutes: g?.restBreakMinutes ?? 10,
+        enforceBreakWaivers: g?.enforceBreakWaivers ?? true,
+        autoAssessPenalties: g?.autoAssessPenalties ?? true,
       });
 
       if (hasValidCoords) {
@@ -250,6 +280,18 @@ export const OrganizationSettingsPage: React.FC = () => {
         graceMinutes: 15,
         defaultShiftStartTime: '09:00',
         defaultShiftEndTime: '18:00',
+        enableRegularization: true,
+        maxRegularizationPastDays: 30,
+        monthlyRegularizationLimit: 5,
+        compliancePolicy: 'CALIFORNIA_STRICT',
+        enableBreakTracking: true,
+        mealBreakThresholdHours: 5.0,
+        minMealBreakMinutes: 30,
+        maxMealStartShiftHour: 5.0,
+        secondMealThresholdHours: 10.0,
+        restBreakMinutes: 10,
+        enforceBreakWaivers: true,
+        autoAssessPenalties: true,
       });
     }
   }, [
@@ -275,6 +317,18 @@ export const OrganizationSettingsPage: React.FC = () => {
         graceMinutes: data.graceMinutes,
         defaultShiftStartTime: data.defaultShiftStartTime,
         defaultShiftEndTime: data.defaultShiftEndTime,
+        enableRegularization: data.enableRegularization,
+        maxRegularizationPastDays: data.maxRegularizationPastDays,
+        monthlyRegularizationLimit: data.monthlyRegularizationLimit,
+        compliancePolicy: data.compliancePolicy,
+        enableBreakTracking: data.enableBreakTracking,
+        mealBreakThresholdHours: Number(data.mealBreakThresholdHours),
+        minMealBreakMinutes: Number(data.minMealBreakMinutes),
+        maxMealStartShiftHour: Number(data.maxMealStartShiftHour),
+        secondMealThresholdHours: Number(data.secondMealThresholdHours),
+        restBreakMinutes: Number(data.restBreakMinutes),
+        enforceBreakWaivers: data.enforceBreakWaivers,
+        autoAssessPenalties: data.autoAssessPenalties,
       }),
     onSuccess: (_res, variables) => {
       setHasUnsavedAutoGps(false);
@@ -677,6 +731,337 @@ export const OrganizationSettingsPage: React.FC = () => {
                     disabled={updateMutation.isPending}
                   />
                 </div>
+              </Card>
+
+              {/* 4. Attendance Regularization Policy Card */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                      <ShieldCheck className="size-4" />
+                      <span>4. Attendance Regularization Policy</span>
+                    </div>
+                    <p className="text-xs text-muted leading-relaxed">
+                      Allow employees to submit corrections for missed clock-ins or clock-outs. All requests require manual Admin review.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={watchedValues.enableRegularization ?? true}
+                      onChange={(e) => setValue('enableRegularization', e.target.checked, { shouldValidate: true })}
+                      disabled={updateMutation.isPending}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                  </label>
+                </div>
+
+                {watchedValues.enableRegularization && (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2 border-t border-line">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-ink">Max Past Days Horizon</label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={365}
+                          {...register('maxRegularizationPastDays', { valueAsNumber: true })}
+                          disabled={updateMutation.isPending}
+                          className="pr-12"
+                        />
+                        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                          days
+                        </span>
+                      </div>
+                      <span className="font-mono text-[0.625rem] text-muted">
+                        How far back an employee can request regularization (default: 30)
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-ink">Monthly Quota per Employee</label>
+                      <div className="relative">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={31}
+                          {...register('monthlyRegularizationLimit', { valueAsNumber: true })}
+                          disabled={updateMutation.isPending}
+                          className="pr-16"
+                        />
+                        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                          reqs/mo
+                        </span>
+                      </div>
+                      <span className="font-mono text-[0.625rem] text-muted">
+                        Max regularization requests per calendar month (0 = unlimited)
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+
+              {/* 5. Statutory Break & Labor Compliance Policy Card */}
+              <Card className="p-5 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-primary-600 font-semibold text-sm">
+                      <Utensils className="size-4" />
+                      <span>5. Statutory Break &amp; Labor Compliance Policy</span>
+                    </div>
+                    <p className="text-xs text-muted leading-relaxed">
+                      Configure statutory meal periods (unpaid) and rest breaks (paid) according to Federal (FLSA) or California Labor Code mandates.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={watchedValues.enableBreakTracking ?? true}
+                      onChange={(e) => setValue('enableBreakTracking', e.target.checked, { shouldValidate: true })}
+                      disabled={updateMutation.isPending}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
+                  </label>
+                </div>
+
+                {watchedValues.enableBreakTracking && (
+                  <div className="flex flex-col gap-4 pt-3 border-t border-line">
+                    {/* Compliance Preset Selector */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-ink flex items-center gap-1.5">
+                        <Scale className="size-3.5 text-primary-600" />
+                        <span>Compliance Policy Profile</span>
+                      </label>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('compliancePolicy', 'CALIFORNIA_STRICT', { shouldValidate: true });
+                            setValue('mealBreakThresholdHours', 5.0, { shouldValidate: true });
+                            setValue('minMealBreakMinutes', 30, { shouldValidate: true });
+                            setValue('maxMealStartShiftHour', 5.0, { shouldValidate: true });
+                            setValue('secondMealThresholdHours', 10.0, { shouldValidate: true });
+                            setValue('restBreakMinutes', 10, { shouldValidate: true });
+                            setValue('enforceBreakWaivers', true, { shouldValidate: true });
+                            setValue('autoAssessPenalties', true, { shouldValidate: true });
+                          }}
+                          className={cn(
+                            'flex flex-col gap-1 rounded-xl border p-3 text-left transition-all',
+                            watchedValues.compliancePolicy === 'CALIFORNIA_STRICT'
+                              ? 'border-primary-500 bg-primary-50/50 shadow-xs'
+                              : 'border-line bg-canvas hover:border-slate-300'
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-ink">California Strict</span>
+                            {watchedValues.compliancePolicy === 'CALIFORNIA_STRICT' && (
+                              <Check className="size-3.5 text-primary-600" />
+                            )}
+                          </div>
+                          <span className="text-[0.6875rem] text-muted leading-tight">
+                            CA § 512/§ 226.7: 30m meal before 5th hr, 10m rest, 1hr penalty pay
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('compliancePolicy', 'FEDERAL_STANDARD', { shouldValidate: true });
+                            setValue('mealBreakThresholdHours', 6.0, { shouldValidate: true });
+                            setValue('minMealBreakMinutes', 30, { shouldValidate: true });
+                            setValue('maxMealStartShiftHour', 6.0, { shouldValidate: true });
+                            setValue('secondMealThresholdHours', 12.0, { shouldValidate: true });
+                            setValue('restBreakMinutes', 15, { shouldValidate: true });
+                            setValue('enforceBreakWaivers', false, { shouldValidate: true });
+                            setValue('autoAssessPenalties', false, { shouldValidate: true });
+                          }}
+                          className={cn(
+                            'flex flex-col gap-1 rounded-xl border p-3 text-left transition-all',
+                            watchedValues.compliancePolicy === 'FEDERAL_STANDARD'
+                              ? 'border-primary-500 bg-primary-50/50 shadow-xs'
+                              : 'border-line bg-canvas hover:border-slate-300'
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-ink">Federal Standard</span>
+                            {watchedValues.compliancePolicy === 'FEDERAL_STANDARD' && (
+                              <Check className="size-3.5 text-primary-600" />
+                            )}
+                          </div>
+                          <span className="text-[0.6875rem] text-muted leading-tight">
+                            FLSA standard: 30m unpaid meal, 15m paid rest, no automated penalty hours
+                          </span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValue('compliancePolicy', 'CUSTOM', { shouldValidate: true });
+                          }}
+                          className={cn(
+                            'flex flex-col gap-1 rounded-xl border p-3 text-left transition-all',
+                            watchedValues.compliancePolicy === 'CUSTOM'
+                              ? 'border-primary-500 bg-primary-50/50 shadow-xs'
+                              : 'border-line bg-canvas hover:border-slate-300'
+                          )}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-ink">Custom Rules</span>
+                            {watchedValues.compliancePolicy === 'CUSTOM' && (
+                              <Check className="size-3.5 text-primary-600" />
+                            )}
+                          </div>
+                          <span className="text-[0.6875rem] text-muted leading-tight">
+                            Customize thresholds, timing hours, and duration rules for your jurisdiction
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Thresholds Grid */}
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 pt-2">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ink">1st Meal Threshold</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min={1}
+                            max={24}
+                            {...register('mealBreakThresholdHours', { valueAsNumber: true })}
+                            disabled={updateMutation.isPending}
+                            className="pr-14"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                            hours
+                          </span>
+                        </div>
+                        <span className="font-mono text-[0.625rem] text-muted">
+                          Shift length requiring a meal (default: 5.0h)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ink">Minimum Meal Duration</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            min={10}
+                            max={180}
+                            {...register('minMealBreakMinutes', { valueAsNumber: true })}
+                            disabled={updateMutation.isPending}
+                            className="pr-14"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                            mins
+                          </span>
+                        </div>
+                        <span className="font-mono text-[0.625rem] text-muted">
+                          Mandatory uninterrupted duration (default: 30)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ink">Max Meal Start Time</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min={1}
+                            max={24}
+                            {...register('maxMealStartShiftHour', { valueAsNumber: true })}
+                            disabled={updateMutation.isPending}
+                            className="pr-14"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                            hours
+                          </span>
+                        </div>
+                        <span className="font-mono text-[0.625rem] text-muted">
+                          Must begin before end of this shift hour (CA: 5.0h)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ink">2nd Meal Threshold</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min={5}
+                            max={24}
+                            {...register('secondMealThresholdHours', { valueAsNumber: true })}
+                            disabled={updateMutation.isPending}
+                            className="pr-14"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                            hours
+                          </span>
+                        </div>
+                        <span className="font-mono text-[0.625rem] text-muted">
+                          Shift length requiring 2nd meal (default: 10.0h)
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ink">Paid Rest Break Duration</label>
+                        <div className="relative">
+                          <Input
+                            type="number"
+                            min={5}
+                            max={60}
+                            {...register('restBreakMinutes', { valueAsNumber: true })}
+                            disabled={updateMutation.isPending}
+                            className="pr-14"
+                          />
+                          <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 font-mono text-[0.6875rem] font-semibold text-muted">
+                            mins
+                          </span>
+                        </div>
+                        <span className="font-mono text-[0.625rem] text-muted">
+                          Paid rest break per 4h worked (FLSA: not deducted)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Statutory Toggles */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-2 border-t border-line">
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-line bg-subtle/30 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={watchedValues.enforceBreakWaivers ?? true}
+                          onChange={(e) => setValue('enforceBreakWaivers', e.target.checked, { shouldValidate: true })}
+                          disabled={updateMutation.isPending}
+                          className="mt-0.5 rounded accent-primary-600"
+                        />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-semibold text-ink">Enforce Digital Meal Waiver</span>
+                          <span className="text-[0.6875rem] text-muted leading-tight">
+                            Allow mutual waiver for shifts ≤ 6.0 hours without triggering statutory violation.
+                          </span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2.5 p-3 rounded-xl border border-line bg-subtle/30 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={watchedValues.autoAssessPenalties ?? true}
+                          onChange={(e) => setValue('autoAssessPenalties', e.target.checked, { shouldValidate: true })}
+                          disabled={updateMutation.isPending}
+                          className="mt-0.5 rounded accent-primary-600"
+                        />
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-xs font-semibold text-ink">Automate Premium Penalty Pay</span>
+                          <span className="text-[0.6875rem] text-muted leading-tight">
+                            Auto-calculate 1-hour regular rate penalty pay for missed/late meal breaks (CA Lab. Code § 226.7).
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
               </Card>
 
               {/* Submit Button Bar */}

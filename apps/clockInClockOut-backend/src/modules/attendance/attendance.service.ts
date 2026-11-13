@@ -1,6 +1,7 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
 import { AttendanceRepository } from "./attendance.repository.js";
 import { autoClockOutService } from "./auto-clock-out.service.js";
+import { BreakComplianceService } from "./break-compliance.service.js";
 import { leaveServiceInstance } from "../leave/leave.service.js";
 import {
   ATTENDANCE_THRESHOLDS,
@@ -193,7 +194,9 @@ export class AttendanceService {
 
     // Guard: Check if employee is on approved leave today
     const now = new Date();
-    const approvedLeave = await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now);
+    const approvedLeave = this.attendanceRepo.findApprovedLeaveOnDate
+      ? await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now)
+      : null;
     if (approvedLeave) {
       const policyName = approvedLeave.policy?.name || "Leave";
       return {
@@ -244,7 +247,9 @@ export class AttendanceService {
 
     // Guard: Prevent clock-in if employee is on approved leave today
     const now = new Date();
-    const approvedLeave = await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now);
+    const approvedLeave = this.attendanceRepo.findApprovedLeaveOnDate
+      ? await this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now)
+      : null;
     if (approvedLeave) {
       const policyName = approvedLeave.policy?.name || "Leave";
       throw new AppError(
@@ -473,6 +478,9 @@ export class AttendanceService {
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`employee:metrics:${employee.id}`);
     memoryCache.invalidatePattern(`employee:today:${employee.id}`);
+    memoryCache.invalidatePattern(`cache:att:today:${tenantId}:${userId}:`);
+    memoryCache.invalidatePattern(`cache:att:today:${tenantId}:`);
+    memoryCache.invalidatePattern(`cache:att:history:${tenantId}:`);
 
     const timeStr = formatTimeAMPM(now);
     const dateFormatted = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
@@ -533,8 +541,6 @@ export class AttendanceService {
       },
       message: `Good ${now.getHours() < 12 ? "morning" : "afternoon"}! Session #${sessionNumber} clocked in as ${record.status}.`,
     };
-    await memoryCache.delPattern(`cache:att:today:${tenantId}:${userId}:*`);
-    await memoryCache.delPattern(`cache:att:today:${tenantId}:*:*`);
     } finally {
       redisClient.del(punchLockKey).catch(() => {});
     }
@@ -585,9 +591,37 @@ export class AttendanceService {
 
     // Safeguard: If clocking out of a stale shift (> 16 hours old), cap working hours at 8.0
     const isOverdueSession = rawElapsedHours > 16;
+
+    // Auto-close any currently open break punch if employee clocked out while on break
+    const openBreak = await this.attendanceRepo.findOpenBreakForSession?.(activeSession.id);
+    if (openBreak) {
+      const breakDur = BreakComplianceService.calculateDurationMinutes(openBreak.startTime, now);
+      await this.attendanceRepo.closeOpenBreak?.(openBreak.id, now, breakDur);
+    }
+
+    // Load all breaks for this shift session
+    const sessionBreaks = (await this.attendanceRepo.findBreaksForSession?.(activeSession.id)) || [];
+
+    const settings = employee.workspaceMember.workspace.attendanceSettings;
+
+    // Run Statutory Labor Compliance Audit (California § 512 / § 226.7 & FLSA)
+    const shiftCompliance = BreakComplianceService.auditShiftCompliance({
+      clockInTime: activeSession.clockInTime,
+      clockOutTime: now,
+      breaks: sessionBreaks,
+      mealWaiverSigned: activeSession.mealWaiverSigned,
+      compliancePolicy: settings?.compliancePolicy ?? "CALIFORNIA_STRICT",
+      autoAssessPenalties: settings?.autoAssessPenalties ?? true,
+      mealBreakThresholdHours: Number(settings?.mealBreakThresholdHours ?? 5.0),
+      minMealBreakMinutes: settings?.minMealBreakMinutes ?? 30,
+      maxMealStartShiftHour: Number(settings?.maxMealStartShiftHour ?? 5.0),
+      secondMealThresholdHours: Number(settings?.secondMealThresholdHours ?? 10.0),
+    });
+
+    // Net working hours strictly deducts unpaid meal breaks while preserving paid rest breaks
     const sessionWorkingHours = isOverdueSession
       ? 8.0
-      : Math.round(rawElapsedHours * 100) / 100;
+      : shiftCompliance.netWorkingHours;
 
     // Fetch prior completed sessions today to calculate day's cumulative working hours
     const priorTodaySessions = await this.attendanceRepo.findTodaySessions(employee.id, todayDate);
@@ -598,7 +632,6 @@ export class AttendanceService {
 
     // Determine if the employee's initial arrival was late
     const firstSessionToday = priorTodaySessions[0] || activeSession;
-    const settings = employee.workspaceMember.workspace.attendanceSettings;
     const [startHourStr, startMinStr] = (settings?.defaultShiftStartTime || "09:00").split(":");
     const startHour = parseInt(startHourStr || "9", 10);
     const startMin = parseInt(startMinStr || "0", 10);
@@ -636,6 +669,11 @@ export class AttendanceService {
         ? (input.notes ? `${input.notes} · Late checkout (capped at standard shift)` : "Late checkout (capped at standard shift)")
         : input.notes,
       status: sessionRecordStatus,
+      totalBreakMinutes: shiftCompliance.totalBreakMinutes,
+      unpaidBreakMinutes: shiftCompliance.unpaidBreakMinutes,
+      paidBreakMinutes: shiftCompliance.paidBreakMinutes,
+      mealPenaltyHours: shiftCompliance.mealPenaltyHours,
+      restPenaltyHours: shiftCompliance.restPenaltyHours,
     });
 
     // Synchronize day records status:
@@ -655,6 +693,9 @@ export class AttendanceService {
     memoryCache.invalidatePattern(`admin:summary:${tenantId}`);
     memoryCache.invalidatePattern(`employee:metrics:${employee.id}`);
     memoryCache.invalidatePattern(`employee:today:${employee.id}`);
+    memoryCache.invalidatePattern(`cache:att:today:${tenantId}:${userId}:`);
+    memoryCache.invalidatePattern(`cache:att:today:${tenantId}:`);
+    memoryCache.invalidatePattern(`cache:att:history:${tenantId}:`);
 
     // Automatic hourly leave & sick time accrual engine
     const effectiveWsId = targetWorkspaceId || employee.workspaceMember?.workspaceId;
@@ -708,8 +749,6 @@ export class AttendanceService {
       },
       message: statusMessage,
     };
-    await memoryCache.delPattern(`cache:att:today:${tenantId}:${userId}:*`);
-    await memoryCache.delPattern(`cache:att:today:${tenantId}:*:*`);
     } finally {
       redisClient.del(punchLockKey).catch(() => {});
     }
@@ -762,11 +801,16 @@ export class AttendanceService {
       };
     }
 
-    const [todaySessions, activeSession, approvedLeave] = await Promise.all([
+    const [todaySessions, rawActiveSession, approvedLeave] = await Promise.all([
       this.attendanceRepo.findTodaySessions(employee.id, todayDate),
       this.attendanceRepo.findActiveSession(employee.id),
       this.attendanceRepo.findApprovedLeaveOnDate(employee.id, now),
     ]);
+
+    // Active session is only recognized for today if its clockInDate matches today's date
+    const activeSession = rawActiveSession && rawActiveSession.clockInDate.toISOString().split("T")[0] === todayDateStr
+      ? rawActiveSession
+      : null;
 
     const ws = employee.workspaceMember.workspace;
     const settings = ws.attendanceSettings;
@@ -913,12 +957,74 @@ export class AttendanceService {
     }
 
     const skip = (page - 1) * limit;
-    const { records, total } = await this.attendanceRepo.findAttendanceHistory(employee.id, {
+    const { records } = await this.attendanceRepo.findAttendanceHistory(employee.id, {
       startDate,
       endDate,
-      skip,
-      take: limit,
+      skip: 0,
+      take: 200,
     });
+
+    // Also fetch approved leaves in this window so approved leaves display in the timesheet
+    const approvedLeaves = await prisma.leaveRequest.findMany({
+      where: {
+        employeeId: employee.id,
+        status: "APPROVED",
+        ...(startDate || endDate
+          ? {
+              startDate: { lte: endDate || new Date() },
+              endDate: { gte: startDate || new Date(0) },
+            }
+          : {}),
+      },
+      include: {
+        policy: {
+          select: { name: true, category: true },
+        },
+      },
+    });
+
+    const recordedDateSet = new Set(records.map((r) => r.clockInDate.toISOString().split("T")[0]));
+    const leaveItems: any[] = [];
+
+    for (const leave of approvedLeaves) {
+      const cur = new Date(leave.startDate);
+      const end = new Date(leave.endDate);
+
+      while (cur <= end) {
+        const dtKey = cur.toISOString().split("T")[0];
+        const inWindow = (!startDate || cur >= startDate) && (!endDate || cur <= endDate);
+
+        if (inWindow && !recordedDateSet.has(dtKey)) {
+          recordedDateSet.add(dtKey);
+          const displayDateObj = new Date(cur);
+          const policyName = leave.policy?.name || "Leave";
+          const hours = Number(leave.totalHours || 8);
+
+          leaveItems.push({
+            id: `leave-${leave.id}-${dtKey}`,
+            date: dtKey,
+            displayDate: displayDateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }),
+            day: displayDateObj.toLocaleDateString("en-US", { weekday: "long", timeZone: "UTC" }),
+            checkIn: "--:--",
+            checkOut: "--:--",
+            clockInTime: null,
+            clockOutTime: null,
+            hoursLogged: `${hours} hrs`,
+            rawHours: hours,
+            status: "on_leave",
+            isFirstSession: true,
+            sessionNumber: 1,
+            isRegularized: false,
+            faceVerified: false,
+            faceMatchConfidence: undefined,
+            locationVerified: false,
+            coordinates: undefined,
+            notes: `Approved ${policyName}${leave.reason ? ` · ${leave.reason}` : ""}`,
+          });
+        }
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+    }
 
     const uniqueDates = Array.from(
       new Set(records.map((r) => r.clockInDate.toISOString().split("T")[0]))
@@ -935,8 +1041,9 @@ export class AttendanceService {
       datePunchMap.set(dtKey, list);
     }
 
-    const items = records.map((rec) => {
-      const clockIn = new Date(rec.clockInTime);
+    const punchItems = records.map((rec) => {
+      const isAbsent = rec.status === AttendanceStatus.ABSENT;
+      const clockIn = rec.clockInTime ? new Date(rec.clockInTime) : null;
       const clockOut = rec.clockOutTime ? new Date(rec.clockOutTime) : null;
       const dtKey = rec.clockInDate.toISOString().split("T")[0];
       const dayPunches = datePunchMap.get(dtKey) || [rec.id];
@@ -946,29 +1053,54 @@ export class AttendanceService {
 
       // Only the first session of the day can hold arrival punctuality (late vs on-time).
       // Subsequent sessions (session 2+) never show late check-in.
-      const normalizedStatus = isFirstSession
+      const normalizedStatus = isAbsent
+        ? "absent"
+        : isFirstSession
         ? rec.status.toLowerCase()
         : rec.status === AttendanceStatus.LATE
         ? "present"
         : rec.status.toLowerCase();
 
+      const displayDateObj = isAbsent ? new Date(rec.clockInDate) : (clockIn || new Date(rec.clockInDate));
+
       return {
         id: rec.id,
-        date: clockIn.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-        day: clockIn.toLocaleDateString("en-US", { weekday: "long" }),
-        checkIn: formatTimeAMPM(clockIn),
-        checkOut: clockOut ? formatTimeAMPM(clockOut) : "--:--",
-        hoursLogged: rec.workingHours ? `${rec.workingHours} hrs` : "In Progress",
-        rawHours: Number(rec.workingHours || 0),
+        date: dtKey,
+        displayDate: displayDateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        day: displayDateObj.toLocaleDateString("en-US", { weekday: "long" }),
+        checkIn: isAbsent ? "--:--" : clockIn ? formatTimeAMPM(clockIn) : "--:--",
+        checkOut: isAbsent ? "--:--" : clockOut ? formatTimeAMPM(clockOut) : "--:--",
+        clockInTime: clockIn ? clockIn.toISOString() : null,
+        clockOutTime: clockOut ? clockOut.toISOString() : null,
+        hoursLogged: isAbsent ? "0 hrs" : rec.workingHours ? `${rec.workingHours} hrs` : "In Progress",
+        rawHours: isAbsent ? 0 : Number(rec.workingHours || 0),
         status: normalizedStatus,
         isFirstSession,
         sessionNumber,
-        notes: rec.notes,
+        isRegularized: Boolean((rec as any).isRegularized),
+        faceVerified: Boolean((rec as any).clockInFaceMatchConfidence && Number((rec as any).clockInFaceMatchConfidence) > 0),
+        faceMatchConfidence: (rec as any).clockInFaceMatchConfidence ? Number((rec as any).clockInFaceMatchConfidence) : undefined,
+        locationVerified: Boolean((rec as any).clockInLatitude && (rec as any).clockInLongitude),
+        coordinates: (rec as any).clockInLatitude && (rec as any).clockInLongitude ? {
+          latitude: Number((rec as any).clockInLatitude),
+          longitude: Number((rec as any).clockInLongitude),
+          accuracy: 10,
+        } : undefined,
+        notes: isAbsent ? (rec.notes || "No clock-in recorded · Absent") : rec.notes,
       };
     });
 
+    const allItems = [...punchItems, ...leaveItems].sort((a, b) => {
+      const cmp = b.date.localeCompare(a.date);
+      if (cmp !== 0) return cmp;
+      return (b.sessionNumber || 1) - (a.sessionNumber || 1);
+    });
+
+    const total = allItems.length;
+    const paginatedItems = allItems.slice(skip, skip + limit);
+
     return {
-      items,
+      items: paginatedItems,
       total,
       page,
       limit,
@@ -981,23 +1113,50 @@ export class AttendanceService {
    */
   async getRecordDetails(userId: string, tenantId: string, recordId: string) {
     const employee = await this.getEmployee(userId, tenantId);
+
+    if (recordId.startsWith("leave-")) {
+      const leaveId = recordId.replace(/^leave-/, "").split("-").slice(0, 5).join("-");
+      const leave = await prisma.leaveRequest.findFirst({
+        where: { id: leaveId, employeeId: employee.id },
+        include: { policy: true },
+      });
+
+      if (!leave) {
+        throw new NotFoundError("Leave Record");
+      }
+
+      return {
+        id: recordId,
+        date: leave.startDate.toISOString().split("T")[0],
+        status: "on_leave",
+        checkInTime: "--:--",
+        checkOutTime: "--:--",
+        workingHours: Number(leave.totalHours || 8),
+        clockInLatitude: null,
+        clockInLongitude: null,
+        clockInFaceMatchConfidence: null,
+        notes: `Approved ${leave.policy?.name || "Leave"}${leave.reason ? ` · ${leave.reason}` : ""}`,
+      };
+    }
+
     const rec = await this.attendanceRepo.findRecordById(recordId, employee.id);
 
     if (!rec) {
       throw new NotFoundError("Attendance Record");
     }
 
+    const isAbsent = rec.status === AttendanceStatus.ABSENT;
     return {
       id: rec.id,
       date: rec.clockInDate.toISOString().split("T")[0],
       status: rec.status,
-      checkInTime: formatTimeAMPM(new Date(rec.clockInTime)),
-      checkOutTime: rec.clockOutTime ? formatTimeAMPM(new Date(rec.clockOutTime)) : null,
-      workingHours: Number(rec.workingHours || 0),
-      clockInLatitude: rec.clockInLatitude ? Number(rec.clockInLatitude) : null,
-      clockInLongitude: rec.clockInLongitude ? Number(rec.clockInLongitude) : null,
-      clockInFaceMatchConfidence: rec.clockInFaceMatchConfidence ? Number(rec.clockInFaceMatchConfidence) : null,
-      notes: rec.notes,
+      checkInTime: isAbsent ? "--:--" : formatTimeAMPM(new Date(rec.clockInTime)),
+      checkOutTime: isAbsent ? "--:--" : rec.clockOutTime ? formatTimeAMPM(new Date(rec.clockOutTime)) : null,
+      workingHours: isAbsent ? 0 : Number(rec.workingHours || 0),
+      clockInLatitude: isAbsent ? null : rec.clockInLatitude ? Number(rec.clockInLatitude) : null,
+      clockInLongitude: isAbsent ? null : rec.clockInLongitude ? Number(rec.clockInLongitude) : null,
+      clockInFaceMatchConfidence: isAbsent ? null : rec.clockInFaceMatchConfidence ? Number(rec.clockInFaceMatchConfidence) : null,
+      notes: isAbsent ? (rec.notes || "No clock-in recorded · Absent") : rec.notes,
     };
   }
 
@@ -1080,8 +1239,8 @@ export class AttendanceService {
         [
           r.clockInDate.toISOString().split("T")[0],
           r.status,
-          formatTimeAMPM(new Date(r.clockInTime)),
-          r.clockOutTime ? formatTimeAMPM(new Date(r.clockOutTime)) : "N/A",
+          r.status === AttendanceStatus.ABSENT ? "N/A" : formatTimeAMPM(new Date(r.clockInTime)),
+          r.status === AttendanceStatus.ABSENT || !r.clockOutTime ? "N/A" : formatTimeAMPM(new Date(r.clockOutTime)),
           r.workingHours ? `${r.workingHours}` : "0",
           `"${(r.notes || "").replace(/"/g, '""')}"`,
         ].join(",")

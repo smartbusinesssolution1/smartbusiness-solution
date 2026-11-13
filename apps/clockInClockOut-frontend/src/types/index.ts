@@ -89,6 +89,14 @@ export interface AttendanceRecord {
   status: 'present' | 'absent' | 'late' | 'half_day' | 'auto_closed' | 'on_leave';
   workingHours: number; // in hours (Total sum)
   notes?: string;
+  isRegularized?: boolean;
+  totalBreakMinutes?: number;
+  unpaidBreakMinutes?: number;
+  paidBreakMinutes?: number;
+  mealPenaltyHours?: number;
+  restPenaltyHours?: number;
+  mealWaiverSigned?: boolean;
+  mealWaiverReason?: string | null;
   workspaceId?: string;
   workspaceName?: string;
   totalSessions?: number;
@@ -133,6 +141,18 @@ export interface WorkspaceGeofenceDetails {
   graceMinutes: number;
   defaultShiftStartTime: string;
   defaultShiftEndTime: string;
+  enableRegularization?: boolean;
+  maxRegularizationPastDays?: number;
+  monthlyRegularizationLimit?: number;
+  compliancePolicy?: 'FEDERAL_STANDARD' | 'CALIFORNIA_STRICT' | 'CUSTOM';
+  enableBreakTracking?: boolean;
+  mealBreakThresholdHours?: number;
+  minMealBreakMinutes?: number;
+  maxMealStartShiftHour?: number;
+  secondMealThresholdHours?: number;
+  restBreakMinutes?: number;
+  enforceBreakWaivers?: boolean;
+  autoAssessPenalties?: boolean;
   updatedAt?: string;
 }
 
@@ -156,6 +176,18 @@ export interface UpdateGeofencePayload {
   graceMinutes?: number;
   defaultShiftStartTime: string;
   defaultShiftEndTime: string;
+  enableRegularization?: boolean;
+  maxRegularizationPastDays?: number;
+  monthlyRegularizationLimit?: number;
+  compliancePolicy?: 'FEDERAL_STANDARD' | 'CALIFORNIA_STRICT' | 'CUSTOM';
+  enableBreakTracking?: boolean;
+  mealBreakThresholdHours?: number;
+  minMealBreakMinutes?: number;
+  maxMealStartShiftHour?: number;
+  secondMealThresholdHours?: number;
+  restBreakMinutes?: number;
+  enforceBreakWaivers?: boolean;
+  autoAssessPenalties?: boolean;
 }
 
 export interface WorkspaceGeofenceOverviewItem {
@@ -206,3 +238,80 @@ export interface AdminDashboardMetrics {
   }[];
   departmentStats?: DepartmentAttendanceStat[];
 }
+
+// ─── Attendance Regularization Types ─────────────────────────────────────────
+
+export type RegularizationStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export type RegularizationReason =
+  | 'MISSED_CLOCK_IN'
+  | 'MISSED_CLOCK_OUT'
+  | 'MISSED_BOTH'
+  | 'ON_DUTY_CLIENT_VISIT'
+  | 'WORK_FROM_HOME'
+  | 'TECHNICAL_ISSUE'
+  | 'OTHER';
+
+export interface AttendanceRegularization {
+  id: string;
+  workspaceId: string;
+  employeeId: string;
+  attendanceRecordId?: string | null;
+  date: string;
+  reasonCategory: RegularizationReason;
+  reasonText: string;
+  requestedClockInTime?: string | null;
+  requestedClockOutTime?: string | null;
+  status: RegularizationStatus;
+  reviewerId?: string | null;
+  reviewerNotes?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string | null;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    designation?: string | null;
+    department?: string | null;
+    biometricPhotoUrl?: string | null;
+    workspaceMember?: {
+      user?: {
+        id: string;
+        fullName: string;
+        email: string;
+      };
+    };
+  };
+  attendanceRecord?: {
+    id: string;
+    clockInDate: string;
+    clockInTime: string;
+    clockOutTime?: string | null;
+    status: string;
+    workingHours?: number | null;
+  } | null;
+  reviewer?: {
+    id: string;
+    fullName: string;
+    email: string;
+  } | null;
+}
+
+export interface RegularizationListResponse {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  items: AttendanceRegularization[];
+}
+
+export interface SubmitRegularizationPayload {
+  workspaceId?: string;
+  employeeId?: string;
+  date: string;
+  reasonCategory: RegularizationReason;
+  reasonText: string;
+  requestedClockInTime?: string | null;
+  requestedClockOutTime?: string | null;
+}
+

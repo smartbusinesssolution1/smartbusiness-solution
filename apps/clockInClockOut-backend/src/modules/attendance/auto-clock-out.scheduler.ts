@@ -10,7 +10,13 @@ let middayTask: ScheduledTask | null = null;
  * 1. 12:00 AM Midnight (00:00) -> Sweeps and auto-closes day-shift forgotten punches
  * 2. 12:00 PM Midday   (12:00) -> Sweeps and auto-closes night-shift forgotten punches
  */
-export function initAutoClockOutScheduler(): void {
+export function initAutoClockOutScheduler(forceEnable = false): void {
+  // Cron jobs stopped per request. Only runs if explicitly enabled via environment variable or argument.
+  if (!forceEnable && process.env.ENABLE_AUTO_CLOCK_OUT_CRON !== "true") {
+    logger.info("[CRON] AutoClockOutScheduler is stopped (crons disabled).");
+    return;
+  }
+
   // Prevent duplicate scheduler registration
   if (midnightTask || middayTask) {
     logger.warn("AutoClockOutScheduler already initialized, skipping duplicate start.");

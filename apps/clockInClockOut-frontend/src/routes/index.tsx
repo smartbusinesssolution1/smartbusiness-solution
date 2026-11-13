@@ -23,6 +23,7 @@ const CreateEmployee = lazy(() => import('../pages/admin/CreateEmployee'));
 const EditEmployee = lazy(() => import('../pages/admin/EditEmployee'));
 const AttendanceReport = lazy(() => import('../pages/admin/AttendanceReport'));
 const LeaveManagementPage = lazy(() => import('../pages/admin/LeaveManagementPage'));
+const RegularizationManagementPage = lazy(() => import('../pages/admin/RegularizationManagementPage'));
 const OrganizationSettingsPage = lazy(() => import('../pages/admin/OrganizationSettings'));
 const AdminProfile = lazy(() => import('../pages/admin/Profile'));
 const WorkspaceSelectPage = lazy(() => import('../pages/admin/WorkspaceSelectPage'));
@@ -173,6 +174,14 @@ export const AppRoutes: React.FC = () => {
             element={
               <AdminRoute>
                 <LeaveManagementPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="admin/regularizations"
+            element={
+              <AdminRoute>
+                <RegularizationManagementPage />
               </AdminRoute>
             }
           />

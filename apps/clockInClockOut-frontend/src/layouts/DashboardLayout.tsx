@@ -105,6 +105,12 @@ export const DashboardLayout: React.FC = () => {
       preload: () => import('../pages/admin/LeaveManagementPage'),
     },
     {
+      text: 'Regularizations',
+      path: '/admin/regularizations',
+      icon: ShieldCheck,
+      preload: () => import('../pages/admin/RegularizationManagementPage'),
+    },
+    {
       text: 'Attendance Reports',
       path: '/admin/reports',
       icon: BarChart3,

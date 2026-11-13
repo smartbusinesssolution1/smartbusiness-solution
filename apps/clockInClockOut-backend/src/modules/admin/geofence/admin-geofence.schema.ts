@@ -32,6 +32,20 @@ export const UpdateGeofenceSchema = z.object({
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Shift end time must be in HH:mm 24-hr format")
     .default("18:00"),
+  enableRegularization: z.boolean().default(true),
+  maxRegularizationPastDays: z.number().int().min(1).max(365).default(30),
+  monthlyRegularizationLimit: z.number().int().min(0).max(31).default(5),
+
+  // Break & Statutory Labor Compliance Configuration
+  compliancePolicy: z.enum(["FEDERAL_STANDARD", "CALIFORNIA_STRICT", "CUSTOM"]).default("CALIFORNIA_STRICT"),
+  enableBreakTracking: z.boolean().default(true),
+  mealBreakThresholdHours: z.number().min(1).max(24).default(5.0),
+  minMealBreakMinutes: z.number().int().min(10).max(180).default(30),
+  maxMealStartShiftHour: z.number().min(1).max(24).default(5.0),
+  secondMealThresholdHours: z.number().min(5).max(24).default(10.0),
+  restBreakMinutes: z.number().int().min(5).max(60).default(10),
+  enforceBreakWaivers: z.boolean().default(true),
+  autoAssessPenalties: z.boolean().default(true),
 });
 
 export const WorkspaceIdParamSchema = z.object({

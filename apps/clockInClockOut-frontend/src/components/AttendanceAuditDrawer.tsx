@@ -14,6 +14,8 @@ import {
   UserX,
   Radio,
   FileText,
+  Utensils,
+  Scale,
 } from 'lucide-react';
 import dayjs from 'dayjs';
 
@@ -302,6 +304,44 @@ export const AttendanceAuditDrawer: React.FC<AttendanceAuditDrawerProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Statutory Break & Labor Compliance Audit Badge */}
+            {(record.totalBreakMinutes != null && record.totalBreakMinutes > 0 ||
+              record.mealPenaltyHours != null && record.mealPenaltyHours > 0 ||
+              record.mealWaiverSigned) && (
+              <div className="rounded-xl border border-line bg-canvas p-3 flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                  <span className="flex items-center gap-1.5 text-primary-700">
+                    <Utensils className="size-3.5" />
+                    <span>Statutory Break Tracking</span>
+                  </span>
+                  {record.mealPenaltyHours != null && record.mealPenaltyHours > 0 ? (
+                    <Badge variant="outline" className="border-rose-300 bg-rose-50 text-rose-700 text-[0.625rem] font-mono">
+                      CA § 226.7 Penalty: +{record.mealPenaltyHours}h Premium
+                    </Badge>
+                  ) : record.mealWaiverSigned ? (
+                    <Badge variant="outline" className="border-blue-300 bg-blue-50 text-blue-700 text-[0.625rem] font-mono">
+                      Meal Waived (Mutual Agreement)
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-emerald-300 bg-emerald-50 text-emerald-700 text-[0.625rem] font-mono">
+                      Compliant Shift
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[0.6875rem] font-mono text-muted pt-1 border-t border-line">
+                  <div>
+                    <span>Unpaid Meal: </span>
+                    <strong className="text-ink">{record.unpaidBreakMinutes || 0} mins</strong>
+                  </div>
+                  <div>
+                    <span>Paid Rest: </span>
+                    <strong className="text-ink">{record.paidBreakMinutes || 0} mins</strong>
+                  </div>
+                </div>
+              </div>
+            )}
           </Card>
 
           {/* ── 3. Individual Punch History & Telemetry Section ── */}

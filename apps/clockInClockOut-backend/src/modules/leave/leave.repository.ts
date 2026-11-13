@@ -1278,6 +1278,8 @@ export class LeaveRepository {
 
       let regularHours = 0;
       let overtimeHours = 0;
+      let mealPenaltyHours = 0;
+      let restPenaltyHours = 0;
 
       for (const rec of records) {
         const hrs = Number(rec.workingHours || 0);
@@ -1287,6 +1289,8 @@ export class LeaveRepository {
         } else {
           regularHours += hrs;
         }
+        mealPenaltyHours += Number(rec.mealPenaltyHours || 0);
+        restPenaltyHours += Number(rec.restPenaltyHours || 0);
       }
 
       const leaves = approvedLeaves.filter((l) => l.employeeId === emp.id);
@@ -1319,10 +1323,11 @@ export class LeaveRepository {
         }
       }
 
+      const totalPenaltyHours = mealPenaltyHours + restPenaltyHours;
       const totalPaidLeaveHours =
         vacationHours + sickHours + ptoHours + otherPaidHours;
       const totalPaidHours =
-        Math.round((regularHours + overtimeHours + totalPaidLeaveHours) * 100) / 100;
+        Math.round((regularHours + overtimeHours + totalPaidLeaveHours + totalPenaltyHours) * 100) / 100;
 
       return {
         employeeId: emp.id,
@@ -1332,6 +1337,9 @@ export class LeaveRepository {
         department: emp.department || "General",
         regularHours: Math.round(regularHours * 100) / 100,
         overtimeHours: Math.round(overtimeHours * 100) / 100,
+        mealBreakPenaltyHours: Math.round(mealPenaltyHours * 100) / 100,
+        restBreakPenaltyHours: Math.round(restPenaltyHours * 100) / 100,
+        totalPenaltyHours: Math.round(totalPenaltyHours * 100) / 100,
         vacationHours: Math.round(vacationHours * 100) / 100,
         sickHours: Math.round(sickHours * 100) / 100,
         ptoHours: Math.round(ptoHours * 100) / 100,
@@ -1348,6 +1356,10 @@ export class LeaveRepository {
         Math.round(rows.reduce((sum, r) => sum + r.regularHours, 0) * 100) / 100,
       totalOvertimeHours:
         Math.round(rows.reduce((sum, r) => sum + r.overtimeHours, 0) * 100) / 100,
+      totalMealPenaltyHours:
+        Math.round(rows.reduce((sum, r) => sum + (r.mealBreakPenaltyHours || 0), 0) * 100) / 100,
+      totalRestPenaltyHours:
+        Math.round(rows.reduce((sum, r) => sum + (r.restBreakPenaltyHours || 0), 0) * 100) / 100,
       totalPaidLeaveHours:
         Math.round(rows.reduce((sum, r) => sum + r.totalPaidLeaveHours, 0) * 100) /
         100,

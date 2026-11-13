@@ -71,6 +71,7 @@ export class LeaveService {
       usedHours: used,
       pendingHours: pending,
       availableHours: available,
+      balanceHours: available,
     };
   }
 

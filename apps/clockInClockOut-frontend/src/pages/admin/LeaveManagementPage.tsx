@@ -2046,66 +2046,81 @@ export const LeaveManagementPage: React.FC = () => {
       )}
       {/* Review Dialog */}
       <Dialog open={Boolean(reviewRequestItem)} onOpenChange={(open) => !open && setReviewRequestItem(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md sm:max-w-[480px] p-6 rounded-2xl bg-panel">
           <DialogHeader
             title={
-              reviewRequestItem?.status === 'APPROVED'
-                ? 'Reject Approved Leave Request'
-                : reviewDecision === 'APPROVED'
-                ? 'Approve Leave Request'
-                : 'Reject Leave Request'
+              <span className="text-xl font-bold tracking-tight text-ink">
+                {reviewRequestItem?.status === 'APPROVED'
+                  ? 'Reject Leave Request'
+                  : reviewDecision === 'APPROVED'
+                  ? 'Approve Leave Request'
+                  : 'Reject Leave Request'}
+              </span>
             }
           />
 
-          <DialogBody className="space-y-4 py-2">
+          <DialogBody className="space-y-4 px-0 py-2">
             {reviewRequestItem?.status === 'APPROVED' && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 flex items-start gap-2">
-                <AlertCircle className="size-4 text-amber-600 shrink-0 mt-0.5" />
-                <p className="leading-relaxed">
-                  This leave request was previously approved. Confirming rejection will reverse <strong>{reviewRequestItem.totalHours} hrs</strong> and immediately restore them back to the employee&apos;s available leave balance.
-                </p>
+              <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-300 flex items-start gap-2.5">
+                <AlertCircle className="size-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-semibold">Reversal Notice</div>
+                  <p className="leading-relaxed opacity-90">
+                    Reversing this approved request will restore <strong>{reviewRequestItem.totalHours} hrs</strong> back to the employee&apos;s available balance.
+                  </p>
+                </div>
               </div>
             )}
 
             {reviewRequestItem && (
-              <div className="rounded-lg bg-muted/50 p-3 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Employee:</span>
-                  <span className="font-medium text-foreground">
-                    {employeeMap.get(reviewRequestItem.employeeId)?.name || reviewRequestItem.employee?.workspaceMember?.user?.fullName || 'Employee'}
+              <div className="rounded-2xl bg-slate-200/75 dark:bg-slate-800/80 p-4 sm:p-5 space-y-2.5 text-sm">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Employee:</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-right">
+                    {employeeMap.get(reviewRequestItem.employeeId)?.name ||
+                      reviewRequestItem.employee?.workspaceMember?.user?.fullName ||
+                      'Employee'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Policy:</span>
-                  <span className="font-medium text-foreground">{reviewRequestItem.policy?.name}</span>
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Policy:</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-right">
+                    {reviewRequestItem.policy?.name || 'Leave Policy'}
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Requested Hours:</span>
-                  <span className="font-medium text-foreground">{reviewRequestItem.totalHours} hours</span>
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Requested Hours:</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-right">
+                    {reviewRequestItem.totalHours} hours
+                  </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Dates:</span>
-                  <span className="font-medium text-foreground">
+
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Dates:</span>
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-right">
                     {dayjs(reviewRequestItem.startDate).format('MMM D, YYYY')} – {dayjs(reviewRequestItem.endDate).format('MMM D, YYYY')}
                   </span>
                 </div>
-                {reviewRequestItem.reason && (
-                  <div className="pt-1 border-t text-muted-foreground">
-                    <span className="font-medium text-foreground">Employee note: </span>
-                    {reviewRequestItem.reason}
-                  </div>
-                )}
+
+                <div className="border-t border-slate-300/80 dark:border-slate-700/80 my-2.5" />
+
+                <div className="text-sm">
+                  <span className="text-slate-600 dark:text-slate-400">Employee note: </span>
+                  <span className="text-slate-900 dark:text-slate-100 font-medium">
+                    {reviewRequestItem.reason || 'None'}
+                  </span>
+                </div>
+
                 {reviewRequestItem.attachmentUrl && (
-                  <div className="pt-2 border-t flex items-center justify-between">
-                    <span className="font-medium text-foreground flex items-center gap-1.5">
-                      <FileText className="size-3.5 text-amber-600" />
-                      Doctor&apos;s Note / Attachment:
-                    </span>
+                  <div className="flex items-center justify-between text-sm pt-1">
+                    <span className="text-slate-600 dark:text-slate-400">Attachment:</span>
                     <a
                       href={reviewRequestItem.attachmentUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-primary-600 dark:text-primary-400 hover:underline flex items-center gap-1 font-semibold"
+                      className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"
                     >
                       View Document <ExternalLink className="size-3" />
                     </a>
@@ -2114,7 +2129,7 @@ export const LeaveManagementPage: React.FC = () => {
               </div>
             )}
 
-            {/* Staffing Conflict Guard Warning */}
+            {/* Staffing Conflict Alert if approving */}
             {reviewDecision === 'APPROVED' && conflictData?.hasConflict && (
               <div
                 className={cn(
@@ -2137,19 +2152,18 @@ export const LeaveManagementPage: React.FC = () => {
                   <p className="text-[11px] leading-relaxed opacity-90">
                     {conflictData.warningMessage}
                   </p>
-                  <div className="text-[10px] font-mono opacity-80">
-                    Department: {conflictData.department} &bull; Total Staff: {conflictData.totalStaff} &bull; Coverage: {conflictData.coveragePercentage}%
-                  </div>
                 </div>
               </div>
             )}
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">
+            {/* Reviewer Comments */}
+            <div className="space-y-1.5 pt-1">
+              <label htmlFor="leave-reviewer-comment" className="block text-sm font-semibold text-slate-800 dark:text-slate-200">
                 Reviewer Comments (Optional)
               </label>
-              <Input
-                type="text"
+              <textarea
+                id="leave-reviewer-comment"
+                rows={2}
                 placeholder={
                   reviewDecision === 'APPROVED'
                     ? 'e.g. Approved. Enjoy your time off.'
@@ -2157,30 +2171,35 @@ export const LeaveManagementPage: React.FC = () => {
                 }
                 value={reviewerComment}
                 onChange={(e) => setReviewerComment(e.target.value)}
-                className="text-sm"
+                maxLength={500}
+                className="w-full resize-none rounded-xl border border-blue-400/90 dark:border-blue-500/80 bg-panel px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-500/15 transition shadow-xs leading-normal"
               />
             </div>
           </DialogBody>
 
-          <DialogFooter>
+          <DialogFooter className="border-t-0 bg-transparent px-0 pt-2 pb-0 flex-row justify-end gap-3 sm:space-x-0">
             <Button
+              type="button"
               variant="outline"
-              size="sm"
               onClick={() => setReviewRequestItem(null)}
               disabled={reviewMutation.isPending}
+              className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-xs hover:bg-slate-50 dark:hover:bg-slate-700 transition"
             >
               Cancel
             </Button>
             <Button
-              variant={reviewDecision === 'APPROVED' ? 'default' : 'destructive'}
-              size="sm"
+              type="button"
               onClick={handleConfirmReview}
               disabled={reviewMutation.isPending}
+              className={cn(
+                'rounded-xl px-5 py-2 text-sm font-medium text-white shadow-xs transition',
+                reviewDecision === 'APPROVED'
+                  ? 'bg-emerald-600 hover:bg-emerald-700'
+                  : 'bg-[#E11D48] hover:bg-[#BE123C]'
+              )}
             >
               {reviewMutation.isPending
                 ? 'Processing...'
-                : reviewRequestItem?.status === 'APPROVED'
-                ? 'Confirm Rejection (Restore Hours)'
                 : reviewDecision === 'APPROVED'
                 ? 'Confirm Approval'
                 : 'Confirm Rejection'}
