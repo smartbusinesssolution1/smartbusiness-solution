@@ -16,7 +16,7 @@ import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "@
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
-import { applyServerErrors, US_STATES } from "@/lib/forms";
+import { applyServerErrors, requiredText, US_STATES } from "@/lib/forms";
 import { errorMessage } from "@/lib/api";
 import { ago, initials, money } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -53,11 +53,11 @@ export function BusinessSettingsPage() {
       <div className="grid gap-8 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)]">
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
-          <Field label="Business name" htmlFor="businessName" error={errors.businessName?.message}><Input {...register("businessName", { required: "Enter the business name" })} /></Field>
-          <Field label="Street address" htmlFor="addressLine1" error={errors.addressLine1?.message}><Input {...register("addressLine1", { required: "Enter the street address" })} /></Field>
+          <Field label="Business name" htmlFor="businessName" error={errors.businessName?.message}><Input {...register("businessName", requiredText("Enter the business name"))} /></Field>
+          <Field label="Street address" htmlFor="addressLine1" error={errors.addressLine1?.message}><Input {...register("addressLine1", requiredText("Enter the street address"))} /></Field>
           <Field label="Suite, unit" htmlFor="addressLine2" optional error={errors.addressLine2?.message}><Input {...register("addressLine2")} /></Field>
           <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_7rem] gap-3">
-            <Field label="City" htmlFor="city" error={errors.city?.message}><Input {...register("city", { required: "Enter the city" })} /></Field>
+            <Field label="City" htmlFor="city" error={errors.city?.message}><Input {...register("city", requiredText("Enter the city"))} /></Field>
             <Field label="State" htmlFor="state" error={errors.state?.message}>
               <Select value={v.state} onValueChange={(s) => setValue("state", s, { shouldDirty: true })}>{US_STATES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</Select>
             </Field>
@@ -491,7 +491,7 @@ function MemberDialog({ member, onClose }: { member: Member | null; onClose: () 
                 {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
                 {!member && (
                   <>
-                    <Field label="Name" htmlFor="m-name" error={errors.fullName?.message}><Input autoFocus {...register("fullName", { required: "Enter their name" })} /></Field>
+                    <Field label="Name" htmlFor="m-name" error={errors.fullName?.message}><Input autoFocus {...register("fullName", requiredText("Enter their name"))} /></Field>
                     <Field label="Work email" htmlFor="m-email" error={errors.email?.message}><Input type="email" {...register("email", { required: "Enter their email", pattern: { value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/, message: "That doesn't look like an email" } })} /></Field>
                   </>
                 )}

@@ -12,13 +12,14 @@ const passwordSchema = z
   );
 
 export const registerSchema = z.object({
-  fullName: z.string().min(1, "Full Name is required").max(255).trim(),
+  // trim() before min(1): otherwise "   " passes and is saved as "".
+  fullName: z.string().trim().min(1, "Full Name is required").max(255),
   // Trim and lower-case BEFORE checking the format, so a pasted " Maria@X.com " is accepted.
   email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" }).max(255)),
   // Required: the person signing up chooses their password, so nobody else ever knows it
   // and it never has to be sent to them.
   password: passwordSchema,
-  companyName: z.string().min(1, "Company name is required").max(255).trim(),
+  companyName: z.string().trim().min(1, "Company name is required").max(255),
 });
 
 export const loginSchema = z.object({
@@ -38,7 +39,7 @@ export const resetPasswordSchema = z.object({
 });
 
 export const updateProfileSchema = z.object({
-  fullName: z.string().min(1, "Full Name is required").max(255).trim().optional(),
+  fullName: z.string().trim().min(1, "Full Name is required").max(255).optional(),
 });
 
 // The link from an invitation email. Sent in the body, never the URL path, so it does

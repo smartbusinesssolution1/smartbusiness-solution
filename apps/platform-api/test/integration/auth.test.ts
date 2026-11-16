@@ -108,6 +108,9 @@ describe("register", () => {
     ["a password without a number", { password: "NoNumbers!!" }, "password", /at least one number/],
     ["an invalid email", { email: "not-an-email" }, "email", /Invalid email format/],
     ["a missing company name", { companyName: "" }, "companyName", /Company name is required/],
+    // BUG_029: spaces alone used to pass min(1) and be saved as "".
+    ["a company name of only spaces", { companyName: "   " }, "companyName", /Company name is required/],
+    ["a full name of only spaces", { fullName: "   " }, "fullName", /Full Name is required/],
   ])("answers 400 with field details for %s", async (_label, overrides, field, message) => {
     const res = await new AuthClient().register(overrides);
 
