@@ -167,6 +167,21 @@ services:
     networks:
       - smartbusiness-net
 
+  # ── Super Admin Frontend (Nginx container) ──
+  super-admin-frontend:
+    build:
+      context: .
+      dockerfile: apps/super-admin-frontend/Dockerfile
+    image: smartbusiness/super-admin-frontend:latest
+    container_name: smartbusiness-super-admin-web
+    restart: always
+    ports:
+      - "5176:80"
+    depends_on:
+      - platform-api
+    networks:
+      - smartbusiness-net
+
   # ── Platform Marketing Website (Nginx container) ──
   platform-web:
     build:
@@ -201,6 +216,7 @@ services:
       - platform-web
       - chatbot-backend
       - chatbot-frontend
+      - super-admin-frontend
     networks:
       - smartbusiness-net
 
