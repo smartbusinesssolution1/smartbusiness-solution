@@ -16,7 +16,9 @@ export const createBankAccountSchema = z.object({
         .string()
         .min(4, { error: "Account number must be at least 4 digits" })
         .max(17, { error: "Account number must be at most 17 digits" })
-        .regex(/^\d+$/, { error: "Account number must contain only digits" }),
+        .regex(/^\d+$/, { error: "Account number must contain only digits" })
+        // No bank issues an all-zero account number; checks carrying one cannot be paid.
+        .refine((n) => !/^0+$/.test(n), { error: "Account number cannot contain only zeros." }),
 
     accountType: z.enum(["CHECKING", "SAVINGS"], {
         error: "Account type must be CHECKING or SAVINGS"

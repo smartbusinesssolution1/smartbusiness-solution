@@ -19,6 +19,8 @@ import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHead
 import { applyServerErrors, requiredText, US_STATES } from "@/lib/forms";
 import { errorMessage } from "@/lib/api";
 import { ago, initials, money } from "@/lib/format";
+import { MAX_CHECK_AMOUNT } from "@/lib/amount-words";
+import { InactiveBadge } from "@/components/app/status";
 import { cn } from "@/lib/utils";
 
 // ─── Business ─────────────────────────────────────────────
@@ -165,13 +167,17 @@ export function ApprovalSettingsPage() {
         ) : (
           <ul className="divide-y divide-line">
             {[...list].sort((a, b) => a.priority - b.priority).map((r) => (
-              <li key={r.id} className={cn("flex flex-wrap items-center gap-4 px-5 py-4", !r.isActive && "opacity-60")}>
-                <span className="flex size-8 items-center justify-center rounded-lg bg-subtle font-mono text-xs font-semibold" title="Priority">{r.priority}</span>
+              <li key={r.id} className="flex flex-wrap items-center gap-4 px-5 py-4">
+                {/* A paused rule's details are faded; its "Inactive" badge is not, so it stays readable. */}
+                <span className={cn("flex size-8 items-center justify-center rounded-lg bg-subtle font-mono text-xs font-semibold", !r.isActive && "opacity-60")} title="Priority">{r.priority}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="font-medium">{r.maxAmount ? `${money(r.minAmount)} to ${money(r.maxAmount)}` : `${money(r.minAmount)} and above`}</span>
-                  <span className="text-xs text-muted">{r.requiredApprovals} approval{r.requiredApprovals === 1 ? "" : "s"} needed{r.allowSelfApproval ? " · writer may approve their own" : ""}{!r.isActive ? " · inactive" : ""}</span>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <span className={cn("font-medium", !r.isActive && "opacity-60")}>{r.maxAmount ? `${money(r.minAmount)} to ${money(r.maxAmount)}` : `${money(r.minAmount)} and above`}</span>
+                    {!r.isActive && <InactiveBadge />}
+                  </span>
+                  <span className={cn("text-xs text-muted", !r.isActive && "opacity-60")}>{r.requiredApprovals} approval{r.requiredApprovals === 1 ? "" : "s"} needed{r.allowSelfApproval ? " · writer may approve their own" : ""}</span>
                 </div>
-                <RuleApprovers ruleId={r.id} />
+                <div className={cn(!r.isActive && "opacity-60")}><RuleApprovers ruleId={r.id} /></div>
                 <Menu>
                   <MenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Rule actions"><MoreHorizontal /></Button></MenuTrigger>
                   <MenuContent>
@@ -204,6 +210,22 @@ function RuleApprovers({ ruleId }: { ruleId: string }) {
   );
 }
 
+// "$5,000.00" → 5000. Spaces, "$" and thousands commas are allowed in the box.
+const parseRuleAmount = (s: string) => Number(s.replace(/[$,\s]/g, ""));
+
+// The server's rule for an amount threshold (approval-rule.schemas.ts amountField), checked
+// here first so the message appears under the box instead of as "Validation Failed".
+function ruleAmountProblem(s: string): string | null {
+  const t = s.replace(/[$,\s]/g, "");
+  // Digits with an optional decimal part: "5000", "5000.", "5000.5", ".5".
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(t)) return "Enter an amount, like 5000.00";
+  if (/\.\d{3,}$/.test(t)) return "At most 2 decimal places";
+  const n = Number(t);
+  if (n <= 0) return "Above $0";
+  if (n > MAX_CHECK_AMOUNT) return "At most $999,999.99, the largest amount a check can have";
+  return null;
+}
+
 function RuleDialog({ rule, onClose }: { rule: ApprovalRule | null; onClose: () => void }) {
   const { wid } = useWorkspaceContext();
   const save = useSaveRule(wid);
@@ -211,7 +233,7 @@ function RuleDialog({ rule, onClose }: { rule: ApprovalRule | null; onClose: () 
   const current = useRuleApprovers(wid, rule?.id);
   const [approverIds, setApproverIds] = React.useState<string[] | null>(rule ? null : []);
   const [formError, setFormError] = React.useState<string | null>(null);
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<{ minAmount: string; maxAmount: string; priority: string; requiredApprovals: string; allowSelfApproval: boolean }>({
+  const { register, handleSubmit, watch, setValue, setError, formState: { errors } } = useForm<{ minAmount: string; maxAmount: string; priority: string; requiredApprovals: string; allowSelfApproval: boolean }>({
     defaultValues: {
       minAmount: rule?.minAmount ?? "",
       maxAmount: rule?.maxAmount ?? "",
@@ -231,14 +253,22 @@ function RuleDialog({ rule, onClose }: { rule: ApprovalRule | null; onClose: () 
         id: rule?.id,
         approverIds: ids,
         input: {
-          minAmount: Number(v.minAmount.replace(/[$,]/g, "")),
-          maxAmount: v.maxAmount ? Number(v.maxAmount.replace(/[$,]/g, "")) : undefined,
+          minAmount: parseRuleAmount(v.minAmount),
+          // A blank "Up to" means no upper limit. On an edit that has to be sent as null:
+          // a field left out of the request means "keep the current value", so clearing
+          // the box used to keep the old maximum while showing "Rule saved".
+          maxAmount: v.maxAmount.trim() ? parseRuleAmount(v.maxAmount) : rule ? null : undefined,
           priority: Number(v.priority),
           requiredApprovals: Number(v.requiredApprovals),
           allowSelfApproval: v.allowSelfApproval,
         },
       },
-      { onSuccess: () => { toast.success(rule ? "Rule saved" : "Rule added"); onClose(); }, onError: (e) => setFormError(errorMessage(e)) },
+      {
+        onSuccess: () => { toast.success(rule ? "Rule saved" : "Rule added"); onClose(); },
+        // Field messages go under their boxes; only an error about the whole rule (a
+        // duplicate range, no one left to approve) shows at the top.
+        onError: (e) => setFormError(applyServerErrors(e, setError, ["minAmount", "maxAmount", "priority", "requiredApprovals"])),
+      },
     );
   });
 
@@ -250,12 +280,28 @@ function RuleDialog({ rule, onClose }: { rule: ApprovalRule | null; onClose: () 
           <DialogBody>
             {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
             <div className="grid grid-cols-2 gap-3">
-              <Field label="From" htmlFor="minAmount" error={errors.minAmount?.message}><Input inputMode="decimal" leading={<span className="text-sm">$</span>} className="font-mono" placeholder="5000.00" {...register("minAmount", { validate: (s) => Number(s.replace(/[$,]/g, "")) > 0 || "Above $0" })} /></Field>
-              <Field label="Up to" htmlFor="maxAmount" optional hint="Blank: no upper limit"><Input inputMode="decimal" leading={<span className="text-sm">$</span>} className="font-mono" {...register("maxAmount")} /></Field>
+              <Field label="From" htmlFor="minAmount" error={errors.minAmount?.message}><Input inputMode="decimal" leading={<span className="text-sm">$</span>} className="font-mono" placeholder="5000.00" {...register("minAmount", { validate: (s) => ruleAmountProblem(s) ?? true, deps: "maxAmount" })} /></Field>
+              <Field label="Up to" htmlFor="maxAmount" optional hint="Blank: no upper limit" error={errors.maxAmount?.message}>
+                <Input
+                  inputMode="decimal"
+                  leading={<span className="text-sm">$</span>}
+                  className="font-mono"
+                  {...register("maxAmount", {
+                    validate: (s, all) => {
+                      if (!s.trim()) return true;
+                      const problem = ruleAmountProblem(s);
+                      if (problem) return problem;
+                      // Compared only once From itself is valid; From shows its own message.
+                      if (!ruleAmountProblem(all.minAmount) && parseRuleAmount(s) <= parseRuleAmount(all.minAmount)) return "Must be more than the From amount";
+                      return true;
+                    },
+                  })}
+                />
+              </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Approvals needed" htmlFor="requiredApprovals" error={errors.requiredApprovals?.message}><Input type="number" min={1} max={10} {...register("requiredApprovals", { validate: (s) => (Number(s) >= 1 && Number(s) <= 10) || "1 to 10" })} /></Field>
-              <Field label="Priority" htmlFor="priority" hint="1 is checked first"><Input type="number" min={1} max={100} {...register("priority")} /></Field>
+              <Field label="Approvals needed" htmlFor="requiredApprovals" error={errors.requiredApprovals?.message}><Input type="number" min={1} max={10} {...register("requiredApprovals", { validate: (s) => (/^\d+$/.test(s.trim()) && Number(s) >= 1 && Number(s) <= 10) || "A whole number from 1 to 10" })} /></Field>
+              <Field label="Priority" htmlFor="priority" hint="1 is checked first" error={errors.priority?.message}><Input type="number" min={1} max={100} {...register("priority", { validate: (s) => (/^\d+$/.test(s.trim()) && Number(s) >= 1 && Number(s) <= 100) || "A whole number from 1 to 100" })} /></Field>
             </div>
             <div className="flex flex-col gap-2">
               <span className="text-[0.8125rem] font-medium text-ink-soft">Who can approve</span>

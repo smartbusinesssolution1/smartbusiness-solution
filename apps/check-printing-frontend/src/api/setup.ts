@@ -290,7 +290,8 @@ export function useToggleApproval(wid: string) {
 
 export interface RuleInput {
   minAmount: number;
-  maxAmount?: number;
+  // null (on an edit) removes the upper limit; left out, the server keeps the current one.
+  maxAmount?: number | null;
   priority?: number;
   requiredApprovals?: number;
   allowSelfApproval?: boolean;

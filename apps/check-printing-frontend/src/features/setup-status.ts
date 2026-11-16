@@ -19,7 +19,7 @@ export interface SetupStep {
 // How far the workspace is from printing its first check. Writing checks never waits for
 // this; printing does (principle 4).
 export function useSetupStatus() {
-  const { wid, can, canAny } = useWorkspaceContext();
+  const { wid, workspace, can, canAny } = useWorkspaceContext();
   const canSeeAccounts = canAny("bank-account:manage", "check:create");
   const banks = useBankAccounts(wid, canSeeAccounts);
   const printers = usePrinters(wid, can("check:print"));
@@ -28,15 +28,19 @@ export function useSetupStatus() {
   const withSignature = active.find((b) => b.hasSignature);
   const firstAccount = active[0];
   const defaultPrinter = printers.data?.find((p) => p.isDefault) ?? printers.data?.[0];
+  // Everything printed in the check's top-left corner. Workspaces saved before blank values
+  // were refused (BUG_029) can have a name or address of "" or spaces.
+  const businessDone = [workspace.businessName, workspace.addressLine1, workspace.city, workspace.state, workspace.zipCode].every((s) => Boolean(s?.trim()));
+  const hasPrinter = (printers.data?.length ?? 0) > 0;
 
   const steps: SetupStep[] = [
     {
       key: "business",
       label: "Business details",
       description: "Name and address printed on every check.",
-      done: true,
+      done: businessDone,
       to: "settings/business",
-      cta: "Review",
+      cta: "Add business details",
       canAct: can("workspace:manage"),
     },
     {
@@ -44,7 +48,8 @@ export function useSetupStatus() {
       label: "Bank account",
       description: "Routing and account number for the MICR line, and your first check number.",
       done: active.length > 0,
-      to: "settings/bank-accounts/new",
+      // A done step's button reads "Review": it opens the list, not a blank new-account form.
+      to: active.length > 0 ? "settings/bank-accounts" : "settings/bank-accounts/new",
       cta: "Add bank account",
       canAct: can("bank-account:manage"),
     },
@@ -62,8 +67,8 @@ export function useSetupStatus() {
       key: "printer",
       label: "Printer calibration",
       description: "Print a calibration sheet three times and measure it, so checks land exactly where the bank expects.",
-      done: (printers.data?.length ?? 0) > 0,
-      to: "settings/printers/new",
+      done: hasPrinter,
+      to: hasPrinter ? "settings/printers" : "settings/printers/new",
       cta: "Set up printer",
       canAct: can("check:print"),
     },

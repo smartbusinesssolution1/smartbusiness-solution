@@ -11,7 +11,21 @@ import { isoMinute, usd, usDay, type CellValue, type ExportColumn, type ExportTa
 
 const PAGE = { width: 792, height: 612, margin: 36 } as const;
 const ROW_HEIGHT = 15;
-const FONT_SIZE = 7.5;
+export const PDF_FONT_SIZE = 7.5;
+const FONT_SIZE = PDF_FONT_SIZE;
+// Space left and right of the text inside each cell.
+const CELL_PADDING = 6;
+
+// The columns that appear in the PDF and each one's width in points, shared out by weight.
+export function pdfColumnWidths(columns: ExportColumn[]): Array<{ column: ExportColumn; width: number }> {
+  const shown = columns.filter((c) => c.pdf !== false);
+  const usable = PAGE.width - 2 * PAGE.margin;
+  const sum = shown.reduce((a, c) => a + (c.width ?? 1), 0);
+  return shown.map((column) => ({ column, width: ((column.width ?? 1) / sum) * usable }));
+}
+
+// Room for text in a cell of that width.
+export const pdfTextWidth = (cellWidth: number) => cellWidth - CELL_PADDING;
 
 function text(v: CellValue, column: ExportColumn): string {
   if (v === null || v === undefined || v === "") return "";
@@ -47,11 +61,10 @@ export async function renderPdf(table: ExportTable, generatedAt: Date): Promise<
     doc.on("error", reject);
   });
 
-  const columns = table.columns.filter((c) => c.pdf !== false);
+  const layout = pdfColumnWidths(table.columns);
+  const columns = layout.map((l) => l.column);
+  const widths = layout.map((l) => l.width);
   const usable = PAGE.width - 2 * PAGE.margin;
-  const weights = columns.map((c) => c.width ?? 1);
-  const sum = weights.reduce((a, b) => a + b, 0);
-  const widths = weights.map((w) => (w / sum) * usable);
   const bottom = PAGE.height - PAGE.margin - 18; // room for the footer
 
   doc.font("Helvetica-Bold").fontSize(15).fillColor("#111111").text(table.title, PAGE.margin, PAGE.margin);
@@ -77,7 +90,7 @@ export async function renderPdf(table: ExportTable, generatedAt: Date): Promise<
     doc.font(options.bold ? "Helvetica-Bold" : "Helvetica").fontSize(FONT_SIZE).fillColor("#111111");
     let x = PAGE.margin;
     columns.forEach((c, i) => {
-      const width = widths[i]! - 6;
+      const width = pdfTextWidth(widths[i]!);
       doc.text(fit(cells[i] ?? "", width), x + 3, y, { width, align: rightAligned(c) ? "right" : "left", lineBreak: false });
       x += widths[i]!;
     });
@@ -89,12 +102,12 @@ export async function renderPdf(table: ExportTable, generatedAt: Date): Promise<
   // Labels may wrap onto a second line; the header row grows to fit them.
   const header = () => {
     doc.font("Helvetica-Bold").fontSize(FONT_SIZE);
-    const height = Math.max(ROW_HEIGHT, ...columns.map((c, i) => doc.heightOfString(c.label, { width: widths[i]! - 6 }) + 6));
+    const height = Math.max(ROW_HEIGHT, ...columns.map((c, i) => doc.heightOfString(c.label, { width: pdfTextWidth(widths[i]!) }) + 6));
     doc.rect(PAGE.margin, y - 3, usable, height).fill("#eef1f5");
     doc.fillColor("#111111");
     let x = PAGE.margin;
     columns.forEach((c, i) => {
-      doc.text(c.label, x + 3, y, { width: widths[i]! - 6, align: rightAligned(c) ? "right" : "left" });
+      doc.text(c.label, x + 3, y, { width: pdfTextWidth(widths[i]!), align: rightAligned(c) ? "right" : "left" });
       x += widths[i]!;
     });
     y += height;
@@ -102,7 +115,7 @@ export async function renderPdf(table: ExportTable, generatedAt: Date): Promise<
 
   header();
   if (table.rows.length === 0) {
-    doc.font("Helvetica-Oblique").fontSize(9).fillColor("#555555").text("No checks match these filters.", PAGE.margin, y + 4);
+    doc.font("Helvetica-Oblique").fontSize(9).fillColor("#555555").text(table.emptyMessage ?? "No checks match these filters.", PAGE.margin, y + 4);
     y += ROW_HEIGHT;
   }
   for (const row of table.rows) {

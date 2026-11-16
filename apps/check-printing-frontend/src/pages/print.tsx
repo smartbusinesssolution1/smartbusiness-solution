@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/input";
 import { Checkbox, Segmented } from "@/components/ui/controls";
+import { CheckAttachments } from "@/components/app/check-attachments";
 import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { PaperDiagram, layoutLabel } from "@/components/app/paper";
@@ -331,75 +332,80 @@ function Station({ initial }: { initial: Check }) {
                 {face}
                 <p className="text-xs text-muted">Preview. The PDF is generated for the printer you choose, with its calibration and the account's signature.</p>
               </div>
-              <Panel className="self-start">
-                <PanelHeader title="Choose a printer" />
-                <div className="flex flex-col gap-4 p-5">
-                  {printers.isPending ? (
-                    <Skeleton className="h-24" />
-                  ) : all.length === 0 ? (
-                    <InlineAlert tone="warning" title="No printer set up" action={<Button size="sm" asChild><Link to={`/w/${wid}/settings/printers/new`}>Set up</Link></Button>}>Calibrate a printer first.</InlineAlert>
-                  ) : (
-                    <div role="radiogroup" aria-label="Printer" className="flex flex-col gap-2">
-                      {all.map((p) => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={printer?.id === p.id}
-                          onClick={() => { setPrinterId(p.id); setSlotChoice(null); }}
-                          className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition-all", printer?.id === p.id ? "border-primary-500 bg-primary-50/40 shadow-[0_0_0_3px_rgb(33_86_232/0.12)]" : "border-line hover:border-line-strong")}
-                        >
-                          <div className="w-9 shrink-0"><PaperDiagram layout={p.layout} paper={p.paperSize} /></div>
-                          <div className="flex min-w-0 flex-1 flex-col">
-                            <span className="truncate text-sm font-semibold">{p.profileName}</span>
-                            <span className="text-xs text-muted">{layoutLabel(p.layout)} · {p.paperSize === "LETTER" ? "Letter" : "A4"}</span>
-                          </div>
-                          {p.verification.verified ? <BadgeCheck className="size-4 text-success-600" aria-label="Verified" /> : <CircleAlert className="size-4 text-warning-600" aria-label="Not verified" />}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {printer?.layout === "THREE_PER_PAGE" && (
-                    <div className="flex flex-col gap-2">
-                      <span className="text-[0.8125rem] font-medium text-ink-soft">Which slot is still blank on the sheet?</span>
-                      <div role="radiogroup" aria-label="Slot" className="grid grid-cols-3 gap-2">
-                        {[1, 2, 3].map((n) => (
-                          <button key={n} type="button" role="radio" aria-checked={slot === n} onClick={() => setSlotChoice(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", slot === n ? "border-primary-500 bg-primary-50 text-primary-800" : "border-line hover:border-line-strong")}>
-                            <div className="w-8"><PaperDiagram layout="THREE_PER_PAGE" paper={printer.paperSize} slot={n} /></div>
-                            {n === 1 ? "Top" : n === 2 ? "Middle" : "Bottom"}
+              <div className="flex flex-col gap-4 self-start">
+                <Panel>
+                  <PanelHeader title="Choose a printer" />
+                  <div className="flex flex-col gap-4 p-5">
+                    {printers.isPending ? (
+                      <Skeleton className="h-24" />
+                    ) : all.length === 0 ? (
+                      <InlineAlert tone="warning" title="No printer set up" action={<Button size="sm" asChild><Link to={`/w/${wid}/settings/printers/new`}>Set up</Link></Button>}>Calibrate a printer first.</InlineAlert>
+                    ) : (
+                      <div role="radiogroup" aria-label="Printer" className="flex flex-col gap-2">
+                        {all.map((p) => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={printer?.id === p.id}
+                            onClick={() => { setPrinterId(p.id); setSlotChoice(null); }}
+                            className={cn("flex items-center gap-3 rounded-xl border p-3 text-left transition-all", printer?.id === p.id ? "border-primary-500 bg-primary-50/40 shadow-[0_0_0_3px_rgb(33_86_232/0.12)]" : "border-line hover:border-line-strong")}
+                          >
+                            <div className="w-9 shrink-0"><PaperDiagram layout={p.layout} paper={p.paperSize} /></div>
+                            <div className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate text-sm font-semibold">{p.profileName}</span>
+                              <span className="text-xs text-muted">{layoutLabel(p.layout)} · {p.paperSize === "LETTER" ? "Letter" : "A4"}</span>
+                            </div>
+                            {p.verification.verified ? <BadgeCheck className="size-4 text-success-600" aria-label="Verified" /> : <CircleAlert className="size-4 text-warning-600" aria-label="Not verified" />}
                           </button>
                         ))}
                       </div>
-                      {printer.nextSlot !== 1 && (
-                        <p className="text-xs text-muted">Slot {printer.nextSlot} is the next blank one after the last print on this printer. Pick another if the sheet in the tray is different.</p>
-                      )}
-                      {check.invoiceItems && check.invoiceItems.length > 0 && <p className="text-xs text-warning-700">This paper has no stubs, so the invoice lines won't print.</p>}
-                    </div>
-                  )}
+                    )}
 
-                  {reusesSheet && printer && (
-                    <ReloadCheck
-                      firstSlot={slot as 2 | 3}
-                      paper={printer.paperSize}
-                      confirmed={reloadConfirmed}
-                      onConfirmedChange={(on) => setReloadConfirmedFor(on ? reloadKey : null)}
-                      onFreshSheet={() => setSlotChoice(1)}
-                    />
-                  )}
+                    {printer?.layout === "THREE_PER_PAGE" && (
+                      <div className="flex flex-col gap-2">
+                        <span className="text-[0.8125rem] font-medium text-ink-soft">Which slot is still blank on the sheet?</span>
+                        <div role="radiogroup" aria-label="Slot" className="grid grid-cols-3 gap-2">
+                          {[1, 2, 3].map((n) => (
+                            <button key={n} type="button" role="radio" aria-checked={slot === n} onClick={() => setSlotChoice(n)} className={cn("flex flex-col items-center gap-1 rounded-xl border p-2 text-xs font-medium", slot === n ? "border-primary-500 bg-primary-50 text-primary-800" : "border-line hover:border-line-strong")}>
+                              <div className="w-8"><PaperDiagram layout="THREE_PER_PAGE" paper={printer.paperSize} slot={n} /></div>
+                              {n === 1 ? "Top" : n === 2 ? "Middle" : "Bottom"}
+                            </button>
+                          ))}
+                        </div>
+                        {printer.nextSlot !== 1 && (
+                          <p className="text-xs text-muted">Slot {printer.nextSlot} is the next blank one after the last print on this printer. Pick another if the sheet in the tray is different.</p>
+                        )}
+                        {check.invoiceItems && check.invoiceItems.length > 0 && <p className="text-xs text-warning-700">This paper has no stubs, so the invoice lines won't print.</p>}
+                      </div>
+                    )}
 
-                  {printer && !printer.verification.verified && (
-                    <InlineAlert tone="warning" title="This printer isn't verified">Checks may print slightly off. Verify it with a sample check first if you can.</InlineAlert>
-                  )}
-                  {printer?.needsRecalibration && <InlineAlert tone="danger">Calibrated with an older sheet. Set this printer up again before printing.</InlineAlert>}
-                  {printError && <InlineAlert tone="danger" title="Not printed">{printError}</InlineAlert>}
+                    {reusesSheet && printer && (
+                      <ReloadCheck
+                        firstSlot={slot as 2 | 3}
+                        paper={printer.paperSize}
+                        confirmed={reloadConfirmed}
+                        onConfirmedChange={(on) => setReloadConfirmedFor(on ? reloadKey : null)}
+                        onFreshSheet={() => setSlotChoice(1)}
+                      />
+                    )}
 
-                  <Button size="lg" disabled={!printer || !reloadConfirmed} loading={print.isPending} onClick={generate}>
-                    <Printer /> Generate check PDF
-                  </Button>
-                  <p className="text-xs text-muted">Generating marks the check as printed. You'll confirm the paper came out right next.</p>
-                </div>
-              </Panel>
+                    {printer && !printer.verification.verified && (
+                      <InlineAlert tone="warning" title="This printer isn't verified">Checks may print slightly off. Verify it with a sample check first if you can.</InlineAlert>
+                    )}
+                    {printer?.needsRecalibration && <InlineAlert tone="danger">Calibrated with an older sheet. Set this printer up again before printing.</InlineAlert>}
+                    {printError && <InlineAlert tone="danger" title="Not printed">{printError}</InlineAlert>}
+
+                    <Button size="lg" disabled={!printer || !reloadConfirmed} loading={print.isPending} onClick={generate}>
+                      <Printer /> Generate check PDF
+                    </Button>
+                    <p className="text-xs text-muted">Generating marks the check as printed. You'll confirm the paper came out right next.</p>
+                  </div>
+                </Panel>
+                {/* BUG_014: the invoice, checkable without leaving the station. Hidden when
+                    there is none; the check's own page says so. */}
+                {check.attachments.length > 0 && <CheckAttachments check={check} />}
+              </div>
             </div>
           )}
 

@@ -40,6 +40,7 @@ import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHead
 import { applyServerErrors } from "@/lib/forms";
 import { checkNo, when } from "@/lib/format";
 import { errorMessage } from "@/lib/api";
+import { InactiveBadge } from "@/components/app/status";
 import { cn } from "@/lib/utils";
 
 function BackLink({ to, children }: { to: string; children: React.ReactNode }) {
@@ -96,18 +97,19 @@ export function BankAccountsPage() {
         <div className="grid gap-3 md:grid-cols-2">
           {data.map((b, i) => (
             <motion.div key={b.id} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}>
-              <Link to={`/w/${wid}/settings/bank-accounts/${b.id}`} className={cn("group flex flex-col gap-4 rounded-[var(--radius-card)] border border-line bg-panel p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-line-strong", !b.isActive && "opacity-60")}>
+              <Link to={`/w/${wid}/settings/bank-accounts/${b.id}`} className={cn("group flex flex-col gap-4 rounded-[var(--radius-card)] border border-line bg-panel p-5 shadow-card transition-all hover:-translate-y-0.5 hover:border-line-strong")}>
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-3">
+                  {/* An inactive account's details are faded; its badge is not, so it stays readable. */}
+                  <div className={cn("flex items-center gap-3", !b.isActive && "opacity-60")}>
                     <span className="flex size-10 items-center justify-center rounded-xl bg-subtle"><Landmark className="size-4" /></span>
                     <div>
                       <p className="font-semibold">{b.bankName}</p>
                       <p className="font-mono text-xs text-muted">{b.accountType === "CHECKING" ? "Checking" : "Savings"} · {b.accountNumber}</p>
                     </div>
                   </div>
-                  {!b.isActive && <span className="rounded-full bg-subtle px-2 py-0.5 text-xs text-muted">Inactive</span>}
+                  {!b.isActive && <InactiveBadge />}
                 </div>
-                <div className="grid grid-cols-3 gap-3 border-t border-line pt-4 text-xs">
+                <div className={cn("grid grid-cols-3 gap-3 border-t border-line pt-4 text-xs", !b.isActive && "opacity-60")}>
                   <div className="flex flex-col gap-0.5"><span className="text-muted">Next check</span><span className="font-mono text-sm font-medium">#{checkNo(b.nextCheckNumber, b.checkNumberPadding)}</span></div>
                   <div className="flex flex-col gap-0.5"><span className="text-muted">Routing</span><span className="font-mono text-sm">{b.routingNumber}</span></div>
                   <div className="flex flex-col gap-0.5">
@@ -220,7 +222,7 @@ export function NewBankAccountPage() {
             <Input inputMode="numeric" autoComplete="off" maxLength={9} placeholder="021000021" className="font-mono tracking-wider" autoFocus {...register("routingNumber", { required: "Enter the routing number", pattern: { value: /^\d{9}$/, message: "Exactly 9 digits" }, validate: (r) => abaValid(r) || "This isn't a valid routing number. Check for a typo." })} />
           </Field>
           <Field label="Account number" htmlFor="accountNumber" error={errors.accountNumber?.message} hint="4 to 17 digits. Stored encrypted.">
-            <Input inputMode="numeric" autoComplete="off" maxLength={17} placeholder="000123456789" className="font-mono tracking-wider" {...register("accountNumber", { required: "Enter the account number", pattern: { value: /^\d{4,17}$/, message: "4 to 17 digits, numbers only" } })} />
+            <Input inputMode="numeric" autoComplete="off" maxLength={17} placeholder="000123456789" className="font-mono tracking-wider" {...register("accountNumber", { required: "Enter the account number", pattern: { value: /^\d{4,17}$/, message: "4 to 17 digits, numbers only" }, validate: (n) => !/^0+$/.test(n) || "Account number cannot contain only zeros." })} />
           </Field>
           <Field label="Account number again" htmlFor="confirmAccount" error={errors.confirmAccount?.message} hint="A wrong digit here means checks the bank can't pay.">
             <Input inputMode="numeric" autoComplete="off" maxLength={17} className="font-mono tracking-wider" {...register("confirmAccount", { validate: (c) => c === v.accountNumber || "The account numbers don't match" })} />

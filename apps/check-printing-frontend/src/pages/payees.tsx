@@ -15,7 +15,7 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from "@/components/ui/menu";
 import { EmptyState, ErrorState, InlineAlert, Page, PageHeader, Panel, Skeleton } from "@/components/app/layout";
 import { applyServerErrors } from "@/lib/forms";
 import { errorMessage } from "@/lib/api";
-import { initials } from "@/lib/format";
+import { cityStateZip, initials } from "@/lib/format";
 
 export function PayeesPage() {
   const { wid, canAny, can } = useWorkspaceContext();
@@ -59,7 +59,7 @@ export function PayeesPage() {
                 <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-subtle font-mono text-xs font-semibold">{initials(p.name)}</span>
                 <div className="flex min-w-0 flex-1 flex-col">
                   <span className="flex items-center gap-2 truncate font-medium">{p.name}{!p.isActive && <span className="rounded-full bg-subtle px-2 py-0.5 text-[0.6875rem] font-normal text-muted">Archived</span>}</span>
-                  <span className="truncate text-xs text-muted">{[p.defaultMemo && `Memo: ${p.defaultMemo}`, [p.addressLine1, p.city && `${p.city}, ${p.state} ${p.zipCode ?? ""}`].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "No details"}</span>
+                  <span className="truncate text-xs text-muted">{[p.defaultMemo && `Memo: ${p.defaultMemo}`, [p.addressLine1, cityStateZip(p)].filter(Boolean).join(", ")].filter(Boolean).join(" · ") || "No details"}</span>
                 </div>
                 {canWrite && (
                   <Menu>
@@ -112,7 +112,7 @@ function PayeeDialog({ payee, onClose }: { payee: Payee | null; onClose: () => v
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogHeader icon={<UserSquare2 />} title={payee ? `Edit ${payee.name}` : "Add a payee"} description="Only the name is required. The address is kept for your records." />
+        <DialogHeader icon={<UserSquare2 />} title={payee ? "Edit payee" : "Add a payee"} description="Only the name is required. The address is kept for your records." />
         <form onSubmit={onSubmit} noValidate>
           <DialogBody>
             {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
@@ -125,8 +125,8 @@ function PayeeDialog({ payee, onClose }: { payee: Payee | null; onClose: () => v
             <Field label="Street address" htmlFor="p-a1" optional error={errors.addressLine1?.message}><Input {...register("addressLine1")} /></Field>
             <div className="grid grid-cols-[minmax(0,1fr)_5rem_6.5rem] gap-3">
               <Field label="City" htmlFor="p-city" optional error={errors.city?.message}><Input {...register("city")} /></Field>
-              <Field label="State" htmlFor="p-state" error={errors.state?.message}><Input maxLength={2} className="uppercase" {...register("state", { pattern: { value: /^[A-Za-z]{2}$/, message: "2 letters" } })} /></Field>
-              <Field label="ZIP" htmlFor="p-zip" error={errors.zipCode?.message}><Input inputMode="numeric" {...register("zipCode", { pattern: { value: /^\d{5}(-\d{4})?$/, message: "5 digits" } })} /></Field>
+              <Field label="State" htmlFor="p-state" error={errors.state?.message}><Input maxLength={2} className="uppercase" {...register("state", { pattern: { value: /^[A-Za-z]{2}$/, message: "Enter a 2-letter state code, like TX" } })} /></Field>
+              <Field label="ZIP" htmlFor="p-zip" error={errors.zipCode?.message}><Input inputMode="numeric" {...register("zipCode", { pattern: { value: /^\d{5}(-\d{4})?$/, message: "Enter a 5-digit ZIP code, like 78701, or ZIP+4, like 78701-1234" } })} /></Field>
             </div>
           </DialogBody>
           <DialogFooter>

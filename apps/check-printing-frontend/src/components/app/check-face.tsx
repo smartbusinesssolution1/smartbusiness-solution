@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +31,8 @@ export interface CheckFaceProps {
 const RIGHT = 576; // page width 612 − 36 pt side margin
 const W = 612;
 const H = 252;
+// The payee writes from x=105 to the end of its line, where the amount box begins.
+const PAYEE_WIDTH = RIGHT - 126 - 105;
 
 // PDFKit places text by its top edge; SVG by its baseline.
 const base = (top: number, size: number) => top + size * 0.82;
@@ -80,7 +82,10 @@ export function CheckFace(p: CheckFaceProps) {
         <text x="36" y={base(84, 7)} fontSize="7" fill="#71717a" className="font-sans" letterSpacing="0.4">PAY TO THE</text>
         <text x="36" y={base(94, 7)} fontSize="7" fill="#71717a" className="font-sans" letterSpacing="0.4">ORDER OF</text>
         <line x1="100" x2={RIGHT - 126} y1="99" y2="99" stroke="#a1a1aa" strokeWidth="0.6" />
-        <Live k={p.payeeName} x={105} y={base(84, 12)} size={12} weight={550}>{p.payeeName}</Live>
+        {/* Shrunk from 12 to 8 pt to fit the line, as the PDF does (text-fit.ts PAYEE_FIT),
+            and clipped at the line's end so a name can never cover the amount box. */}
+        <clipPath id={`payee${uid}`}><rect x="100" y="78" width={PAYEE_WIDTH + 5} height="24" /></clipPath>
+        <Live k={p.payeeName} x={105} y={base(84, 12)} size={12} weight={550} fit={{ width: PAYEE_WIDTH, minSize: 8 }} clipId={`payee${uid}`}>{p.payeeName}</Live>
 
         {/* Amount box */}
         <text x={RIGHT - 110} y={base(85, 11)} fontSize="11" fill="#27272a" className="font-sans">$</text>
@@ -147,6 +152,7 @@ function Live({
   weight = 450,
   mono,
   clipId,
+  fit,
   children,
 }: {
   k: string | undefined;
@@ -157,14 +163,40 @@ function Live({
   weight?: number;
   mono?: boolean;
   clipId?: string;
+  // Shrink the text (down to minSize) until it is no wider than `width`.
+  fit?: { width: number; minSize: number };
   children: React.ReactNode;
 }) {
-  return (
+  // Measured on a plain <g> around the text: motion.text does not type its ref.
+  const ref = useRef<SVGGElement>(null);
+  const [fitted, setFitted] = useState(size);
+  const fitWidth = fit?.width;
+  const fitMin = fit?.minSize;
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (fitWidth === undefined || fitMin === undefined || !el || typeof el.getBBox !== "function") return;
+    const measure = () => {
+      const width = el.getBBox().width;
+      if (!width) return setFitted(size);
+      // Text width grows in step with font size, so one measurement (taken at the size now
+      // on screen) gives the size that fits. Rounded down to half a point.
+      const atFull = (width * size) / fitted;
+      setFitted(Math.max(fitMin, Math.min(size, Math.floor(((size * fitWidth) / atFull) * 2) / 2)));
+    };
+    measure();
+    // The web font can arrive after the first paint and change the width.
+    let alive = true;
+    document.fonts?.ready.then(() => alive && measure());
+    return () => { alive = false; };
+  }, [children, size, fitted, fitWidth, fitMin]);
+
+  const text = (
     <motion.text
       key={k ? "filled" : "empty"}
       x={x}
       y={y}
-      fontSize={size}
+      fontSize={fit ? fitted : size}
       fontWeight={weight}
       textAnchor={anchor}
       fill="#0a0a0b"
@@ -177,4 +209,5 @@ function Live({
       {children}
     </motion.text>
   );
+  return fit ? <g ref={ref}>{text}</g> : text;
 }
