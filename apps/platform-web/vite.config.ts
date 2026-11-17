@@ -1,7 +1,7 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig(() => {
   return {
@@ -24,7 +24,7 @@ export default defineConfig(() => {
       proxy: {
         '/api/v1/auth': {
           target: process.env.PLATFORM_API_URL ?? 'http://localhost:3001',
-          changeOrigin: true,
+          changeOrigin: false,
         },
       },
     },
