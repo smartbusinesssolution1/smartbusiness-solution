@@ -69,7 +69,12 @@ apps/check-printing-backend/micr/
 # Development emails written by the file email sender
 tmp/
 
+# Postman config (local only, not for version control)
+.postman/
+postman/
+
 #all md file releted to architecure
 ATTENDANCE_ARCHITECTURE_AND_FLOW.md
 DEPLOYMENT_GUIDE.md
 LEAVE_COMPLIANCE_SCHEMA_REVIEW.md
+
