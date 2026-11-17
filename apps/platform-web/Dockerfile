@@ -30,6 +30,7 @@ RUN printf 'server {\n\
         set $platform_api http://platform-api:3001;\n\
         proxy_pass $platform_api;\n\
         proxy_set_header Host $host;\n\
+        proxy_set_header Origin $http_origin;\n\
         proxy_set_header X-Real-IP $remote_addr;\n\
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
         proxy_set_header X-Forwarded-Proto $scheme;\n\
