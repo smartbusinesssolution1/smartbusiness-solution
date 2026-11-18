@@ -27,6 +27,7 @@ const RegularizationManagementPage = lazy(() => import('../pages/admin/Regulariz
 const OrganizationSettingsPage = lazy(() => import('../pages/admin/OrganizationSettings'));
 const AdminProfile = lazy(() => import('../pages/admin/Profile'));
 const WorkspaceSelectPage = lazy(() => import('../pages/admin/WorkspaceSelectPage'));
+const CreateWorkspacePage = lazy(() => import('../pages/admin/CreateWorkspacePage'));
 
 // Loader component for transitions
 const PageLoader = ({ message = 'Loading workspace...' }: { message?: string }) => (
@@ -37,7 +38,7 @@ const PageLoader = ({ message = 'Loading workspace...' }: { message?: string }) 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading, workspaces } = useAuth();
   const hasWorkspaces = Boolean(workspaces && workspaces.length > 0);
-  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces?create=true';
+  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces/new';
 
   if (isLoading) {
     return <PageLoader message="Authenticating session..." />;
@@ -65,10 +66,13 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   const isAdmin = user.role === 'admin' || user.role === 'super_admin' || isSuperAdmin;
   const isWorkspaceRoute =
-    location.pathname === '/admin/workspaces' || location.pathname === '/workspace/select';
+    location.pathname === '/admin/workspaces' ||
+    location.pathname === '/admin/workspaces/new' ||
+    location.pathname === '/workspace/select' ||
+    location.pathname === '/workspaces/new';
 
   if ((!workspaces || workspaces.length === 0) && !isWorkspaceRoute) {
-    return <Navigate to="/admin/workspaces?create=true" replace />;
+    return <Navigate to="/admin/workspaces/new" replace />;
   }
 
   if (!isAdmin) {
@@ -83,7 +87,7 @@ const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 export const AppRoutes: React.FC = () => {
   const { user, isLoading, workspaces } = useAuth();
   const hasWorkspaces = Boolean(workspaces && workspaces.length > 0);
-  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces?create=true';
+  const defaultRedirect = hasWorkspaces ? '/admin/dashboard' : '/admin/workspaces/new';
 
   if (isLoading) {
     return <PageLoader message="Initializing workspace..." />;
@@ -98,12 +102,26 @@ export const AppRoutes: React.FC = () => {
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/subscription-expired" element={<SubscriptionExpiredPage />} />
         <Route path="/subscription-required" element={<Navigate to="/subscription-expired" replace />} />
-        {/* <Route path="/create-workspace" element={user ? <Navigate to={defaultRedirect} replace /> : <RegisterPage />} /> */}
-        {/* <Route path="/register" element={<Navigate to="/create-workspace" replace />} /> */}
         {/* Employees choose their own password here (link in their invitation email) */}
         <Route path="/accept-invitation" element={<AcceptInvitationPage />} />
         <Route path="/create-workspace" element={user ? <Navigate to="/admin/dashboard" replace /> : <RegisterPage />} />
         <Route path="/register" element={<Navigate to="/create-workspace" replace />} />
+
+        {/* Dedicated Standalone Workspace Creation Route */}
+        <Route
+          path="/admin/workspaces/new"
+          element={
+            <ProtectedRoute>
+              <AdminRoute>
+                <CreateWorkspacePage />
+              </AdminRoute>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/workspaces/new"
+          element={<Navigate to="/admin/workspaces/new" replace />}
+        />
 
         {/* Protected Layout Routes */}
         <Route

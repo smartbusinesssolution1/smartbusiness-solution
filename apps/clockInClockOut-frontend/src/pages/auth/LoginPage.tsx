@@ -116,7 +116,7 @@ export const LoginPage: React.FC = () => {
       if (user) {
         const storeWorkspaces = useAuthStore.getState().workspaces;
         if (!storeWorkspaces || storeWorkspaces.length === 0) {
-          navigate('/admin/workspaces?create=true', { replace: true });
+          navigate('/admin/workspaces/new', { replace: true });
         } else {
           navigate('/admin/dashboard', { replace: true });
         }
