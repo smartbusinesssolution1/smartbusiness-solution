@@ -67,9 +67,10 @@ export const DashboardLayout: React.FC = () => {
       workspaces &&
       workspaces.length === 0 &&
       location.pathname !== '/admin/workspaces' &&
+      location.pathname !== '/admin/workspaces/new' &&
       location.pathname !== '/workspace/select'
     ) {
-      navigate('/admin/workspaces?create=true', { replace: true });
+      navigate('/admin/workspaces/new', { replace: true });
     }
   }, [isLoading, workspaces, location.pathname, navigate]);
 

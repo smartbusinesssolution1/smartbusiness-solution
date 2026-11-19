@@ -70,13 +70,20 @@ export const WorkspaceSelectPage: React.FC = () => {
     }
   }, [workspaces?.length, refreshWorkspaces]);
 
+  // If user is owner and has 0 workspaces, redirect directly to dedicated setup page
+  useEffect(() => {
+    if (hasNoWorkspaces && isOwner) {
+      navigate('/admin/workspaces/new', { replace: true });
+    }
+  }, [hasNoWorkspaces, isOwner, navigate]);
+
   // Auto-open modal if ?create=true
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('create') === 'true') {
-      handleOpenAddModal();
+      navigate('/admin/workspaces/new', { replace: true });
     }
-  }, []);
+  }, [navigate]);
 
   // Helper to determine user role for a specific workspace
   const getWorkspaceRole = (ws: Workspace): WorkspaceRole => {
@@ -232,7 +239,7 @@ export const WorkspaceSelectPage: React.FC = () => {
           <Button
             variant="brand"
             size="default"
-            onClick={handleOpenAddModal}
+            onClick={() => navigate('/admin/workspaces/new')}
             className="self-start sm:self-center shrink-0 gap-2 shadow-theme-btn"
           >
             <Plus className="size-4 stroke-[2.5]" />
@@ -295,7 +302,7 @@ export const WorkspaceSelectPage: React.FC = () => {
               Clear Filter
             </Button>
           ) : isOwner ? (
-            <Button variant="brand" size="sm" onClick={handleOpenAddModal}>
+            <Button variant="brand" size="sm" onClick={() => navigate('/admin/workspaces/new')}>
               <Plus className="size-3.5 mr-1" />
               Create First Workspace
             </Button>
