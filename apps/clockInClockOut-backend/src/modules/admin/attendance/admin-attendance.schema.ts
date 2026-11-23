@@ -21,7 +21,7 @@ export const AdminAttendanceQuerySchema = z.object({
   status: z.preprocess((val) => {
     if (!val || val === "all" || val === "") return "all";
     return String(val).toLowerCase();
-  }, z.enum(["all", "present", "late", "absent", "half_day", "auto_closed"]).default("all")),
+  }, z.enum(["all", "present", "late", "absent", "half_day", "auto_closed", "on_leave"]).default("all")),
   date: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "Date must be in YYYY-MM-DD format").optional()),
   startDate: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "StartDate must be in YYYY-MM-DD format").optional()),
   endDate: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "EndDate must be in YYYY-MM-DD format").optional()),
@@ -41,7 +41,7 @@ export const AdminAttendanceExportSchema = z.object({
   status: z.preprocess((val) => {
     if (!val || val === "all" || val === "") return "all";
     return String(val).toLowerCase();
-  }, z.enum(["all", "present", "late", "absent", "half_day", "auto_closed"]).default("all")),
+  }, z.enum(["all", "present", "late", "absent", "half_day", "auto_closed", "on_leave"]).default("all")),
   date: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "Date must be in YYYY-MM-DD format").optional()),
   startDate: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "StartDate must be in YYYY-MM-DD format").optional()),
   endDate: z.preprocess(emptyToUndefined, z.string().regex(dateRegex, "EndDate must be in YYYY-MM-DD format").optional()),
@@ -60,7 +60,7 @@ export interface FormattedAttendanceSession {
   sessionNumber: number;
   checkIn: string | null;
   checkOut: string | null;
-  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
+  status: "present" | "late" | "absent" | "half_day" | "auto_closed" | "on_leave";
   workingHours: number;
   notes: string | null;
   clockInFaceMatchConfidence: number | null;
@@ -75,6 +75,16 @@ export interface FormattedAttendanceSession {
   punchType?: string | null;
 }
 
+export interface AttendanceLeaveDetails {
+  id: string;
+  policyName: string;
+  policyCode: string;
+  category: string;
+  isPaid: boolean;
+  totalHours: number;
+  reason?: string | null;
+}
+
 export interface FormattedAttendanceItem {
   id: string;
   date: string;
@@ -83,13 +93,14 @@ export interface FormattedAttendanceItem {
   avatarUrl: string | null;
   checkIn: string | null;
   checkOut: string | null;
-  status: "present" | "late" | "absent" | "half_day" | "auto_closed";
+  status: "present" | "late" | "absent" | "half_day" | "auto_closed" | "on_leave";
   workingHours: number;
   notes: string;
   workspaceId: string;
   workspaceName: string;
   totalSessions?: number;
   sessions?: FormattedAttendanceSession[];
+  leaveDetails?: AttendanceLeaveDetails | null;
 }
 
 export interface AttendanceSummaryMetrics {
@@ -98,6 +109,7 @@ export interface AttendanceSummaryMetrics {
   latePercentage: number;
   averageWorkingHours: number;
   absentCount: number;
+  onLeaveCount?: number;
 }
 
 export interface WeeklyAttendanceStat {
@@ -105,6 +117,7 @@ export interface WeeklyAttendanceStat {
   present: number;
   late: number;
   absent: number;
+  onLeave?: number;
 }
 
 export interface DepartmentAttendanceStat {
@@ -113,6 +126,7 @@ export interface DepartmentAttendanceStat {
   present: number;
   late: number;
   absent: number;
+  onLeave?: number;
   total: number;
 }
 
@@ -121,6 +135,7 @@ export interface AdminSummaryMetrics {
   presentToday: number;
   lateToday: number;
   autoClosedToday: number;
+  onLeaveToday?: number;
   attendanceRate: number;
   weeklyStats: WeeklyAttendanceStat[];
   departmentStats: DepartmentAttendanceStat[];

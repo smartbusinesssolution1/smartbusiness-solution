@@ -22,4 +22,8 @@ export const updateSettingsSchema = z.object({
         ),
 
     graceMinutes: z.number().int().nonnegative(),
+
+    enableRegularization: z.boolean().optional(),
+    maxRegularizationPastDays: z.number().int().min(1).max(365).optional(),
+    monthlyRegularizationLimit: z.number().int().min(0).max(31).optional(),
 });

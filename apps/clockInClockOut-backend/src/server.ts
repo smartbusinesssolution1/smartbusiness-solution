@@ -4,6 +4,8 @@ import { prisma } from "@smartbusiness/database"
 import { logger } from "./shared/services/logger.js"
 import { closeRedisConnection } from "./shared/services/redis.service.js"
 import { initAutoClockOutScheduler, stopAutoClockOutScheduler } from "./modules/attendance/auto-clock-out.scheduler.js"
+import { initLeaveRolloverScheduler, stopLeaveRolloverScheduler } from "./modules/leave/leave-rollover.scheduler.js"
+import { initAbsenceSweeperScheduler, stopAbsenceSweeperScheduler } from "./modules/attendance/absence-sweeper.scheduler.js"
 
 // Reload trigger: S3 storage active - Mumbai ap-south-1
 
@@ -19,8 +21,12 @@ async function startServer() {
         const server = app.listen(env.server.port, () => {
             logger.info({ port: env.server.port, environment: env.server.nodeEnv }, "Server started" );
 
-            // Initialize Auto-Clock-Out dual cron jobs (Midnight Day-Shift & Midday Night-Shift)
-            initAutoClockOutScheduler();
+            // Auto-Clock-Out cron jobs stopped per request
+            // initAutoClockOutScheduler();
+            // Initialize Automated Annual Statutory Leave Rollover scheduler (Dec 31 23:59 & Jan 1 00:01)
+            initLeaveRolloverScheduler();
+            // Initialize Automated Daily Absence Sweeper (00:05 AM Sweep & 30-day retroactive backfill)
+            initAbsenceSweeperScheduler();
 
             // Pre-warm caches in background so admin users experience instant 1ms response on first load
             setTimeout(async () => {
@@ -100,6 +106,8 @@ async function startServer() {
                     logger.info("Database disconnected")
                     await closeRedisConnection()
                     stopAutoClockOutScheduler()
+                    stopLeaveRolloverScheduler()
+                    stopAbsenceSweeperScheduler()
 
                     clearTimeout(forceShutdownTimer)
                     logger.info("Shutdown complete")

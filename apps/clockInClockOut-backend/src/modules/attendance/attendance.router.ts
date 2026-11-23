@@ -2,6 +2,7 @@ import { Router } from "express";
 import { AttendanceRepository } from "./attendance.repository.js";
 import { AttendanceService } from "./attendance.service.js";
 import { AttendanceController } from "./attendance.controller.js";
+import { breakRouter } from "./break.router.js";
 import { validate } from "../../middlewares/validate.js";
 import { uploadSelfie } from "../../middlewares/upload.middleware.js";
 import {
@@ -18,6 +19,10 @@ const service = new AttendanceService(repo);
 const controller = new AttendanceController(service);
 
 const router: Router = Router();
+
+// ─── Break Management & Statutory Compliance Endpoints ─
+router.use("/break", breakRouter);
+router.use("/breaks", breakRouter);
 
 // ─── Attendance Endpoints ─────────────────────────
 

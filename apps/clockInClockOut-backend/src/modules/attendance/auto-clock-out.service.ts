@@ -1,6 +1,7 @@
 import { prisma, AttendanceStatus } from "@smartbusiness/database";
 import { logger } from "../../shared/services/logger.js";
 import { memoryCache } from "../../shared/services/cache.service.js";
+import { leaveServiceInstance } from "../leave/leave.service.js";
 
 export interface SweepResult {
   sweptAt: string;
@@ -197,6 +198,16 @@ export class AutoClockOutService {
 
       closedIds.push(session.id);
 
+      // Accrue hourly leave / sick time for worked hours
+      const wsId = session.employee?.workspaceMember?.workspaceId;
+      if (workingHours > 0 && session.employeeId && wsId) {
+        leaveServiceInstance
+          .accrueHourlyLeavesForWorkedShift(session.employeeId, wsId, workingHours)
+          .catch((err) => {
+            logger.error({ err, employeeId: session.employeeId }, "Failed to auto-accrue hourly leave in sweepDayShift");
+          });
+      }
+
       // Invalidate relevant caches
       const tenantId = session.employee?.workspaceMember?.workspace?.tenantId;
       const userId = session.employee?.workspaceMember?.user?.id;
@@ -312,6 +323,16 @@ export class AutoClockOutService {
 
       closedIds.push(session.id);
 
+      // Accrue hourly leave / sick time for worked hours
+      const wsId = session.employee?.workspaceMember?.workspaceId;
+      if (workingHours > 0 && session.employeeId && wsId) {
+        leaveServiceInstance
+          .accrueHourlyLeavesForWorkedShift(session.employeeId, wsId, workingHours)
+          .catch((err) => {
+            logger.error({ err, employeeId: session.employeeId }, "Failed to auto-accrue hourly leave in sweepDayShift");
+          });
+      }
+
       // Invalidate relevant caches
       const tenantId = session.employee?.workspaceMember?.workspace?.tenantId;
       const userId = session.employee?.workspaceMember?.user?.id;
@@ -379,6 +400,16 @@ export class AutoClockOutService {
         updatedAt: new Date(),
       },
     });
+
+    // Accrue hourly leave / sick time for worked hours
+    const staleWsId = employee?.workspaceMember?.workspaceId || session.employee?.workspaceMember?.workspaceId;
+    if (workingHours > 0 && session.employeeId && staleWsId) {
+      leaveServiceInstance
+        .accrueHourlyLeavesForWorkedShift(session.employeeId, staleWsId, workingHours)
+        .catch((err) => {
+          logger.error({ err, employeeId: session.employeeId }, "Failed to auto-accrue hourly leave in autoCloseStaleSession");
+        });
+    }
 
     const tenantId = employee?.workspaceMember?.workspace?.tenantId;
     const userId = employee?.workspaceMember?.user?.id;

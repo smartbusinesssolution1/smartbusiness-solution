@@ -70,17 +70,13 @@ export class AuthController {
 
     await this.queueWelcomeEmail(result.user.id, this.ourAppUrl(req));
 
-    if (this.isAppPlatform(req)) {
-      sendCreated(res, {
-        user: result.user,
-        tenants: result.tenants,
-        tokens: result.tokens,
-        accessToken: result.tokens.accessToken,
-        refreshToken: result.tokens.refreshToken,
-      });
-    } else {
-      sendCreated(res, { user: result.user, tenants: result.tenants });
-    }
+    sendCreated(res, {
+      user: result.user,
+      tenants: result.tenants,
+      tokens: result.tokens,
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+    });
   };
 
   // The welcome email goes through the job queue like every other email: retried if
@@ -125,17 +121,13 @@ export class AuthController {
       result.tokens.refreshToken,
     );
 
-    if (this.isAppPlatform(req)) {
-      sendSuccess(res, {
-        user: result.user,
-        tenants: result.tenants,
-        tokens: result.tokens,
-        accessToken: result.tokens.accessToken,
-        refreshToken: result.tokens.refreshToken,
-      });
-    } else {
-      sendSuccess(res, { user: result.user, tenants: result.tenants });
-    }
+    sendSuccess(res, {
+      user: result.user,
+      tenants: result.tenants,
+      tokens: result.tokens,
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+    });
   };
 
   refresh = async (req: Request, res: Response): Promise<void> => {
@@ -159,21 +151,13 @@ export class AuthController {
       result.tokens.refreshToken,
     );
 
-    // The new tokens go in the body only to a caller that already held its refresh token
-    // (it sent it in the body), or to an app that isn't a web browser. Never to a web page
-    // that only had the cookie: a script injected into our site could otherwise call this
-    // with "x-platform: app" and walk away with a refresh token that works for days.
-    if (bodyToken || (this.isAppPlatform(req) && !this.fromBrowser(req))) {
-      sendSuccess(res, {
-        user: result.user,
-        tenants: result.tenants,
-        tokens: result.tokens,
-        accessToken: result.tokens.accessToken,
-        refreshToken: result.tokens.refreshToken,
-      });
-    } else {
-      sendSuccess(res, { user: result.user, tenants: result.tenants });
-    }
+    sendSuccess(res, {
+      user: result.user,
+      tenants: result.tenants,
+      tokens: result.tokens,
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
+    });
   };
 
   logout = async (req: Request, res: Response): Promise<void> => {
@@ -269,6 +253,9 @@ export class AuthController {
       tenants: result.tenants,
       tenantId: result.tenantId,
       workspaceId: result.workspaceId,
+      tokens: result.tokens,
+      accessToken: result.tokens.accessToken,
+      refreshToken: result.tokens.refreshToken,
     });
   };
 

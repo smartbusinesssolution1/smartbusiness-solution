@@ -1,4 +1,4 @@
-import { prisma, AttendanceStatus } from "@smartbusiness/database";
+import { prisma, AttendanceStatus, Prisma } from "@smartbusiness/database";
 import { memoryCache } from "../../shared/services/cache.service.js";
 
 export class AttendanceRepository {
@@ -146,6 +146,13 @@ export class AttendanceRepository {
         clockOutFaceMatchConfidence: true,
         workingHours: true,
         notes: true,
+        mealWaiverSigned: true,
+        mealWaiverReason: true,
+        totalBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        paidBreakMinutes: true,
+        mealPenaltyHours: true,
+        restPenaltyHours: true,
       },
     });
   }
@@ -178,6 +185,42 @@ export class AttendanceRepository {
         clockOutFaceMatchConfidence: true,
         workingHours: true,
         notes: true,
+        mealWaiverSigned: true,
+        mealWaiverReason: true,
+        totalBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        paidBreakMinutes: true,
+        mealPenaltyHours: true,
+        restPenaltyHours: true,
+      },
+    });
+  }
+
+  /**
+   * Find if an employee has an approved leave spanning the specified date
+   */
+  async findApprovedLeaveOnDate(employeeId: string, date: Date = new Date()) {
+    const dateStr = date.toISOString().split("T")[0];
+    const startOfDay = new Date(`${dateStr}T00:00:00.000Z`);
+    const endOfDay = new Date(`${dateStr}T23:59:59.999Z`);
+
+    return prisma.leaveRequest.findFirst({
+      where: {
+        employeeId,
+        status: "APPROVED",
+        startDate: { lte: endOfDay },
+        endDate: { gte: startOfDay },
+      },
+      include: {
+        policy: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+            category: true,
+            isPaid: true,
+          },
+        },
       },
     });
   }
@@ -211,6 +254,13 @@ export class AttendanceRepository {
         clockOutFaceMatchConfidence: true,
         workingHours: true,
         notes: true,
+        mealWaiverSigned: true,
+        mealWaiverReason: true,
+        totalBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        paidBreakMinutes: true,
+        mealPenaltyHours: true,
+        restPenaltyHours: true,
       },
     });
     if (active) return active;
@@ -239,6 +289,13 @@ export class AttendanceRepository {
         clockOutFaceMatchConfidence: true,
         workingHours: true,
         notes: true,
+        mealWaiverSigned: true,
+        mealWaiverReason: true,
+        totalBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        paidBreakMinutes: true,
+        mealPenaltyHours: true,
+        restPenaltyHours: true,
       },
     });
   }
@@ -294,6 +351,41 @@ export class AttendanceRepository {
   }
 
   /**
+   * Find an open un-ended break for a session (if employee is currently on break)
+   */
+  async findOpenBreakForSession(attendanceRecordId: string) {
+    return prisma.attendanceBreakRecord.findFirst({
+      where: {
+        attendanceRecordId,
+        endTime: null,
+      },
+    });
+  }
+
+  /**
+   * Close an open break on shift checkout
+   */
+  async closeOpenBreak(breakId: string, endTime: Date, durationMinutes: number) {
+    return prisma.attendanceBreakRecord.update({
+      where: { id: breakId },
+      data: {
+        endTime,
+        durationMinutes,
+      },
+    });
+  }
+
+  /**
+   * Find all break records for a session
+   */
+  async findBreaksForSession(attendanceRecordId: string) {
+    return prisma.attendanceBreakRecord.findMany({
+      where: { attendanceRecordId },
+      orderBy: { startTime: "asc" },
+    });
+  }
+
+  /**
    * Update attendance record with clock-out timestamp and calculated working hours
    */
   async updateClockOutRecord(
@@ -307,6 +399,11 @@ export class AttendanceRepository {
       workingHours: number;
       notes?: string;
       status?: AttendanceStatus;
+      totalBreakMinutes?: number;
+      unpaidBreakMinutes?: number;
+      paidBreakMinutes?: number;
+      mealPenaltyHours?: number;
+      restPenaltyHours?: number;
     }
   ) {
     const {
@@ -318,6 +415,11 @@ export class AttendanceRepository {
       workingHours,
       notes,
       status,
+      totalBreakMinutes,
+      unpaidBreakMinutes,
+      paidBreakMinutes,
+      mealPenaltyHours,
+      restPenaltyHours,
     } = params;
 
     return prisma.attendanceRecord.update({
@@ -332,6 +434,11 @@ export class AttendanceRepository {
         workingHours,
         notes: notes || undefined,
         status: status !== undefined ? status : undefined,
+        totalBreakMinutes: totalBreakMinutes !== undefined ? totalBreakMinutes : undefined,
+        unpaidBreakMinutes: unpaidBreakMinutes !== undefined ? unpaidBreakMinutes : undefined,
+        paidBreakMinutes: paidBreakMinutes !== undefined ? paidBreakMinutes : undefined,
+        mealPenaltyHours: mealPenaltyHours !== undefined ? new Prisma.Decimal(mealPenaltyHours) : undefined,
+        restPenaltyHours: restPenaltyHours !== undefined ? new Prisma.Decimal(restPenaltyHours) : undefined,
         updatedAt: new Date(),
       },
       include: {
@@ -451,6 +558,13 @@ export class AttendanceRepository {
           clockOutTime: true,
           workingHours: true,
           notes: true,
+          isRegularized: true,
+          clockInLatitude: true,
+          clockInLongitude: true,
+          clockInFaceMatchConfidence: true,
+          clockOutLatitude: true,
+          clockOutLongitude: true,
+          clockOutFaceMatchConfidence: true,
         },
       }),
       prisma.attendanceRecord.count({ where }),
@@ -484,6 +598,13 @@ export class AttendanceRepository {
         clockOutFaceMatchConfidence: true,
         workingHours: true,
         notes: true,
+        mealWaiverSigned: true,
+        mealWaiverReason: true,
+        totalBreakMinutes: true,
+        unpaidBreakMinutes: true,
+        paidBreakMinutes: true,
+        mealPenaltyHours: true,
+        restPenaltyHours: true,
       },
     });
   }

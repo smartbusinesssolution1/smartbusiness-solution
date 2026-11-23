@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Calendar,
+  CalendarDays,
   Clock,
   Search,
   RotateCcw,
@@ -267,31 +268,46 @@ export const AttendanceReport: React.FC = () => {
     setPage(0);
   };
 
-  const renderStatusBadge = (status: string) => {
+  const renderStatusBadge = (status: string, isRegularized?: boolean) => {
+    let badgeNode;
     switch (status?.toLowerCase()) {
       case 'present':
-        return (
+        badgeNode = (
           <Badge variant="success" className="gap-1 font-mono text-[0.6875rem]">
             <CheckCircle2 className="size-3 text-emerald-600" />
             <span>On Time</span>
           </Badge>
         );
+        break;
       case 'late':
-        return (
+        badgeNode = (
           <Badge variant="warning" className="gap-1 font-mono text-[0.6875rem]">
             <AlertTriangle className="size-3 text-amber-600" />
             <span>Late Arrival</span>
           </Badge>
         );
+        break;
       case 'absent':
-        return (
+        badgeNode = (
           <Badge variant="destructive" className="gap-1 font-mono text-[0.6875rem]">
             <XCircle className="size-3" />
             <span>Absent</span>
           </Badge>
         );
+        break;
+      case 'on_leave':
+        badgeNode = (
+          <Badge
+            variant="outline"
+            className="gap-1 border-indigo-200 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800 font-mono text-[0.6875rem]"
+          >
+            <CalendarDays className="size-3 text-indigo-600 dark:text-indigo-400" />
+            <span>On Leave</span>
+          </Badge>
+        );
+        break;
       case 'half_day':
-        return (
+        badgeNode = (
           <Badge
             variant="outline"
             className="border-sky-300 bg-sky-50 text-sky-700 font-mono text-[0.6875rem]"
@@ -299,8 +315,9 @@ export const AttendanceReport: React.FC = () => {
             Half Day
           </Badge>
         );
+        break;
       case 'auto_closed':
-        return (
+        badgeNode = (
           <Badge
             variant="outline"
             className="gap-1 border-purple-300 bg-purple-50 text-purple-700 font-mono text-[0.6875rem]"
@@ -309,13 +326,30 @@ export const AttendanceReport: React.FC = () => {
             <span>Auto-Closed</span>
           </Badge>
         );
+        break;
       default:
-        return (
+        badgeNode = (
           <Badge variant="outline" className="font-mono text-[0.6875rem] capitalize">
             {status || 'Unknown'}
           </Badge>
         );
+        break;
     }
+
+    if (!isRegularized) return badgeNode;
+
+    return (
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {badgeNode}
+        <Badge
+          variant="outline"
+          className="gap-1 border-purple-200 bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 font-mono text-[0.625rem] px-1.5 py-0"
+        >
+          <Sparkles className="size-2.5 text-purple-600" />
+          <span>Regularized</span>
+        </Badge>
+      </div>
+    );
   };
 
   const renderSortIcon = (field: SortField) => {
@@ -547,6 +581,7 @@ export const AttendanceReport: React.FC = () => {
               <SelectItem value="present">On Time</SelectItem>
               <SelectItem value="late">Late Arrival</SelectItem>
               <SelectItem value="absent">Absent</SelectItem>
+              <SelectItem value="on_leave">On Leave</SelectItem>
               <SelectItem value="half_day">Half Day</SelectItem>
               <SelectItem value="auto_closed">Auto-Closed</SelectItem>
             </Select>
@@ -744,6 +779,7 @@ export const AttendanceReport: React.FC = () => {
               ) : (
                 sortedRecords.map((record) => {
                   const isAbsent = record.status === 'absent';
+                  const isOnLeave = record.status === 'on_leave';
                   const hasLogs = Boolean(
                     (record.sessions && record.sessions.length > 0) ||
                       (record.totalSessions && record.totalSessions > 0) ||
@@ -755,7 +791,11 @@ export const AttendanceReport: React.FC = () => {
                       key={record.id}
                       className={cn(
                         'transition-colors duration-100',
-                        isAbsent ? 'bg-rose-50/20 hover:bg-rose-50/40' : 'hover:bg-subtle/60'
+                        isAbsent
+                          ? 'bg-rose-50/20 hover:bg-rose-50/40'
+                          : isOnLeave
+                          ? 'bg-indigo-50/15 hover:bg-indigo-50/30'
+                          : 'hover:bg-subtle/60'
                       )}
                     >
                       {/* Date */}
@@ -770,6 +810,8 @@ export const AttendanceReport: React.FC = () => {
                             'font-mono text-xs px-1.5 py-0.5 rounded border',
                             isAbsent
                               ? 'border-rose-200 bg-rose-50 text-rose-700 font-semibold'
+                              : isOnLeave
+                              ? 'border-indigo-200 bg-indigo-50 text-indigo-700 font-semibold dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
                               : 'border-line bg-subtle text-ink-soft'
                           )}
                         >
@@ -790,7 +832,7 @@ export const AttendanceReport: React.FC = () => {
                             <div
                               className={cn(
                                 'flex size-8 shrink-0 items-center justify-center rounded-full font-mono text-xs font-semibold text-white shadow-xs',
-                                isAbsent ? 'bg-rose-500' : 'bg-primary-600'
+                                isAbsent ? 'bg-rose-500' : isOnLeave ? 'bg-indigo-600' : 'bg-primary-600'
                               )}
                             >
                               {record.employeeName ? record.employeeName.charAt(0).toUpperCase() : 'E'}
@@ -805,6 +847,11 @@ export const AttendanceReport: React.FC = () => {
                                 Absent Day
                               </span>
                             )}
+                            {isOnLeave && (
+                              <span className="font-mono text-[0.625rem] text-indigo-600 dark:text-indigo-400 font-semibold uppercase">
+                                {record.leaveDetails?.policyName || 'Approved Leave'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -817,6 +864,8 @@ export const AttendanceReport: React.FC = () => {
                               ? dayjs(`${record.date}T${record.checkIn}`).format('hh:mm A')
                               : record.checkIn}
                           </span>
+                        ) : isOnLeave ? (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-medium text-xs">Approved Leave</span>
                         ) : isAbsent ? (
                           <span className="italic text-rose-600 font-medium">No Check-In</span>
                         ) : (
@@ -832,6 +881,10 @@ export const AttendanceReport: React.FC = () => {
                               ? dayjs(`${record.date}T${record.checkOut}`).format('hh:mm A')
                               : record.checkOut}
                           </span>
+                        ) : isOnLeave ? (
+                          <span className="text-indigo-600 dark:text-indigo-400 font-medium text-xs">
+                            {record.workingHours > 0 ? `${record.workingHours.toFixed(1)}h Paid` : 'Unpaid'}
+                          </span>
                         ) : record.checkIn ? (
                           <span className="inline-flex items-center gap-1 font-sans text-xs font-medium text-primary-600 italic">
                             <span className="size-1.5 rounded-full bg-primary-600 animate-pulse" />
@@ -845,11 +898,15 @@ export const AttendanceReport: React.FC = () => {
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4">{renderStatusBadge(record.status)}</td>
+                      <td className="py-3.5 px-4">{renderStatusBadge(record.status, record.isRegularized)}</td>
 
                       {/* Working Hours */}
                       <td className="py-3.5 px-4 text-right font-mono">
-                        {record.workingHours && Number(record.workingHours) > 0 ? (
+                        {isOnLeave ? (
+                          <span className={cn('font-semibold num', record.workingHours > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-faint')}>
+                            {record.workingHours > 0 ? `${Number(record.workingHours).toFixed(1)} hrs` : '0.0 hrs'}
+                          </span>
+                        ) : record.workingHours && Number(record.workingHours) > 0 ? (
                           <span className="font-semibold text-ink num">
                             {Number(record.workingHours).toFixed(1)} hrs
                           </span>
@@ -873,7 +930,9 @@ export const AttendanceReport: React.FC = () => {
                       <td className="py-3.5 px-4 text-center">
                         <Tooltip
                           content={
-                            hasLogs
+                            isOnLeave
+                              ? (record.leaveDetails ? `Approved Leave: ${record.leaveDetails.policyName}` : 'Approved Leave')
+                              : hasLogs
                               ? 'Inspect detailed biometric & punch timeline'
                               : 'No punch logs available for absent record'
                           }

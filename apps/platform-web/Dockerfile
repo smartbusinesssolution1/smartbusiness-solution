@@ -20,12 +20,21 @@ COPY --from=pruner /app/out/full/ .
 RUN pnpm --filter react-example build
 
 FROM nginx:1.27-alpine AS runner
-# SPA routing fallback config
 RUN printf 'server {\n\
     listen 80;\n\
     server_name _;\n\
     root /usr/share/nginx/html;\n\
     index index.html;\n\
+    resolver 127.0.0.11 valid=30s ipv6=off;\n\
+    location /api/v1/auth {\n\
+        set $platform_api http://platform-api:3001;\n\
+        proxy_pass $platform_api;\n\
+        proxy_set_header Host $host;\n\
+        proxy_set_header Origin $http_origin;\n\
+        proxy_set_header X-Real-IP $remote_addr;\n\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n\
+        proxy_set_header X-Forwarded-Proto $scheme;\n\
+    }\n\
     location / {\n\
         try_files $uri $uri/ /index.html;\n\
     }\n\
