@@ -36,6 +36,8 @@ export interface ExportTable {
   rows: Array<Record<string, CellValue>>;
   // A closing row (spreadsheet and PDF only): values by column key.
   totals?: Record<string, CellValue>;
+  // What the PDF says when there are no rows. Defaults to the check register's wording.
+  emptyMessage?: string;
   // File name without extension, e.g. "check-register-2026-10-22".
   fileName: string;
 }

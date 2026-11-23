@@ -220,7 +220,14 @@ export function ForgotPasswordPage() {
   const forgot = useForgotPassword();
   const [sentTo, setSentTo] = React.useState<string | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
-  const { register, handleSubmit, formState: { errors } } = useForm<{ email: string }>();
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<{ email: string }>();
+
+  // BUG_007: the form keeps its values while hidden, so going back showed the old address.
+  // Emptied here; the box is focused again when it reappears (autoFocus).
+  const switchToDifferentEmail = () => {
+    reset({ email: "" });
+    setSentTo(null);
+  };
 
   const onSubmit = handleSubmit(({ email }) => {
     setFormError(null);
@@ -248,7 +255,7 @@ export function ForgotPasswordPage() {
           <p className="text-sm leading-relaxed text-muted">
             If an account exists for <span className="font-medium text-ink">{sentTo}</span>, a reset link is on its way. It works once and expires soon.
           </p>
-          <Button variant="ghost" size="sm" onClick={() => setSentTo(null)}>
+          <Button variant="ghost" size="sm" onClick={switchToDifferentEmail}>
             Use a different email
           </Button>
         </motion.div>

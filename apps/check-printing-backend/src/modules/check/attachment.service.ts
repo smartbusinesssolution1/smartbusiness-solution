@@ -21,6 +21,13 @@ import type { AuditContext } from "./check.types.js";
 
 const sha256 = (b: Buffer) => createHash("sha256").update(b).digest("hex");
 
+// The 10 MB limit is on the file the person chose. Re-encoding an image can make it bigger
+// (an 8.3 MB photo can come out at 12 MB), so the processed image may grow up to this
+// ceiling. The 25 MB total per check is counted on the stored size and still applies.
+export const MAX_PROCESSED_IMAGE_BYTES = 15 * 1024 * 1024;
+// Above this, decoding costs too much memory (a 50 MP image is ~150 MB decoded).
+export const MAX_IMAGE_PIXELS = 50_000_000;
+
 export class AttachmentService {
   constructor(
     private readonly repository: AttachmentRepository,
@@ -42,10 +49,12 @@ export class AttachmentService {
     if (!type) {
       throw new AppError("Attach a PDF, PNG or JPEG file.", 415, "UNSUPPORTED_FILE_TYPE");
     }
-    const content = await prepareContent(file.buffer, type);
-    if (content.length > ATTACHMENT_LIMITS.maxFileBytes) {
+    // Checked on the file as uploaded (the upload middleware refuses larger files first;
+    // this keeps the rule true when the service is called another way).
+    if (file.buffer.length > ATTACHMENT_LIMITS.maxFileBytes) {
       throw new AppError("The file must be 10 MB or smaller.", 413, "PAYLOAD_TOO_LARGE");
     }
+    const content = await prepareContent(file.buffer, type);
 
     const fileName = cleanFileName(file.originalname, type === "jpeg" ? "jpg" : type);
     const storageKey = `attachments/${workspaceId}/${checkId}/${randomUUID()}`;
@@ -148,14 +157,35 @@ export class AttachmentService {
 
 // Images are decoded and re-encoded: this drops metadata (GPS, device) and anything
 // hidden after the image data, and refuses files that are not really images.
-async function prepareContent(buffer: Buffer, type: DetectedFileType): Promise<Buffer> {
+export async function prepareContent(buffer: Buffer, type: DetectedFileType): Promise<Buffer> {
   if (type === "pdf") return buffer;
-  try {
-    const image = sharp(buffer, { limitInputPixels: 50_000_000, failOn: "error" }).rotate();
-    return type === "png" ? await image.png().toBuffer() : await image.jpeg({ quality: 90 }).toBuffer();
-  } catch {
-    throw new AppError("This image could not be read. Attach a valid PNG or JPEG.", 422, "INVALID_IMAGE");
+  const unreadable = () => new AppError("This image could not be read. Attach a valid PNG or JPEG.", 422, "INVALID_IMAGE");
+
+  // The size is read from the header first, so a very large photo is told it is too
+  // large instead of "could not be read" (which is what sharp's own pixel limit gives).
+  const { width, height } = await sharp(buffer).metadata().catch(() => {
+    throw unreadable();
+  });
+  if (!width || !height) throw unreadable();
+  if (width * height > MAX_IMAGE_PIXELS) {
+    throw new AppError(
+      `This image is too large (${Math.round((width * height) / 1_000_000)} megapixels; the most is 50). Resize it and try again.`,
+      422,
+      "IMAGE_TOO_LARGE",
+    );
   }
+
+  let content: Buffer;
+  try {
+    const image = sharp(buffer, { limitInputPixels: MAX_IMAGE_PIXELS, failOn: "error" }).rotate();
+    content = type === "png" ? await image.png().toBuffer() : await image.jpeg({ quality: 90 }).toBuffer();
+  } catch {
+    throw unreadable();
+  }
+  if (content.length > MAX_PROCESSED_IMAGE_BYTES) {
+    throw new AppError("This image is too large once processed. Resize it, or save it as a JPEG, and try again.", 413, "PAYLOAD_TOO_LARGE");
+  }
+  return content;
 }
 
 function integrityFailed(): AppError {

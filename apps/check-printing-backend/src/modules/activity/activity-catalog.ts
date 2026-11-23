@@ -1,14 +1,13 @@
 import { ruleLabel } from "../approval-rule/rule-satisfiability.js";
 import { usd, usDay } from "../export/index.js";
 
-// ═══════════════════════════════════════════════════════════════
+
 // WHAT EACH AUDIT ENTRY MEANS, IN WORDS
 //
 // The log stores codes (CHECK_APPROVED, details JSON). People read sentences:
 // "approved check #005009 · $9,000.00 to Lala Company". Every action gets a category (for
 // the filter) and a sentence; the actor's name is shown separately, so sentences start
 // with the verb. An action with no sentence here still shows, as its code in words.
-// ═══════════════════════════════════════════════════════════════
 
 export const ACTIVITY_CATEGORIES = {
   checks: "Checks",
@@ -135,8 +134,7 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
   CHECK_CLEARED: {
     category: "checks",
     describe: (e, d, L) =>
-      `marked ${check(e, d, L)} as cleared by the bank${
-        d.clearedAmount !== undefined && Number(d.clearedAmount) !== Number(d.amount) ? `, for ${usd(Number(d.clearedAmount))}` : ""
+      `marked ${check(e, d, L)} as cleared by the bank${d.clearedAmount !== undefined && Number(d.clearedAmount) !== Number(d.amount) ? `, for ${usd(Number(d.clearedAmount))}` : ""
       }`,
   },
   CHECK_REISSUED: {
@@ -190,8 +188,7 @@ const ACTIONS: Record<string, { category: ActivityCategory; describe: Describe }
   POSITIVE_PAY_EXPORTED: {
     category: "downloads",
     describe: (e, d, L) =>
-      `downloaded the Positive Pay ${d.format === "xlsx" ? "review copy" : "file"} for ${bank(e, d, L)}: ${plural(Number(d.rowCount ?? 0), "check")} printed ${
-        d.from ? usDay(new Date(`${str(d.from)}T00:00:00Z`)) : "?"
+      `downloaded the Positive Pay ${d.format === "xlsx" ? "review copy" : "file"} for ${bank(e, d, L)}: ${plural(Number(d.rowCount ?? 0), "check")} printed ${d.from ? usDay(new Date(`${str(d.from)}T00:00:00Z`)) : "?"
       } to ${d.to ? usDay(new Date(`${str(d.to)}T00:00:00Z`)) : "?"}`,
   },
   SIGNATURE_VIEWED: { category: "downloads", describe: (e, d, L) => `viewed the signature of ${bank(e, d, L)}` },

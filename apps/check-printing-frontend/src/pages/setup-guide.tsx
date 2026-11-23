@@ -16,7 +16,8 @@ const ICONS: Record<SetupStepKey, typeof Landmark> = {
 };
 
 const TIME: Record<SetupStepKey, string> = {
-  business: "Done",
+  // Shown only while the step is not done (a done step shows "Done").
+  business: "1 min",
   bank: "2 min",
   signature: "1 min",
   printer: "5 min · needs a ruler",

@@ -11,6 +11,7 @@ import ShieldIcon from '@mui/icons-material/Shield';
 import { authService, type InvitationView } from '../../services/authService';
 import { clearLinkToken, useLinkToken } from '../../hooks/useLinkToken';
 import { AttendanceShowcase } from './components/AttendanceShowcase';
+import { useAuth } from '../../context/AuthContext';
 
 // The page an employee's invitation email links to (/accept-invitation#token=...).
 // The admin never chooses or sees a password: the employee confirms their name and chooses
@@ -80,6 +81,20 @@ export const AcceptInvitationPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isDone, setIsDone] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const { user: currentUser, logout } = useAuth();
+
+  const hasConflictingSession = Boolean(
+    currentUser && invitation && currentUser.email?.toLowerCase() !== invitation.email.toLowerCase()
+  );
+
+  const handleSignOutActiveSession = async () => {
+    setIsResetting(true);
+    try {
+      await logout();
+    } finally {
+      setIsResetting(false);
+    }
+  };
 
   const handleWebSignIn = async () => {
     setIsResetting(true);
@@ -212,6 +227,39 @@ export const AcceptInvitationPage: React.FC = () => {
           </Alert>
         )}
 
+        {hasConflictingSession && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs text-amber-900 flex flex-col gap-2.5">
+            <div className="flex items-center gap-2 font-semibold text-amber-950">
+              <ShieldIcon sx={{ fontSize: 18 }} className="text-amber-600" />
+              <span>Active Session Conflict</span>
+            </div>
+            <p className="leading-relaxed">
+              You are currently signed in as <strong>{currentUser?.name || currentUser?.email}</strong> ({currentUser?.email}). Setting a password here will replace your active session across all tabs in this browser.
+            </p>
+            <p className="leading-relaxed text-amber-800">
+              To keep your admin session intact, <strong>open this invitation in an Incognito / Private window</strong>.
+            </p>
+            <div className="pt-1">
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={handleSignOutActiveSession}
+                disabled={isResetting}
+                sx={{
+                  borderColor: '#D97706',
+                  color: '#B45309',
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  '&:hover': { borderColor: '#B45309', bgcolor: '#FEF3C7' },
+                }}
+              >
+                {isResetting ? 'Signing out...' : 'Sign out active account to proceed'}
+              </Button>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="invite-email" className="text-xs font-semibold text-slate-700">Work email</label>
@@ -280,9 +328,14 @@ export const AcceptInvitationPage: React.FC = () => {
             <Rule met={isMatch}>Passwords match</Rule>
           </div>
 
-          <Button type="submit" variant="contained" fullWidth disabled={isSubmitting || !isValid} sx={primaryButtonSx}>
+          <Button type="submit" variant="contained" fullWidth disabled={isSubmitting || !isValid || hasConflictingSession} sx={primaryButtonSx}>
             {isSubmitting ? <CircularProgress size={20} color="inherit" /> : 'Save password'}
           </Button>
+          {hasConflictingSession && (
+            <p className="text-center text-[11px] text-amber-700">
+              Sign out of your active account or open this link in an Incognito window to set password.
+            </p>
+          )}
         </form>
       </>
     );

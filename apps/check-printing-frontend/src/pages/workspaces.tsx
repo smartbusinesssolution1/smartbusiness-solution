@@ -14,7 +14,7 @@ import { CheckFace } from "@/components/app/check-face";
 import { EmptyState, ErrorState, InlineAlert, Skeleton } from "@/components/app/layout";
 import { NoProductAccess, Splash } from "@/app/guards";
 import { isProductNotAvailable } from "@/lib/portal";
-import { applyServerErrors, US_STATES } from "@/lib/forms";
+import { applyServerErrors, requiredText, US_STATES } from "@/lib/forms";
 import { initials } from "@/lib/format";
 
 function lastWorkspace(): string | null {
@@ -159,17 +159,17 @@ function CreateWorkspaceForm() {
           </div>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
           <Field label="Business name" htmlFor="businessName" error={errors.businessName?.message}>
-            <Input autoFocus placeholder="Green Acres Landscaping LLC" {...register("businessName", { required: "Enter the business name", maxLength: { value: 255, message: "Too long" } })} />
+            <Input autoFocus placeholder="Green Acres Landscaping LLC" {...register("businessName", { ...requiredText("Enter the business name"), maxLength: { value: 255, message: "Too long" } })} />
           </Field>
           <Field label="Street address" htmlFor="addressLine1" error={errors.addressLine1?.message}>
-            <Input autoComplete="address-line1" placeholder="4120 Ranch Road 620" {...register("addressLine1", { required: "Enter the street address" })} />
+            <Input autoComplete="address-line1" placeholder="4120 Ranch Road 620" {...register("addressLine1", requiredText("Enter the street address"))} />
           </Field>
           <Field label="Suite, unit" htmlFor="addressLine2" optional error={errors.addressLine2?.message}>
             <Input autoComplete="address-line2" placeholder="Suite 200" {...register("addressLine2")} />
           </Field>
           <div className="grid grid-cols-[minmax(0,1fr)_6.5rem_7rem] gap-3">
             <Field label="City" htmlFor="city" error={errors.city?.message}>
-              <Input autoComplete="address-level2" placeholder="Austin" {...register("city", { required: "Enter the city" })} />
+              <Input autoComplete="address-level2" placeholder="Austin" {...register("city", requiredText("Enter the city"))} />
             </Field>
             <Field label="State" htmlFor="state" error={errors.state?.message}>
               {/* Always a string ("" shows the placeholder): undefined would make the dropdown

@@ -53,3 +53,10 @@ export function StatusBadge({
     </span>
   );
 }
+
+// "Inactive" on a paused bank account or approval rule. Kept outside the faded part of the
+// row: faded with it, it measured 2.35:1 contrast (BUG_041, BUG_049); ink-soft on white is
+// about 13:1, well over the 4.5:1 that small text needs.
+export function InactiveBadge({ label = "Inactive", className }: { label?: string; className?: string }) {
+  return <span className={cn("inline-flex shrink-0 items-center rounded-full border border-line-strong bg-panel px-2 py-0.5 text-xs font-medium text-ink-soft", className)}>{label}</span>;
+}

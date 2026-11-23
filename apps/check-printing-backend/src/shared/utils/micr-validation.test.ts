@@ -20,6 +20,8 @@ describe("isValidAbaRoutingNumber", () => {
     ["letters", "11100002A"],
     ["spaces", "111 000 025"],
     ["empty", ""],
+    // Passes the check digit (a sum of 0 is a multiple of 10) but is no bank's number.
+    ["all zeros", "000000000"],
   ])("rejects %s", (_label, rtn) => {
     expect(isValidAbaRoutingNumber(rtn)).toBe(false);
   });

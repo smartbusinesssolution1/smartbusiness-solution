@@ -57,6 +57,14 @@ export function initials(name: string): string {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join("");
 }
 
+// "Austin, TX 78701" from whichever parts were saved; blank parts are skipped. Empty fields
+// arrive as null, which used to print as "Austin, null 78701" (BUG_026), and state and ZIP
+// were only shown when there was a city (BUG_027).
+export function cityStateZip(p: { city: string | null; state: string | null; zipCode: string | null }): string {
+  const stateZip = [p.state, p.zipCode].map((s) => s?.trim()).filter(Boolean).join(" ");
+  return [p.city?.trim(), stateZip].filter(Boolean).join(", ");
+}
+
 export function firstName(name: string): string {
   return name.split(/\s+/)[0] ?? name;
 }

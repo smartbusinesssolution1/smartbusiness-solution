@@ -8,10 +8,12 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 const MAX_ROLES = 10;
 
 // ─── Reusable Field Builders ────────────────────────────
-const businessNameField = z.string().min(1, "Business name is required").max(255).trim();
-const addressLine1Field = z.string().min(1, "Address is required").max(255).trim();
-const addressLine2Field = z.string().max(255).trim().optional().or(z.literal(""));
-const cityField = z.string().min(1, "City is required").max(100).trim();
+// trim() comes first: Zod runs checks in order, so min(1) before trim() would accept
+// "   " and then save it as "" (a check with no business name on it).
+const businessNameField = z.string().trim().min(1, "Business name is required").max(255);
+const addressLine1Field = z.string().trim().min(1, "Address is required").max(255);
+const addressLine2Field = z.string().trim().max(255).optional().or(z.literal(""));
+const cityField = z.string().trim().min(1, "City is required").max(100);
 const stateField = z
   .string()
   .regex(US_STATE_REGEX, "State must be a 2-letter US state code (e.g., TX, CA)")
@@ -47,10 +49,10 @@ export const createWorkspaceSchema = z.object({
 
 // ─── Update Workspace ───────────────────────────────────
 export const updateWorkspaceSchema = z.object({
-  businessName: z.string().min(1).max(255).trim().optional(),
-  addressLine1: z.string().min(1).max(255).trim().optional(),
-  addressLine2: z.string().max(255).trim().optional().or(z.literal("")),
-  city: z.string().min(1).max(100).trim().optional(),
+  businessName: businessNameField.optional(),
+  addressLine1: addressLine1Field.optional(),
+  addressLine2: addressLine2Field,
+  city: cityField.optional(),
   state: z.string().regex(US_STATE_REGEX).transform((s) => s.toUpperCase()).optional(),
   zipCode: z.string().regex(ZIP_CODE_REGEX).optional(),
   phone: z.string().regex(PHONE_REGEX).optional().or(z.literal("")),
@@ -65,8 +67,9 @@ export const updateWorkspaceSchema = z.object({
 
 // ─── Add Member ─────────────────────────────────────────
 export const addMemberSchema = z.object({
-  email: z.email({ error: "Invalid email format" }).trim().toLowerCase(),
-  fullName: z.string().min(1, "Name is required").max(255).trim(),
+  // Trim and lower-case before checking the format, so " Maria@X.com " is accepted.
+  email: z.string().trim().toLowerCase().pipe(z.email({ error: "Invalid email format" }).max(255)),
+  fullName: z.string().trim().min(1, "Name is required").max(255),
   roleSlugs: z
     .array(z.string().min(1).max(50))
     .min(1, "At least one role is required")

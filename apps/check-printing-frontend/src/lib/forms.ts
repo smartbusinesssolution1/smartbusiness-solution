@@ -16,6 +16,13 @@ export function applyServerErrors<T extends FieldValues>(err: unknown, setError:
   return placed ? null : err.message;
 }
 
+// A required text field where spaces alone don't count as filled in. react-hook-form's
+// `required` accepts "   ", which the server trims to "" and refuses (or, before that
+// was fixed, saved as blank).
+export function requiredText(message: string) {
+  return { validate: (v: unknown) => String(v ?? "").trim() !== "" || message };
+}
+
 export const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME",
   "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI",

@@ -115,6 +115,30 @@ describe("adding attachments", () => {
     expect(res.status).toBe(413);
   });
 
+  // BUG_013: the limit used to be checked after re-encoding, refusing this photo.
+  it("accepts a photo under 10 MB that grows past 10 MB when re-encoded", async () => {
+    const side = 4600;
+    const raw = Buffer.alloc(side * side * 3);
+    for (let i = 0; i < raw.length; i++) raw[i] = (Math.random() * 256) | 0;
+    const photo = await sharp(raw, { raw: { width: side, height: side, channels: 3 } }).jpeg({ quality: 55 }).toBuffer();
+    expect(photo.length).toBeLessThan(10 * 1024 * 1024);
+
+    const res = await upload(world.editor, photo, "receipt-scan.jpg");
+
+    expect(res.status).toBe(201);
+    expect(res.body.data.sizeBytes).toBeGreaterThan(10 * 1024 * 1024);
+  });
+
+  it("tells a photo over 50 megapixels that it is too large", async () => {
+    const huge = await sharp({ create: { width: 8000, height: 7000, channels: 3, background: "#ffffff" } }).png().toBuffer();
+
+    const res = await upload(world.editor, huge, "scan.png");
+
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe("IMAGE_TOO_LARGE");
+    expect(storedFiles()).toHaveLength(0);
+  });
+
   it("allows at most 25 MB per check", async () => {
     expect((await upload(world.editor, pdfOf(9 * 1024))).status).toBe(201);
     expect((await upload(world.editor, pdfOf(9 * 1024))).status).toBe(201);

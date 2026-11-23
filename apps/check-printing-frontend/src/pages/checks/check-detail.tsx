@@ -7,10 +7,8 @@ import {
   Ban,
   CheckCheck,
   Download,
-  FileText,
   History,
   MoreHorizontal,
-  Paperclip,
   PenLine,
   Printer,
   RotateCcw,
@@ -25,7 +23,6 @@ import {
   Link2,
 } from "lucide-react";
 import {
-  fetchAttachment,
   fetchCheckPdf,
   useApprovalQueue,
   useApproveCheck,
@@ -42,27 +39,13 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader } from "@/components/
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "@/components/ui/menu";
 import { CheckFace } from "@/components/app/check-face";
 import { ClearDialog, RejectDialog, StopPaymentNotice, VoidDialog } from "@/components/app/check-dialogs";
-import { fileSize } from "@/components/app/file-drop";
+import { CheckAttachments, openBlob } from "@/components/app/check-attachments";
 import { ErrorState, InlineAlert, Page, PageHeader, Panel, PanelHeader, Skeleton } from "@/components/app/layout";
 import { StatusBadge } from "@/components/app/status";
 import { layoutLabel } from "@/components/app/paper";
 import { errorMessage } from "@/lib/api";
 import { calendarDay, checkFaceDate, checkNo, money, when } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-async function openBlob(load: () => Promise<Blob>, name: string) {
-  // Open the tab first: a tab opened after an await is often blocked as a popup.
-  const tab = window.open("", "_blank");
-  try {
-    const url = URL.createObjectURL(await load());
-    if (tab) tab.location.href = url;
-    else window.location.href = url;
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (err) {
-    tab?.close();
-    toast.error(`Couldn't open ${name}`, { description: errorMessage(err) });
-  }
-}
 
 export function CheckDetailPage() {
   const { checkId } = useParams();
@@ -148,7 +131,7 @@ function CheckView({ check }: { check: Check }) {
 
         <div className="flex flex-col gap-4">
           <Details check={check} />
-          <Attachments check={check} />
+          <CheckAttachments check={check} />
           {check.approval && <ApprovalProgress check={check} />}
         </div>
       </div>
@@ -331,33 +314,6 @@ function Details({ check }: { check: Check }) {
           </div>
         )}
       </dl>
-    </Panel>
-  );
-}
-
-function Attachments({ check }: { check: Check }) {
-  const { wid } = useWorkspaceContext();
-  return (
-    <Panel>
-      <PanelHeader title="Attachments" description={check.attachments.length ? `${check.attachments.length} file${check.attachments.length === 1 ? "" : "s"}` : "None"} />
-      {check.attachments.length === 0 ? (
-        <p className="px-5 py-4 text-sm text-muted">No invoices or receipts were attached.</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {check.attachments.map((a) => (
-            <li key={a.id}>
-              <button type="button" onClick={() => openBlob(() => fetchAttachment(wid, check.id, a.id), a.fileName)} className="flex w-full items-center gap-3 px-5 py-2.5 text-left text-sm transition-colors hover:bg-subtle/60">
-                <span className="flex size-8 items-center justify-center rounded-lg bg-subtle">{a.fileType === "application/pdf" ? <FileText className="size-4" /> : <Paperclip className="size-4" />}</span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate font-medium">{a.fileName}</span>
-                  <span className="text-xs text-muted">{fileSize(a.sizeBytes)} · {a.uploadedBy.fullName}</span>
-                </span>
-                <Download className="size-4 text-faint" />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </Panel>
   );
 }

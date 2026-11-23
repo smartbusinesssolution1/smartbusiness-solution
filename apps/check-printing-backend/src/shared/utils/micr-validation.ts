@@ -10,7 +10,9 @@ export function isValidAbaRoutingNumber(routingNumber: string): boolean {
   for (let i = 0; i < 9; i++) {
     sum += Number(routingNumber[i]) * ABA_WEIGHTS[i % 3]!;
   }
-  return sum % 10 === 0;
+  // sum > 0: "000000000" passes the check digit (0 is a multiple of 10) but is no bank's
+  // number. The browser already refused it; a direct API call did not.
+  return sum > 0 && sum % 10 === 0;
 }
 
 // The on-us field holds the account number plus one ⑈ in positions 14–31 (18 slots).

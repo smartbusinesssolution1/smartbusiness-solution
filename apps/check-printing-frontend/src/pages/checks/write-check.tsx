@@ -155,6 +155,16 @@ function CheckForm({ check }: { check?: Check }) {
     return failed;
   };
 
+  // BUG_013: a failed upload used to show for a few seconds while the page moved on, and the
+  // check went to an approver without its invoice. Now the check stays a draft and the
+  // message stays until it is closed, naming each file and why it was refused.
+  const reportFailedUploads = (failed: string[], label: string) =>
+    toast.error(`${failed.length === 1 ? "A file wasn't" : "Some files weren't"} attached`, {
+      description: `${failed.join(" ")} ${label} was saved but not sent for approval. Open it, choose Edit, and attach the file again.`,
+      duration: Infinity,
+      closeButton: true,
+    });
+
   const body = (values: FormValues) => ({
     payeeName: values.payeeName.trim(),
     amount: Math.round(parseAmount(values.amount) * 100) / 100,
@@ -179,8 +189,9 @@ function CheckForm({ check }: { check?: Check }) {
           // Saved as a draft first, so invoices can be attached before anyone approves it.
           const created = await create.mutateAsync({ input: { ...body(values), bankAccountId: values.bankAccountId, saveAsDraft: true }, idempotencyKey });
           const failed = await uploadFiles(created.id);
-          if (failed.length) toast.error("Some files weren't attached", { description: failed.join(" ") });
-          if (mode === "submit" && created.approvalRequired) {
+          if (failed.length) {
+            reportFailedUploads(failed, `Check #${checkNo(created.checkNumber)}`);
+          } else if (mode === "submit" && created.approvalRequired) {
             await submit.mutateAsync({ checkId: created.id });
             toast.success(`Check #${checkNo(created.checkNumber)} sent for approval`);
           } else if (mode === "submit") {
@@ -194,8 +205,9 @@ function CheckForm({ check }: { check?: Check }) {
 
         const updated = await update.mutateAsync({ ...body(values), memo: values.memo.trim() || null, invoiceItems: body(values).invoiceItems ?? null });
         const failed = await uploadFiles(check!.id);
-        if (failed.length) toast.error("Some files weren't attached", { description: failed.join(" ") });
-        if (mode === "submit") {
+        if (failed.length) {
+          reportFailedUploads(failed, `Check #${checkNo(check!.checkNumber)}`);
+        } else if (mode === "submit") {
           if (check!.status === "REJECTED") {
             await resubmit.mutateAsync({ checkId: check!.id });
             toast.success("Resubmitted for approval");
