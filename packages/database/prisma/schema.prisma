@@ -115,6 +115,8 @@ model User {
   sessions                  Session[]
   userTokens                UserToken[]                @relation("UserTokenOwner")
   createdUserTokens         UserToken[]                @relation("UserTokenCreatedBy")
+  reviewedLeaveRequests     LeaveRequest[]             @relation("LeaveReviewer")
+  reviewedRegularizations   AttendanceRegularization[] @relation("RegularizationReviewer")
 
   @@map("users")
 }
@@ -256,7 +258,10 @@ model Workspace {
   checkPrintingSettings CheckPrintingSettings?
 
   // Clock In Clock Out
-  attendanceSettings AttendanceSettings?
+  attendanceSettings     AttendanceSettings?
+  leavePolicies          LeavePolicy[]
+  leaveRequests          LeaveRequest[]
+  regularizationRequests AttendanceRegularization[]
 
   @@index([tenantId])
   @@map("workspaces")
@@ -837,6 +842,26 @@ enum AttendanceStatus {
   AUTO_CLOSED
 }
 
+enum BreakType {
+  MEAL
+  REST
+}
+
+enum BreakViolationType {
+  NONE
+  LATE_MEAL
+  SHORT_MEAL
+  MISSED_MEAL
+  SHORT_REST
+  MISSED_REST
+}
+
+enum CompliancePolicy {
+  FEDERAL_STANDARD
+  CALIFORNIA_STRICT
+  CUSTOM
+}
+
 model AttendanceSettings {
   workspaceId           String  @id @map("workspace_id")
   latitude              Decimal @db.Decimal(9, 6)
@@ -845,6 +870,21 @@ model AttendanceSettings {
   graceMinutes          Int?    @default(15) @map("grace_minutes")
   defaultShiftStartTime String  @default("09:00") @map("default_shift_start_time")
   defaultShiftEndTime   String  @default("18:00") @map("default_shift_end_time")
+
+  enableRegularization       Boolean @default(true) @map("enable_regularization")
+  maxRegularizationPastDays  Int     @default(30) @map("max_regularization_past_days")
+  monthlyRegularizationLimit Int     @default(5) @map("monthly_regularization_limit")
+
+  // Break & Labor Compliance Settings (Configurable per Organization / Workspace)
+  compliancePolicy          CompliancePolicy @default(CALIFORNIA_STRICT) @map("compliance_policy")
+  enableBreakTracking       Boolean          @default(true) @map("enable_break_tracking")
+  mealBreakThresholdHours   Decimal          @default(5.0) @db.Decimal(3, 1) @map("meal_break_threshold_hours")
+  minMealBreakMinutes       Int              @default(30) @map("min_meal_break_minutes")
+  maxMealStartShiftHour     Decimal          @default(5.0) @db.Decimal(3, 1) @map("max_meal_start_shift_hour")
+  secondMealThresholdHours  Decimal          @default(10.0) @db.Decimal(3, 1) @map("second_meal_threshold_hours")
+  restBreakMinutes          Int              @default(10) @map("rest_break_minutes")
+  enforceBreakWaivers       Boolean          @default(true) @map("enforce_break_waivers")
+  autoAssessPenalties       Boolean          @default(true) @map("auto_assess_penalties")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @updatedAt @map("updated_at")
@@ -872,8 +912,11 @@ model AttendanceEmployeeDetails {
   updatedAt DateTime? @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  workspaceMember   WorkspaceMember    @relation(fields: [workspaceMemberId], references: [id])
-  attendanceRecords AttendanceRecord[]
+  workspaceMember        WorkspaceMember            @relation(fields: [workspaceMemberId], references: [id])
+  attendanceRecords      AttendanceRecord[]
+  leaveBalances          EmployeeLeaveBalance[]
+  leaveRequests          LeaveRequest[]
+  regularizationRequests AttendanceRegularization[]
 
   @@index([workspaceMemberId])
   @@index([employeeCode])
@@ -905,8 +948,20 @@ model AttendanceRecord {
 
   workingHours Decimal? @map("working_hours") @db.Decimal(4, 2)
   notes        String?  @map("notes")
+  isRegularized Boolean @default(false) @map("is_regularized")
 
-  employee AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  // Break & Compliance Tracking Aggregates
+  totalBreakMinutes   Int      @default(0) @map("total_break_minutes")
+  unpaidBreakMinutes  Int      @default(0) @map("unpaid_break_minutes")
+  paidBreakMinutes    Int      @default(0) @map("paid_break_minutes")
+  mealPenaltyHours    Decimal  @default(0.0) @map("meal_penalty_hours") @db.Decimal(3, 1)
+  restPenaltyHours    Decimal  @default(0.0) @map("rest_penalty_hours") @db.Decimal(3, 1)
+  mealWaiverSigned    Boolean  @default(false) @map("meal_waiver_signed")
+  mealWaiverReason    String?  @map("meal_waiver_reason")
+
+  employee        AttendanceEmployeeDetails  @relation(fields: [employeeId], references: [id])
+  regularizations AttendanceRegularization[]
+  breaks          AttendanceBreakRecord[]
 
   @@index([employeeId])
   @@index([clockInDate])
@@ -916,3 +971,212 @@ model AttendanceRecord {
   @@index([clockInDate(sort: Desc), clockInTime(sort: Desc)])
   @@map("attendance_records")
 }
+
+// ─── Attendance Break Tracking & Statutory Labor Compliance ─────────────────────────
+
+model AttendanceBreakRecord {
+  id                 String             @id @default(uuid())
+  attendanceRecordId String             @map("attendance_record_id")
+  breakType          BreakType          @default(MEAL) @map("break_type")
+  isPaid             Boolean            @default(false) @map("is_paid")
+
+  startTime          DateTime           @map("start_time")
+  endTime            DateTime?          @map("end_time")
+  durationMinutes    Int?               @map("duration_minutes")
+
+  // Geolocation & Audit Tracking
+  startLatitude      Decimal?           @map("start_latitude") @db.Decimal(9, 6)
+  startLongitude     Decimal?           @map("start_longitude") @db.Decimal(9, 6)
+  endLatitude        Decimal?           @map("end_latitude") @db.Decimal(9, 6)
+  endLongitude       Decimal?           @map("end_longitude") @db.Decimal(9, 6)
+
+  // Statutory Compliance Audit Trail
+  isCompliant        Boolean            @default(true) @map("is_compliant")
+  violationType      BreakViolationType @default(NONE) @map("violation_type")
+  waiverSigned       Boolean            @default(false) @map("waiver_signed")
+  waiverReason       String?            @map("waiver_reason")
+  notes              String?            @map("notes")
+
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime?          @updatedAt @map("updated_at")
+
+  attendanceRecord   AttendanceRecord   @relation(fields: [attendanceRecordId], references: [id], onDelete: Cascade)
+
+  @@index([attendanceRecordId])
+  @@index([breakType, isCompliant])
+  @@index([startTime(sort: Desc)])
+  @@map("attendance_break_records")
+}
+
+// ─── Attendance Regularization Workflow ──────────────────────────────────────────────
+
+enum RegularizationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum RegularizationReason {
+  MISSED_CLOCK_IN
+  MISSED_CLOCK_OUT
+  MISSED_BOTH
+  ON_DUTY_CLIENT_VISIT
+  WORK_FROM_HOME
+  TECHNICAL_ISSUE
+  OTHER
+}
+
+model AttendanceRegularization {
+  id                    String                @id @default(uuid())
+  workspaceId           String                @map("workspace_id")
+  employeeId            String                @map("employee_id")
+  attendanceRecordId    String?               @map("attendance_record_id")
+
+  date                  DateTime              @db.Date
+  reasonCategory        RegularizationReason  @map("reason_category")
+  reasonText            String                @map("reason_text")
+
+  requestedClockInTime  DateTime?             @map("requested_clock_in_time")
+  requestedClockOutTime DateTime?             @map("requested_clock_out_time")
+
+  status                RegularizationStatus  @default(PENDING)
+
+  reviewerId            String?               @map("reviewer_id")
+  reviewerNotes         String?               @map("reviewer_notes")
+  reviewedAt            DateTime?             @map("reviewed_at")
+
+  createdAt             DateTime              @default(now()) @map("created_at")
+  updatedAt             DateTime?             @updatedAt @map("updated_at")
+
+  workspace             Workspace                 @relation(fields: [workspaceId], references: [id])
+  employee              AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  attendanceRecord      AttendanceRecord?         @relation(fields: [attendanceRecordId], references: [id])
+  reviewer              User?                     @relation("RegularizationReviewer", fields: [reviewerId], references: [id])
+
+  @@index([workspaceId])
+  @@index([employeeId])
+  @@index([workspaceId, status])
+  @@index([employeeId, date])
+  @@map("attendance_regularizations")
+}
+
+// ─── US Leave Management & Policy Engine ─────────────────────────────────────
+
+enum LeaveCategory {
+  PTO
+  VACATION
+  SICK
+  BEREAVEMENT
+  JURY_DUTY
+  MILITARY
+  UNPAID
+  FMLA
+}
+
+enum LeaveAccrualType {
+  FRONTLOAD
+  HOURLY_ACCRUAL
+  PER_PAY_PERIOD
+  UNLIMITED
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeavePolicy {
+  id                  String           @id @default(uuid())
+  workspaceId         String           @map("workspace_id")
+  name                String
+  code                String
+  description         String?
+  category            LeaveCategory    @default(PTO)
+  accrualType         LeaveAccrualType @default(HOURLY_ACCRUAL) @map("accrual_type")
+  rate                Decimal          @default(0) @db.Decimal(6, 4)
+  hoursPerYear        Decimal          @default(40.0) @map("hours_per_year") @db.Decimal(6, 2)
+  maxCarryoverHours   Decimal          @default(0) @map("max_carryover_hours") @db.Decimal(6, 2)
+  accrualCapHours     Decimal?         @map("accrual_cap_hours") @db.Decimal(6, 2)
+  waitingPeriodDays   Int              @default(0) @map("waiting_period_days")
+  minNoticeDays       Int              @default(0) @map("min_notice_days")
+  isPaid              Boolean          @default(true) @map("is_paid")
+  payoutOnTermination Boolean          @default(false) @map("payout_on_termination")
+  requiresApproval    Boolean          @default(true) @map("requires_approval")
+  requiresDocDays     Int?             @map("requires_doc_days")
+  isActive            Boolean          @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  workspace Workspace              @relation(fields: [workspaceId], references: [id])
+  balances  EmployeeLeaveBalance[]
+  requests  LeaveRequest[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, isActive, deletedAt])
+  @@map("leave_policies")
+}
+
+model EmployeeLeaveBalance {
+  id               String   @id @default(uuid())
+  employeeId       String   @map("employee_id")
+  policyId         String   @map("policy_id")
+  year             Int
+  allocatedHours   Decimal  @default(0) @map("allocated_hours") @db.Decimal(6, 2)
+  accruedHours     Decimal  @default(0) @map("accrued_hours") @db.Decimal(6, 2)
+  usedHours        Decimal  @default(0) @map("used_hours") @db.Decimal(6, 2)
+  pendingHours     Decimal  @default(0) @map("pending_hours") @db.Decimal(6, 2)
+  carriedOverHours Decimal  @default(0) @map("carried_over_hours") @db.Decimal(6, 2)
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  employee AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  policy   LeavePolicy               @relation(fields: [policyId], references: [id])
+
+  @@unique([employeeId, policyId, year])
+  @@index([employeeId])
+  @@index([policyId])
+  @@index([year])
+  @@map("employee_leave_balances")
+}
+
+model LeaveRequest {
+  id             String             @id @default(uuid())
+  workspaceId    String             @map("workspace_id")
+  employeeId     String             @map("employee_id")
+  policyId       String             @map("policy_id")
+  status         LeaveRequestStatus @default(PENDING)
+
+  startDate      DateTime           @map("start_date") @db.Date
+  endDate        DateTime           @map("end_date") @db.Date
+  totalHours     Decimal            @map("total_hours") @db.Decimal(6, 2)
+  isIntermittent Boolean            @default(false) @map("is_intermittent")
+
+  reason         String?
+  attachmentUrl  String?            @map("attachment_url")
+
+  reviewerId     String?            @map("reviewer_id")
+  reviewerNotes  String?            @map("reviewer_notes")
+  reviewedAt     DateTime?          @map("reviewed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+
+  workspace Workspace                 @relation(fields: [workspaceId], references: [id])
+  employee  AttendanceEmployeeDetails @relation(fields: [employeeId], references: [id])
+  policy    LeavePolicy               @relation(fields: [policyId], references: [id])
+  reviewer  User?                     @relation("LeaveReviewer", fields: [reviewerId], references: [id])
+
+  @@index([workspaceId])
+  @@index([employeeId])
+  @@index([policyId])
+  @@index([workspaceId, status])
+  @@index([employeeId, startDate])
+  @@map("leave_requests")
+}
+

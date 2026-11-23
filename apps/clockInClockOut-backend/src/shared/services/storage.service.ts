@@ -159,6 +159,70 @@ export class StorageService {
   }
 
   /**
+   * Upload a statutory leave document / doctor's note (PDF, JPEG, PNG, DOCX).
+   */
+  async uploadDocument(params: {
+    tenantId: string;
+    file: Express.Multer.File;
+    folder?: string;
+  }): Promise<{ url: string; key?: string }> {
+    const { tenantId, file, folder = "leave-documents" } = params;
+
+    if (!file || !file.buffer) {
+      throw new AppError("Invalid or empty file payload.", 400, "INVALID_FILE_PAYLOAD");
+    }
+
+    const rawExt = path.extname(file.originalname).toLowerCase() || ".pdf";
+    const allowedExts = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"];
+    const ext = allowedExts.includes(rawExt) ? rawExt : ".pdf";
+    const uniqueHash = crypto.randomBytes(8).toString("hex");
+
+    if (this.isS3Enabled && this.s3Client) {
+      const key = `tenants/${tenantId}/${folder}/${Date.now()}-${uniqueHash}${ext}`;
+
+      try {
+        await this.s3Client.send(
+          new PutObjectCommand({
+            Bucket: env.aws.bucketName!,
+            Key: key,
+            Body: file.buffer,
+            ContentType: file.mimetype || "application/pdf",
+            CacheControl: "private, max-age=86400",
+          })
+        );
+
+        const publicUrl = `https://${env.aws.bucketName}.s3.dualstack.${env.aws.region}.amazonaws.com/${key}`;
+        logger.info({ key, s3Url: publicUrl }, "Document uploaded to AWS S3");
+
+        return { url: publicUrl, key };
+      } catch (error: any) {
+        logger.warn(
+          { error: error.message, key },
+          "Failed to upload document to AWS S3, falling back safely to local disk storage"
+        );
+      }
+    }
+
+    // Local disk fallback
+    const localDocsDir = path.join(UPLOADS_DIR, folder);
+    if (!fs.existsSync(localDocsDir)) {
+      fs.mkdirSync(localDocsDir, { recursive: true });
+    }
+
+    const filename = `${Date.now()}-${uniqueHash}${ext}`;
+    const destinationPath = path.join(localDocsDir, filename);
+
+    try {
+      await fs.promises.writeFile(destinationPath, file.buffer);
+      const localUrl = `/uploads/${folder}/${filename}`;
+      return { url: localUrl };
+    } catch (error: any) {
+      logger.error({ error: error.message }, "Failed to write document to local disk");
+      throw new AppError("Failed to save attachment document.", 500, "LOCAL_STORAGE_ERROR");
+    }
+  }
+
+  /**
    * Delete an avatar from AWS S3 or local disk when replaced or employee removed.
    * Also purges any cached RAM and disk copies.
    */

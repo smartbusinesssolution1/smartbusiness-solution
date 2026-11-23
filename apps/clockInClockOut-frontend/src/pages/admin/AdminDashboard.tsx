@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   Users,
@@ -14,6 +14,7 @@ import {
   UserPlus,
   Check,
   Building2,
+  CalendarDays,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,6 +31,9 @@ import dayjs from 'dayjs';
 import { attendanceService } from '../../services/attendanceService';
 import { employeeService } from '../../services/employeeService';
 import { settingsService } from '../../services/settingsService';
+import { leaveService, LeaveRequest } from '../../services/leave.service';
+import { SubmitLeaveRequestModal } from '../../components/leave/SubmitLeaveRequestModal';
+import { notify } from '../../context/NotificationContext';
 import { useAuth } from '../../context/AuthContext';
 import BrandLoader from '../../components/BrandLoader';
 import { getAvatarUrl } from '../../utils/imageUrl';
@@ -54,13 +58,23 @@ interface StreamRecord {
   workspace: string;
   time: string;
   type: string;
-  status: 'present' | 'late' | 'absent' | 'half_day' | 'auto_closed';
+  status: 'present' | 'late' | 'absent' | 'half_day' | 'auto_closed' | 'on_leave';
   avatarUrl?: string | null;
 }
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user, workspaces, currentWorkspace, currentTenant } = useAuth();
+
+  const isOwner = Boolean(
+    currentTenant?.role === 'OWNER' ||
+    currentWorkspace?.role === 'OWNER' ||
+    currentWorkspace?.userRole === 'OWNER' ||
+    (user as any)?.role === 'OWNER' ||
+    (user as any)?.role === 'owner' ||
+    (user as any)?.roles?.includes('OWNER') ||
+    (user as any)?.roles?.includes('owner')
+  );
 
   // Active chart view tab
   const [chartTab, setChartTab] = useState<'weekly' | 'dept'>('weekly');
@@ -150,8 +164,10 @@ export const AdminDashboard: React.FC = () => {
     (rawAttendance || []).filter((r) => r.status === 'present' || r.status === 'late').length;
   const lateTodayCount =
     metrics?.lateToday ?? (rawAttendance || []).filter((r) => r.status === 'late').length;
+  const onLeaveTodayCount =
+    metrics?.onLeaveToday ?? (rawAttendance || []).filter((r) => r.status === 'on_leave').length;
   const absentTodayCount =
-    metrics?.absentCount ?? Math.max(0, totalEmployeesCount - presentTodayCount);
+    metrics?.absentCount ?? Math.max(0, totalEmployeesCount - presentTodayCount - onLeaveTodayCount);
   const autoClosedCount = metrics?.autoClosedToday ?? 0;
   const attendanceRateVal =
     metrics?.attendanceRate ??
@@ -300,36 +316,90 @@ export const AdminDashboard: React.FC = () => {
     return [];
   }, [rawAttendance]);
 
-  // Leave & Time-Off Requests State
-  const [leaveRequests, setLeaveRequests] = useState<
-    Array<{
-      id: string;
-      name: string;
-      empId: string;
-      avatarUrl?: string | null;
-      department: string;
-      type: string;
-      duration: string;
-      reason: string;
-      status: 'pending' | 'approved' | 'rejected';
-    }>
-  >([]);
+  // Leave & Time-Off Requests: Real API Query & Mutations
+  const [isSubmitLeaveOpen, setIsSubmitLeaveOpen] = useState(false);
+
+  const {
+    data: leaveRequests = [],
+    refetch: refetchLeaveRequests,
+  } = useQuery({
+    queryKey: ['adminLeaveRequests', activeWorkspaceId],
+    queryFn: () => leaveService.listRequests(activeWorkspaceId || undefined),
+    enabled: Boolean(user && user.role === 'admin' && activeWorkspaceId),
+    staleTime: 30_000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) =>
+      leaveService.reviewRequest(id, 'APPROVED', undefined, activeWorkspaceId),
+    onSuccess: () => {
+      notify('Leave request approved', 'success');
+      refetchLeaveRequests();
+      refetchMetrics();
+    },
+    onError: (err: any) => notify(err?.message || 'Failed to approve', 'error'),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) =>
+      leaveService.reviewRequest(id, 'REJECTED', undefined, activeWorkspaceId),
+    onSuccess: () => {
+      notify('Leave request declined', 'success');
+      refetchLeaveRequests();
+      refetchMetrics();
+    },
+    onError: (err: any) => notify(err?.message || 'Failed to decline', 'error'),
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => leaveService.cancelRequest(id, activeWorkspaceId),
+    onSuccess: () => {
+      notify('Leave request cancelled', 'success');
+      refetchLeaveRequests();
+      refetchMetrics();
+    },
+    onError: (err: any) => notify(err?.message || 'Failed to cancel', 'error'),
+  });
 
   const handleApproveRequest = (id: string) => {
-    setLeaveRequests((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: 'approved' as const } : r))
-    );
+    approveMutation.mutate(id);
   };
 
   const handleRejectRequest = (id: string) => {
-    setLeaveRequests((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, status: 'rejected' as const } : r))
-    );
+    rejectMutation.mutate(id);
   };
 
+  const handleCancelRequest = (id: string) => {
+    if (window.confirm('Cancel this leave request? Reserved hours will be returned.')) {
+      cancelMutation.mutate(id);
+    }
+  };
+
+  // Filter out self user requests from Admin Dashboard widget
+  const filteredLeaveRequests = useMemo(() => {
+    if (!user) return leaveRequests;
+    return leaveRequests.filter((req) => {
+      const empUser = req.employee?.workspaceMember?.user;
+      const empUserId = empUser?.id;
+      const empEmail = empUser?.email;
+      const empCode = req.employee?.employeeCode;
+      const empName = empUser?.fullName || (req.employee as any)?.fullName;
+
+      const isSelf = Boolean(
+        (user.id && (req.employeeId === user.id || req.employee?.id === user.id || empUserId === user.id)) ||
+        (user.userId && (req.employeeId === user.userId || req.employee?.id === user.userId || empUserId === user.userId)) ||
+        (user.employeeId && empCode && empCode.toLowerCase() === user.employeeId.toLowerCase()) ||
+        (user.email && empEmail && empEmail.toLowerCase() === user.email.toLowerCase()) ||
+        (user.name && empName && user.name.trim().toLowerCase() === empName.trim().toLowerCase())
+      );
+
+      return !isSelf;
+    });
+  }, [leaveRequests, user]);
+
   const pendingLeavesCount = useMemo(
-    () => leaveRequests.filter((r) => r.status === 'pending').length,
-    [leaveRequests]
+    () => filteredLeaveRequests.filter((r) => r.status === 'PENDING').length,
+    [filteredLeaveRequests]
   );
 
   // Setup completion metrics
@@ -416,6 +486,13 @@ export const AdminDashboard: React.FC = () => {
                 Refresh
               </Button>
             </Tooltip>
+
+            <Button variant="outline" size="sm" asChild>
+              <Link to="/admin/leaves" className="gap-1.5">
+                <CalendarDays className="size-3.5 text-primary-600" />
+                <span>Time-Off Portal</span>
+              </Link>
+            </Button>
 
             <Button variant="brand" size="sm" asChild>
               <Link to="/admin/employees/new" className="gap-1.5">
@@ -506,7 +583,7 @@ export const AdminDashboard: React.FC = () => {
                   {totalEmployeesCount}
                 </span>
                 <span className="font-mono text-xs text-muted num">
-                  {absentTodayCount} on leave
+                  {onLeaveTodayCount} on leave &bull; {absentTodayCount} absent
                 </span>
               </div>
             </div>
@@ -990,16 +1067,28 @@ export const AdminDashboard: React.FC = () => {
                   PENDING APPROVALS
                 </span>
               </div>
-              <Badge
-                variant={pendingLeavesCount > 0 ? 'warning' : 'success'}
-                className="font-mono text-[0.6875rem]"
-              >
-                {pendingLeavesCount > 0 ? `${pendingLeavesCount} PENDING` : 'ALL RESOLVED'}
-              </Badge>
+              <div className="flex items-center gap-2">
+                {!isOwner && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsSubmitLeaveOpen(true)}
+                    className="h-6 px-2 text-[0.6875rem] gap-1"
+                  >
+                    <span>+ Request</span>
+                  </Button>
+                )}
+                <Badge
+                  variant={pendingLeavesCount > 0 ? 'warning' : 'success'}
+                  className="font-mono text-[0.6875rem]"
+                >
+                  {pendingLeavesCount > 0 ? `${pendingLeavesCount} PENDING` : 'ALL RESOLVED'}
+                </Badge>
+              </div>
             </div>
 
             <div className="flex flex-col gap-3 pt-4">
-              {leaveRequests.length === 0 ? (
+              {filteredLeaveRequests.length === 0 ? (
                 <div className="py-6 text-center">
                   <p className="text-xs font-medium text-muted">No pending requests</p>
                   <p className="text-[0.6875rem] text-faint">
@@ -1007,45 +1096,84 @@ export const AdminDashboard: React.FC = () => {
                   </p>
                 </div>
               ) : (
-                leaveRequests.map((req) => (
-                  <div
-                    key={req.id}
-                    className="flex flex-col gap-2 rounded-lg border border-line bg-subtle/50 p-2.5 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-semibold text-ink">{req.name}</span>
-                      <Badge variant="secondary" className="font-mono text-[0.625rem]">
-                        {req.type}
-                      </Badge>
-                    </div>
-                    <p className="text-[0.6875rem] text-muted italic">"{req.reason}"</p>
-                    {req.status === 'pending' && (
-                      <div className="flex justify-end gap-1.5 pt-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRejectRequest(req.id)}
-                          className="h-6 px-2 text-[0.6875rem] text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                        >
-                          Decline
-                        </Button>
-                        <Button
-                          variant="default"
-                          size="sm"
-                          onClick={() => handleApproveRequest(req.id)}
-                          className="h-6 bg-emerald-600 px-2.5 text-[0.6875rem] text-white hover:bg-emerald-700"
-                        >
-                          Approve
-                        </Button>
+                filteredLeaveRequests.slice(0, 5).map((req) => {
+                  const empName =
+                    req.employee?.workspaceMember?.user?.fullName ||
+                    req.employee?.employeeCode ||
+                    'Employee';
+
+                  return (
+                    <div
+                      key={req.id}
+                      className="flex flex-col gap-2 rounded-lg border border-line bg-subtle/50 p-2.5 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-ink">{empName}</span>
+                        <Badge variant="outline" className="font-mono text-[0.625rem]">
+                          {req.policy?.code || req.policy?.name || 'LEAVE'}
+                        </Badge>
                       </div>
-                    )}
-                  </div>
-                ))
+                      <div className="flex items-center justify-between text-[0.6875rem] text-muted">
+                        <span>
+                          {dayjs(req.startDate).format('MMM D')} - {dayjs(req.endDate).format('MMM D, YYYY')}
+                        </span>
+                        <span className="font-mono font-semibold text-ink">
+                          {req.totalHours} hrs
+                        </span>
+                      </div>
+                      {req.reason && (
+                        <p className="text-[0.6875rem] text-muted italic">"{req.reason}"</p>
+                      )}
+                      {req.status === 'PENDING' && (
+                        <div className="flex justify-end gap-1.5 pt-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={rejectMutation.isPending || approveMutation.isPending || cancelMutation.isPending}
+                            onClick={() => handleCancelRequest(req.id)}
+                            className="h-6 px-2 text-[0.6875rem] text-muted hover:text-rose-600"
+                            title="Cancel Request"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={rejectMutation.isPending || approveMutation.isPending || cancelMutation.isPending}
+                            onClick={() => handleRejectRequest(req.id)}
+                            className="h-6 px-2 text-[0.6875rem] text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                          >
+                            Decline
+                          </Button>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            disabled={rejectMutation.isPending || approveMutation.isPending || cancelMutation.isPending}
+                            onClick={() => handleApproveRequest(req.id)}
+                            className="h-6 bg-emerald-600 px-2.5 text-[0.6875rem] text-white hover:bg-emerald-700"
+                          >
+                            Approve
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
             </div>
           </Card>
         </div>
       </div>
+
+      {/* Submit Leave Request Modal */}
+      {!isOwner && (
+        <SubmitLeaveRequestModal
+          open={isSubmitLeaveOpen}
+          onOpenChange={setIsSubmitLeaveOpen}
+          workspaceId={activeWorkspaceId}
+          onSuccess={() => refetchLeaveRequests()}
+        />
+      )}
     </div>
   );
 };
