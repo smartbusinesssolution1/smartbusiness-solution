@@ -5,7 +5,7 @@ export const env = {
         nodeEnv: parsedEnv.NODE_ENV,
         isDev: parsedEnv.NODE_ENV === "dev",
         isTest: parsedEnv.NODE_ENV === "test",
-        isProd: parsedEnv.NODE_ENV === "prod",
+        isProd: parsedEnv.NODE_ENV === "production",
         port: parsedEnv.PORT,
         origin: parsedEnv.ORIGIN,
     },
